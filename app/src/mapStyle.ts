@@ -1,0 +1,409 @@
+import type { ExpressionSpecification, LayerSpecification, Map as MLMap, StyleSpecification } from 'maplibre-gl'
+import { STATION_ZOOM } from './config'
+import { FILL, INK, TYPE_COLOR, TYPE_WIDTH, TYPE_ORDER, type RailType } from './palette'
+import { REGIONS } from './regions'
+import { boundaryUrl, pmtilesUrl } from './data'
+
+export type ColorMode = 'type' | 'operator' | 'speed'
+export interface MapState { mode: ColorMode; construction: boolean; proposed: boolean; freight: boolean; hidden: string[]; hsrOnly: boolean; lang: 'local' | 'en' }
+
+const OFM = 'https://tiles.openfreemap.org/planet'
+export const ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
+
+type Expr = ExpressionSpecification
+const get = (k: string): Expr => ['get', k]
+const ALL_TYPES = [...TYPE_ORDER, 'freight', 'yard'] as RailType[]
+
+/** match on the track `type` property */
+function byType(f: (t: RailType) => number | string, key = 'type', fallback: number | string = 0): Expr {
+  const out: unknown[] = ['match', get(key)]
+  for (const t of ALL_TYPES) out.push(t, f(t))
+  out.push(fallback)
+  return out as Expr
+}
+
+const rank = byType((t) => (ALL_TYPES.length - ALL_TYPES.indexOf(t)))
+/** Speed colour ramp (km/h, lower bound of each band). Track with no usable maxspeed is drawn pale grey. */
+export const SPEED_BANDS: { min: number; color: string; label: string }[] = [
+  { min: 250, color: '#B3123A', label: '250+ km/h' },
+  { min: 200, color: '#E8590C', label: '200-249' },
+  { min: 160, color: '#E0A100', label: '160-199' },
+  { min: 120, color: '#6FA33B', label: '120-159' },
+  { min: 80, color: '#2F7FA8', label: '80-119' },
+  { min: 0, color: '#7A6FA8', label: 'under 80' },
+]
+export const SPEED_UNKNOWN = '#BDB9AE'
+const speedColor: Expr = ['case', ['has', 'kmh'],
+  ['step', get('kmh'), SPEED_BANDS[5].color, 80, SPEED_BANDS[4].color, 120, SPEED_BANDS[3].color, 160, SPEED_BANDS[2].color, 200, SPEED_BANDS[1].color, 250, SPEED_BANDS[0].color],
+  SPEED_UNKNOWN] as Expr
+/** Grey-out mode has one definition of "active": high-speed track, and the stations that high-speed rail serves.
+ *  Track (open or under construction), track names and stations all test these two expressions, so they cannot drift apart. */
+const activeTrack: Expr = ['==', get('type'), 'high_speed'] as Expr
+const activeStation = (ty: Expr): Expr => ['any', ['==', get('hsr'), 1], ['in', ',high_speed,', ty]] as unknown as Expr
+export const INACTIVE = '#D4D1C7'
+const INACTIVE_WIDTH = 0.6
+const typeColor = byType((t) => TYPE_COLOR[t], 'type', TYPE_COLOR.other)
+
+/** width that follows z10 / z12 / z15 stops, with an optional multiplier expression */
+function widthExpr(mult?: Expr): Expr {
+  const stop = (i: number): Expr => {
+    const w = byType((t) => TYPE_WIDTH[t][i]) as Expr
+    return mult ? (['*', w, mult] as Expr) : w
+  }
+  return ['interpolate', ['linear'], ['zoom'], 10, stop(0), 12, stop(1), 15, stop(2)] as Expr
+}
+
+/** label text: the English field when the language is English and the tile has one, else the local field */
+const nameExpr = (lang: 'local' | 'en', local: string, en: string): Expr =>
+  (lang === 'en' ? ['case', ['all', ['has', en], ['!=', get(en), '']], get(en), get(local)] : get(local)) as Expr
+
+const L = (slug: string, name: string) => `${slug}:${name}`
+
+export function baseStyle(): StyleSpecification {
+  const sansR = ['Noto Sans Regular']
+  const place = (cls: string[], minzoom: number, size: number[]): LayerSpecification => ({
+    id: `place-${cls.join('-')}`, type: 'symbol', source: 'ofm', 'source-layer': 'place', minzoom,
+    filter: ['in', ['get', 'class'], ['literal', cls]],
+    layout: {
+      'text-field': ['coalesce', ['get', 'name'], ['get', 'name:latin']], 'text-font': sansR,
+      'text-size': ['interpolate', ['linear'], ['zoom'], minzoom, size[0], 14, size[1]], 'text-max-width': 8,
+    },
+    paint: { 'text-color': FILL.place, 'text-halo-color': FILL.land, 'text-halo-width': 1.6 },
+  })
+  return {
+    version: 8,
+    glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+    sources: { ofm: { type: 'vector', url: OFM, attribution: '' } },
+    layers: [
+      { id: 'background', type: 'background', paint: { 'background-color': FILL.land } },
+      { id: 'park', type: 'fill', source: 'ofm', 'source-layer': 'park', paint: { 'fill-color': FILL.park } },
+      { id: 'water', type: 'fill', source: 'ofm', 'source-layer': 'water', paint: { 'fill-color': FILL.water } },
+      {
+        id: 'waterway', type: 'line', source: 'ofm', 'source-layer': 'waterway', minzoom: 9,
+        paint: { 'line-color': FILL.water, 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 0.4, 14, 1.6] },
+      },
+      { id: 'aeroway-apron', type: 'fill', source: 'ofm', 'source-layer': 'aeroway', minzoom: 10,
+        filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['in', ['get', 'class'], ['literal', ['apron', 'runway', 'taxiway', 'helipad']]]],
+        paint: { 'fill-color': '#D9D3C4', 'fill-opacity': 0.9 } },
+      { id: 'aeroway-taxiway', type: 'line', source: 'ofm', 'source-layer': 'aeroway', minzoom: 10,
+        filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'class'], 'taxiway']],
+        paint: { 'line-color': '#BDB6A4', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.5, 14, 2.4, 17, 8] } },
+      { id: 'aeroway-runway', type: 'line', source: 'ofm', 'source-layer': 'aeroway', minzoom: 10,
+        filter: ['all', ['==', ['geometry-type'], 'LineString'], ['==', ['get', 'class'], 'runway']],
+        layout: { 'line-cap': 'butt' },
+        paint: { 'line-color': '#A49C88', 'line-width': ['interpolate', ['linear'], ['zoom'], 10, 1.6, 12, 3, 14, 7, 17, 30] } },
+      {
+        id: 'road-major', type: 'line', source: 'ofm', 'source-layer': 'transportation', minzoom: 7,
+        filter: ['all', ['in', ['get', 'class'], ['literal', ['motorway', 'trunk', 'primary']]], ['!=', ['get', 'brunnel'], 'tunnel']],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': FILL.road, 'line-width': ['interpolate', ['linear'], ['zoom'], 7, 0.5, 12, 1.4, 16, 3.5] },
+      },
+      {
+        id: 'road-secondary', type: 'line', source: 'ofm', 'source-layer': 'transportation', minzoom: 11,
+        filter: ['all', ['==', ['get', 'class'], 'secondary'], ['!=', ['get', 'brunnel'], 'tunnel']],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': FILL.road, 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.4, 16, 2.4] },
+      },
+      {
+        id: 'admin', type: 'line', source: 'ofm', 'source-layer': 'boundary', minzoom: 3,
+        filter: ['all', ['<=', ['get', 'admin_level'], 4], ['!=', ['get', 'maritime'], 1]],
+        layout: { 'line-join': 'round' },
+        paint: { 'line-color': FILL.boundary, 'line-width': 0.8, 'line-dasharray': [6, 5] },
+      },
+      place(['city'], 4, [11, 15]),
+      place(['town'], 9, [11, 13]),
+      place(['suburb', 'quarter', 'neighbourhood'], 12, [10.5, 12]),
+    ],
+  }
+}
+
+/** All rail layers for one region, stacked in drawing order. */
+export function addRegion(map: MLMap, slug: string) {
+  map.addSource(slug, { type: 'vector', url: pmtilesUrl(slug), attribution: ATTRIBUTION })
+  map.addSource(L(slug, 'boundary'), { type: 'geojson', data: boundaryUrl(slug) })
+  const add = (l: Record<string, unknown>): void => { map.addLayer(l as unknown as LayerSpecification) }
+  const src = { source: slug } as const
+
+  add({ id: L(slug, 'boundary'), type: 'line', source: L(slug, 'boundary'), layout: { 'line-join': 'round' },
+    paint: { 'line-color': '#B9B5AD', 'line-width': 1.1, 'line-dasharray': [6, 5], 'line-opacity': 0.8 } })
+
+  // airport outline and terminals, drawn as infrastructure
+  add({ id: L(slug, 'airport-fill'), type: 'fill', ...src, 'source-layer': 'airports', minzoom: 8, filter: ['==', get('k'), 'aerodrome'],
+    paint: { 'fill-color': '#E6E0D2', 'fill-opacity': 0.85 } })
+  add({ id: L(slug, 'airport-line'), type: 'line', ...src, 'source-layer': 'airports', minzoom: 8, filter: ['==', get('k'), 'aerodrome'],
+    layout: { 'line-join': 'round' },
+    paint: { 'line-color': '#9A927E', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.8, 12, 1.4, 15, 2.2] } })
+  add({ id: L(slug, 'airport-terminal'), type: 'fill', ...src, 'source-layer': 'airports', minzoom: 12, filter: ['==', get('k'), 'terminal'],
+    paint: { 'fill-color': '#CBC1AD', 'fill-outline-color': '#A99F8A' } })
+
+  add({ id: L(slug, 'ground'), type: 'fill', ...src, 'source-layer': 'areas', minzoom: 12, filter: ['==', get('k'), 'land'],
+    paint: { 'fill-color': FILL.ground, 'fill-opacity': 0.9 } })
+  add({ id: L(slug, 'yard-fill'), type: 'fill', ...src, 'source-layer': 'areas', minzoom: 12, filter: ['==', get('k'), 'yard'],
+    paint: { 'fill-color': FILL.yard } })
+  add({ id: L(slug, 'ground-edge'), type: 'line', ...src, 'source-layer': 'areas', minzoom: 12,
+    paint: { 'line-color': FILL.groundEdge, 'line-width': 0.8 } })
+  add({ id: L(slug, 'buildings'), type: 'fill', ...src, 'source-layer': 'buildings', minzoom: 13,
+    paint: { 'fill-color': FILL.building, 'fill-outline-color': FILL.buildingEdge } })
+  add({ id: L(slug, 'platforms-fill'), type: 'fill', ...src, 'source-layer': 'platforms', minzoom: 14, filter: ['==', ['geometry-type'], 'Polygon'],
+    paint: { 'fill-color': FILL.platform } })
+  add({ id: L(slug, 'platforms-line'), type: 'line', ...src, 'source-layer': 'platforms', minzoom: 14, filter: ['==', ['geometry-type'], 'LineString'],
+    paint: { 'line-color': FILL.platform, 'line-width': 2 } })
+
+  const roundJoin = { 'line-cap': 'round', 'line-join': 'round' } as const
+  // High-speed rail is always drawn on top of other rail: every track layer gets a "-hs" twin that is added after all the
+  // others (below only the station symbols). The base layer excludes high-speed, the twin holds only high-speed.
+  const top: LayerSpecification[] = []
+  const trackLayer = (spec: Record<string, unknown>, typeKey = 'type') => {
+    const f = spec.filter as Expr | undefined
+    add({ ...spec, filter: f ? ['all', ['!=', get(typeKey), 'high_speed'], f] : ['!=', get(typeKey), 'high_speed'] } as unknown as LayerSpecification)
+    top.push({ ...spec, id: `${spec.id}-hs`, filter: f ? ['all', ['==', get(typeKey), 'high_speed'], f] : ['==', get(typeKey), 'high_speed'] } as unknown as LayerSpecification)
+  }
+  add({ id: L(slug, 'yard'), type: 'line', ...src, 'source-layer': 'track', minzoom: 13, filter: ['==', get('type'), 'yard'],
+    layout: roundJoin, paint: { 'line-color': TYPE_COLOR.yard, 'line-width': widthExpr() } })
+  add({ id: L(slug, 'freight'), type: 'line', ...src, 'source-layer': 'track', minzoom: 8,
+    filter: ['all', ['==', get('type'), 'freight'], ['!', ['has', 'con']]],
+    layout: { ...roundJoin, visibility: 'none' }, paint: { 'line-color': TYPE_COLOR.freight, 'line-width': widthExpr() } })
+  top.push({ id: L(slug, 'casing'), type: 'line', ...src, 'source-layer': 'track', filter: ['all', ['==', get('type'), 'high_speed'], ['!', ['has', 'con']]],
+    layout: roundJoin,
+    paint: { 'line-color': '#FFFFFF', 'line-opacity': 0.9, 'line-gap-width': 0,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 10, 6, 12, 7.5, 15, 9] } } as LayerSpecification)
+  trackLayer({ id: L(slug, 'track'), type: 'line', ...src, 'source-layer': 'track', minzoom: 0,
+    filter: ['all', ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight']],
+    layout: { ...roundJoin, 'line-sort-key': rank },
+    paint: { 'line-color': typeColor, 'line-width': widthExpr(), 'line-opacity': 1 } })
+
+  // under construction: drawn above the track on a white casing so the dashes read, never thinner than 1.8 px
+  const conW = (extra: number): Expr => ['interpolate', ['linear'], ['zoom'],
+    10, ['+', ['max', 1.8, ['*', byType((t) => TYPE_WIDTH[t][0]), 1.2]], extra], 12, ['+', ['max', 2.2, ['*', byType((t) => TYPE_WIDTH[t][1]), 1.2]], extra],
+    15, ['+', ['max', 3, ['*', byType((t) => TYPE_WIDTH[t][2]), 1.2]], extra]] as Expr
+  trackLayer({ id: L(slug, 'construction-casing'), type: 'line', ...src, 'source-layer': 'track', filter: ['has', 'con'],
+    layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-opacity': 0.85, 'line-width': conW(2) } })
+  trackLayer({ id: L(slug, 'construction'), type: 'line', ...src, 'source-layer': 'track', filter: ['has', 'con'],
+    layout: { 'line-cap': 'butt', 'line-join': 'round', 'line-sort-key': rank },
+    paint: { 'line-color': ['match', get('type'), 'other', '#45423C', typeColor], 'line-width': conW(0), 'line-dasharray': [2, 1.5] } })
+
+  // highlight for the hovered or selected line: the same line drawn wider in its own colour, no outline
+  const hlW: Expr = ['interpolate', ['linear'], ['zoom'],
+    8, ['+', ['*', byType((t) => TYPE_WIDTH[t][0]), 1.8], 2], 12, ['+', ['*', byType((t) => TYPE_WIDTH[t][1]), 1.8], 2.5],
+    15, ['+', ['*', byType((t) => TYPE_WIDTH[t][2]), 1.8], 3]] as Expr
+  add({ id: L(slug, 'hl'), type: 'line', ...src, 'source-layer': 'track', filter: ['==', ['get', 'type'], '__none__'],
+    layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': typeColor, 'line-width': hlW } })
+
+  // operator-colour strands (side by side from z12)
+  // strands: spacing and width shrink once more than 7 lines share a piece of track, so terminal throats stay readable
+  const U: Expr = ['-', get('i'), ['/', ['-', get('n'), 1], 2]]
+  const K: Expr = ['min', 1, ['/', 7, get('n')]]
+  // one thickness per rail type in every colour mode: a strand is as wide as the track it replaces (TYPE_WIDTH), shrunk by K on crowded track
+  const strandW = (extra = 0): Expr => ['interpolate', ['linear'], ['zoom'],
+    12, ['+', ['*', byType((t) => TYPE_WIDTH[t][1], 't', TYPE_WIDTH.other[1]), K], extra], 15, ['+', ['*', byType((t) => TYPE_WIDTH[t][2], 't', TYPE_WIDTH.other[2]), K], extra]] as Expr
+  const offset: Expr = ['interpolate', ['linear'], ['zoom'], 12, ['*', ['*', U, K], 3.5], 15, ['*', ['*', U, K], 5.5]] as Expr
+  trackLayer({ id: L(slug, 'strand-casing'), type: 'line', ...src, 'source-layer': 'lines', minzoom: 12,
+    layout: { ...roundJoin, visibility: 'none' },
+    paint: { 'line-color': '#1E1E1C', 'line-opacity': 0.28, 'line-width': strandW(1), 'line-offset': offset } }, 't')
+  trackLayer({ id: L(slug, 'strand'), type: 'line', ...src, 'source-layer': 'lines', minzoom: 12,
+    layout: { ...roundJoin, visibility: 'none' },
+    paint: { 'line-color': ['coalesce', get('c'), byType((t) => TYPE_COLOR[t], 't', TYPE_COLOR.other)],
+      'line-opacity': ['case', ['has', 'c'], 1, 0.6], 'line-width': strandW(), 'line-offset': offset } }, 't')
+
+  top.forEach((l) => add(l)) // high-speed twins and casing: above every other rail layer
+
+  // invisible, wider hit target for track tooltips
+  add({ id: L(slug, 'hit'), type: 'line', ...src, 'source-layer': 'track', filter: ['!=', get('type'), 'yard'],
+    layout: roundJoin, paint: { 'line-color': '#000000', 'line-opacity': 0, 'line-width': 12 } })
+
+  // line names along the track: one label per line (from its strands), or the track's own name where no line is mapped
+  const lblPaint = { 'text-color': '#33312C', 'text-halo-color': FILL.land, 'text-halo-width': 2, 'text-halo-blur': 0.3 }
+  add({ id: L(slug, 'lbl-lines'), type: 'symbol', ...src, 'source-layer': 'lines', minzoom: 11.5,
+    layout: { 'symbol-placement': 'line', 'text-field': get('lb'), 'text-font': ['Noto Sans Regular'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 11.5, 10, 15, 12], 'symbol-spacing': 320, 'text-max-angle': 30,
+      'text-padding': 3, 'symbol-sort-key': get('i'), 'text-letter-spacing': 0.02 },
+    paint: lblPaint })
+  add({ id: L(slug, 'lbl-track'), type: 'symbol', ...src, 'source-layer': 'track', minzoom: 11.5,
+    filter: ['all', ['has', 'n'], ['!', ['has', 'nl']], ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight']],
+    layout: { 'symbol-placement': 'line', 'text-field': get('n'), 'text-font': ['Noto Sans Regular'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 11.5, 10, 15, 12], 'symbol-spacing': 360, 'text-max-angle': 30,
+      'text-padding': 3, 'text-letter-spacing': 0.02 },
+    paint: lblPaint })
+
+  // yard track gets its own hit layer: it only draws from z13
+  add({ id: L(slug, 'hit-yard'), type: 'line', ...src, 'source-layer': 'track', minzoom: 13, filter: ['==', get('type'), 'yard'],
+    layout: roundJoin, paint: { 'line-color': '#000000', 'line-opacity': 0, 'line-width': 10 } })
+
+  // outline label for small airfields; commercial airports get one icon point below
+  add({ id: L(slug, 'airport-label'), type: 'symbol', ...src, 'source-layer': 'airports', minzoom: 8, filter: ['all', ['==', get('k'), 'aerodrome'], ['!=', get('com'), 1]],
+    layout: { 'text-field': get('lb'), 'text-font': ['Noto Sans Regular'], 'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 14, 12],
+      'text-letter-spacing': 0.08, 'text-max-width': 8, 'text-padding': 4 },
+    paint: { 'text-color': '#6B665B', 'text-halo-color': FILL.land, 'text-halo-width': 1.6 } })
+  // commercial airports: one plane icon at the centre of the outline with the IATA code under it
+  add({ id: L(slug, 'airport-icon'), type: 'symbol', ...src, 'source-layer': 'airport_pts', minzoom: 8,
+    layout: { 'icon-image': 'airport', 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.6, 12, 0.85, 15, 1.05],
+      'text-field': get('lb'), 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 14, 13],
+      'text-anchor': 'top', 'text-offset': [0, 0.9], 'text-letter-spacing': 0.06, 'text-padding': 4, 'text-allow-overlap': true, 'text-ignore-placement': true,
+      'symbol-sort-key': 0 },
+    paint: { 'text-color': '#4A463D', 'text-halo-color': FILL.land, 'text-halo-width': 1.8 } })
+
+  // stations
+  const circle = (name: string, tier: number, minzoom: number, r: [number, number, number], stroke: number, ring: Expr | string): void =>
+    add({ id: L(slug, name), type: 'circle', ...src, 'source-layer': 'stations', minzoom, filter: ['all', ['==', get('tier'), tier], ['!', ['has', 'con']]],
+      layout: { 'circle-sort-key': tier === 1 ? 3 : tier === 2 ? 2 : 1 } as never,
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, r[0], 12, r[1], 15, r[2]],
+        'circle-color': '#FFFFFF', 'circle-stroke-width': stroke, 'circle-stroke-color': ring, 'circle-pitch-alignment': 'map' } })
+  circle('st3', 3, STATION_ZOOM[3].dot, [2.2, 2.8, 3.5], 1.3, '#3A3936')
+  circle('st2', 2, STATION_ZOOM[2].dot, [4, 5, 6], 2.5, INK)
+  circle('st1', 1, STATION_ZOOM[1].dot, [4.5, 6.5, 7], 3, ['case', ['==', get('hsr'), 1], '#B3123A', INK])
+
+  // stations still being built: hollow ring (red when high-speed), only shown while Construction is on; size follows the inferred tier
+  const conCircle = (tier: 1 | 2 | 3, r: [number, number, number], stroke: number) =>
+    add({ id: L(slug, `stcon${tier}`), type: 'circle', ...src, 'source-layer': 'stations', minzoom: STATION_ZOOM[tier].dot,
+      filter: ['all', ['has', 'con'], ['==', get('tier'), tier]],
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, r[0], 12, r[1], 15, r[2]], 'circle-color': '#FFFFFF',
+        'circle-stroke-width': stroke, 'circle-stroke-color': ['case', ['==', get('hsr'), 1], '#B3123A', '#6B665B'], 'circle-stroke-opacity': 0.95 } })
+  conCircle(3, [2.6, 3.6, 4.6], 1.4)
+  conCircle(2, [4, 5, 6], 2)
+  conCircle(1, [4.5, 6.5, 7], 2.6)
+
+  const label = (name: string, tier: number, minzoom: number, size: [number, number], bold: boolean) =>
+    add({ id: L(slug, name), type: 'symbol', ...src, 'source-layer': 'complexes', minzoom, filter: ['==', get('tier'), tier],
+      layout: { 'text-field': get('n'), 'text-font': [bold ? 'Noto Sans Bold' : 'Noto Sans Regular'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], minzoom, size[0], 15, size[1]], 'text-max-width': 7,
+        'text-variable-anchor': ['top', 'bottom', 'right', 'left'], 'text-radial-offset': 1.0,
+        'text-padding': 2, 'text-optional': true },
+      paint: { 'text-color': INK, 'text-halo-color': FILL.land, 'text-halo-width': 1.8 } })
+  label('lbl1', 1, STATION_ZOOM[1].label, [13, 16], true)
+  label('lbl2', 2, STATION_ZOOM[2].label, [12, 13], true)
+  label('lbl3', 3, STATION_ZOOM[3].label, [10.5, 11.5], false)
+  const conLabel = (tier: 1 | 2 | 3, size: [number, number]) =>
+    add({ id: L(slug, `lblcon${tier}`), type: 'symbol', ...src, 'source-layer': 'complexes', minzoom: STATION_ZOOM[tier].label,
+      filter: ['all', ['has', 'con'], ['==', get('tier'), tier]],
+      layout: { 'text-field': get('n'), 'text-font': [tier < 3 ? 'Noto Sans Bold' : 'Noto Sans Regular'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 11, size[0], 15, size[1]], 'text-max-width': 7, 'text-anchor': 'top', 'text-offset': [0, 0.8], 'text-padding': 3 },
+      paint: { 'text-color': '#7A756A', 'text-halo-color': FILL.land, 'text-halo-width': 1.5 } })
+  conLabel(1, [13, 16]); conLabel(2, [12, 13]); conLabel(3, [10, 11.5])
+}
+
+export function stationLayers(slug: string) { return ['stcon1', 'stcon2', 'stcon3', 'st1', 'st2', 'st3'].map((n) => L(slug, n)) }
+export const strandLayer = (slug: string) => L(slug, 'strand')
+export const hitLayer = (slug: string) => L(slug, 'hit')
+export const yardHitLayer = (slug: string) => L(slug, 'hit-yard')
+/** polygon layers that answer hovers, most specific first */
+export const areaLayers = (slug: string) => ['platforms-fill', 'platforms-line', 'airport-terminal', 'buildings', 'yard-fill', 'ground', 'airport-fill'].map((n) => L(slug, n))
+
+const vis = (on: boolean) => (on ? 'visible' : 'none')
+
+/** Push toggles / colour mode into the map. Cheap enough to call on every state change. */
+export function applyState(map: MLMap, s: MapState) {
+  const operator = s.mode === 'operator'
+  for (const { slug } of REGIONS) {
+    if (!map.getLayer(L(slug, 'track'))) continue
+    map.setLayoutProperty(L(slug, 'freight'), 'visibility', vis(s.freight))
+
+    for (const n of ['lbl1', 'lbl2', 'lbl3', 'lblcon1', 'lblcon2', 'lblcon3']) map.setLayoutProperty(L(slug, n), 'text-field', nameExpr(s.lang, 'n', 'ne'))
+    map.setLayoutProperty(L(slug, 'lbl-track'), 'text-field', nameExpr(s.lang, 'n', 'ne'))
+    map.setLayoutProperty(L(slug, 'lbl-lines'), 'text-field', nameExpr(s.lang, 'lb', 'lbe'))
+    // paint, layout and filter changes reach a track layer and its high-speed twin together
+    const TWINS = new Set(['track', 'construction', 'construction-casing', 'strand', 'strand-casing'])
+    const names = (n: string) => (TWINS.has(n) ? [n, `${n}-hs`] : [n])
+    const setPaint = (n: string, prop: string, v: unknown) => names(n).forEach((x) => map.setPaintProperty(L(slug, x), prop, v as never))
+    const setVis = (n: string, v: string) => names(n).forEach((x) => map.setLayoutProperty(L(slug, x), 'visibility', v as never))
+    const setFilt = (n: string, f: Expr | null, typeKey = 'type') => names(n).forEach((x, i) => {
+      const hs: Expr = [i === 0 ? '!=' : '==', get(typeKey), 'high_speed'] as Expr
+      map.setFilter(L(slug, x), (f ? ['all', hs, f] : hs) as Expr)
+    })
+    // proposed track rides on the construction layers (flag `prop`), drawn fainter; each switch shows its own kind
+    setVis('construction', vis(s.construction || s.proposed)); setVis('construction-casing', vis(s.construction || s.proposed))
+    const conKinds: Expr = ['any', ...(s.construction ? [['all', ['has', 'con'], ['!', ['has', 'prop']]]] : []), ...(s.proposed ? [['has', 'prop']] : [])] as unknown as Expr
+    setPaint('construction', 'line-opacity', ['case', ['has', 'prop'], 0.5, 1])
+    setPaint('construction-casing', 'line-opacity', ['case', ['has', 'prop'], 0.45, 0.85])
+    setVis('strand', vis(operator)); setVis('strand-casing', vis(operator))
+    const has = ['has', 'oc'] as Expr
+    const tun: Expr = ['step', ['zoom'], 1, 13, ['case', ['has', 'tun'], 0.45, 1]]
+    // each colour mode sets its own colour and width; "HSR only" then greys and thins everything that is not high-speed, in any mode
+    const greyOut = s.hsrOnly
+    const grey = (c: Expr, active: Expr = activeTrack): Expr => (greyOut ? (['case', active, c, INACTIVE] as Expr) : c)
+    const thin = (m?: Expr): Expr | undefined => (greyOut ? (['*', m ?? 1, ['case', activeTrack, 1, INACTIVE_WIDTH]] as Expr) : m)
+    const strandActive: Expr = ['==', get('t'), 'high_speed'] as Expr
+    let color: Expr, width: Expr, opacity: Expr = tun
+    if (operator) {
+      // below z12 each track takes one colour; from z12 tracks with mapped lines give way to the strands
+      color = ['coalesce', get('oc'), typeColor] as Expr
+      width = widthExpr(thin())
+      opacity = ['step', ['zoom'], ['case', has, 1, 0.6], 12, ['case', ['has', 'nl'], 0, 0.6]] as Expr
+    } else if (s.mode === 'speed') {
+      color = speedColor
+      width = widthExpr(thin())
+    } else {
+      color = typeColor
+      width = widthExpr(thin())
+    }
+    setPaint('track', 'line-color', grey(color))
+    setPaint('track', 'line-width', width)
+    setPaint('track', 'line-opacity', opacity)
+    map.setPaintProperty(L(slug, 'hl'), 'line-color', grey(color))
+    // under-construction track follows the same colour rule as open track
+    setPaint('construction', 'line-color', grey(s.mode === 'speed' ? speedColor : (['match', get('type'), 'other', '#45423C', typeColor] as Expr)))
+    setPaint('strand', 'line-color', grey(['coalesce', get('c'), byType((t) => TYPE_COLOR[t], 't', TYPE_COLOR.other)] as Expr, strandActive))
+    setPaint('strand-casing', 'line-opacity', greyOut ? (['case', strandActive, 0.28, 0] as Expr) : 0.28)
+    const hiddenT = s.hidden.length > 0
+    const notHiddenT = (key: string): Expr[] => (hiddenT ? [['!', ['in', get(key), ['literal', s.hidden]]] as Expr] : [])
+    setFilt('track', ['all', ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight'], ...notHiddenT('type')] as Expr)
+    setFilt('construction', ['all', conKinds, ...notHiddenT('type')] as Expr)
+    setFilt('construction-casing', ['all', conKinds, ...notHiddenT('type')] as Expr)
+    map.setLayoutProperty(L(slug, 'casing'), 'visibility', vis(!s.hidden.includes('high_speed')))
+    // a station disappears when every rail type that serves it is hidden (stations with no known type stay)
+    const ty: Expr = ['coalesce', get('ty'), ''] as Expr
+    const served: Expr[] = hiddenT
+      ? [['any', ['==', ty, ''], ...TYPE_ORDER.filter((t) => !s.hidden.includes(t)).map((t) => ['in', `,${t},`, ty])] as unknown as Expr]
+      : []
+    // greyed-out mode: only stations that high-speed rail serves stay on the map
+    if (greyOut) served.push(activeStation(ty))
+    ;([['st1', 1], ['st2', 2], ['st3', 3], ['lbl1', 1], ['lbl2', 2], ['lbl3', 3]] as const).forEach(([n, tier]) =>
+      map.setFilter(L(slug, n), ['all', ['==', get('tier'), tier], ['!', ['has', 'con']], ...served] as Expr))
+    ;([['stcon1', 1], ['stcon2', 2], ['stcon3', 3], ['lblcon1', 1], ['lblcon2', 2], ['lblcon3', 3]] as const).forEach(([n, tier]) =>
+      map.setFilter(L(slug, n), ['all', ['has', 'con'], ['==', get('tier'), tier], ...served] as Expr))
+    for (const n of ['stcon1', 'stcon2', 'stcon3', 'lblcon1', 'lblcon2', 'lblcon3']) map.setLayoutProperty(L(slug, n), 'visibility', vis(s.construction))
+    for (const n of ['strand', 'strand-casing']) setFilt(n, hiddenT ? (['all', ...notHiddenT('t')] as Expr) : null, 't')
+    map.setFilter(L(slug, 'lbl-lines'), hiddenT || greyOut ? (['all', ...(greyOut ? [strandActive] : []), ...notHiddenT('t')] as Expr) : null)
+    map.setFilter(L(slug, 'lbl-track'), ['all', ...(greyOut ? [activeTrack] : []), ['has', 'n'], ['!', ['has', 'nl']], ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight'], ...notHiddenT('type')] as Expr)
+    const hide: Expr[] = [...notHiddenT('type')]
+    if (!s.freight) hide.push(['!=', get('type'), 'freight'] as Expr)
+    if (!s.construction) hide.push(['any', ['!', ['has', 'con']], ['has', 'prop']] as Expr)
+    if (!s.proposed) hide.push(['!', ['has', 'prop']] as Expr)
+    if (greyOut) hide.push(activeTrack)  // greyed-out track cannot be hovered or selected
+    map.setFilter(L(slug, 'hit'), ['all', ['!=', get('type'), 'yard'], ...hide] as Expr)
+  }
+}
+
+export function highlightLine(map: MLMap, lineId: number | null, trackName: string | null = null) {
+  const none: Expr = ['==', ['get', 'type'], '__none__']
+  const byLine: Expr | null = lineId == null ? null : (['in', `,${lineId},`, ['concat', ',', ['coalesce', get('ln'), ''], ',']] as Expr)
+  const byName: Expr | null = trackName == null ? null : (['==', get('n'), trackName] as Expr)
+  const parts = [byLine, byName].filter(Boolean) as Expr[]
+  const f: Expr = parts.length === 0 ? none : parts.length === 1 ? parts[0] : (['any', ...parts] as Expr)
+  for (const { slug } of REGIONS) {
+    if (!map.getLayer(L(slug, 'hl'))) continue
+    map.setFilter(L(slug, 'hl'), f)
+  }
+}
+
+/** Material "flight" glyph, 24x24 */
+export const PLANE_PATH = 'M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z'
+
+/** Airport station marker: a plane on a white disc; red ring when high-speed rail serves the station. */
+export function addAirportIcon(map: MLMap) {
+  const make = (name: string, ring: string) => {
+    if (map.hasImage(name)) return
+    const px = 2
+    const size = 26 * px
+    const c = document.createElement('canvas')
+    c.width = c.height = size
+    const g = c.getContext('2d')!
+    g.scale(px, px)
+    g.beginPath(); g.arc(13, 13, 11.5, 0, Math.PI * 2)
+    g.fillStyle = '#FFFFFF'; g.fill()
+    g.lineWidth = 2.2; g.strokeStyle = ring; g.stroke()
+    g.translate(13 - 8.4, 13 - 8.4); g.scale(0.7, 0.7)
+    g.fillStyle = '#1E1E1C'; g.fill(new Path2D(PLANE_PATH))
+    map.addImage(name, g.getImageData(0, 0, size, size), { pixelRatio: px })
+  }
+  make('airport', '#1E1E1C')
+  }

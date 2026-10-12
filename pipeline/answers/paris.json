@@ -1,0 +1,120 @@
+{
+  "_comment": "Draft answer list, written from general knowledge. tier_max=1 means must be tier 1; tier_min=3 means must be tier 3. Review before trusting.",
+  "stations": [
+    {
+      "match": "Gare du Nord",
+      "mode": "train",
+      "tier_max": 1,
+      "terminus": true,
+      "complex_modes": [
+        "train",
+        "subway"
+      ]
+    },
+    {
+      "match": "^Gare de Lyon",
+      "mode": "train",
+      "tier_max": 1,
+      "terminus": true,
+      "complex_modes": [
+        "train",
+        "subway"
+      ]
+    },
+    {
+      "match": "Gare de L'Est",
+      "mode": "train",
+      "tier_max": 1,
+      "terminus": true
+    },
+    {
+      "match": "Montparnasse",
+      "mode": "train",
+      "tier_max": 1,
+      "terminus": true
+    },
+    {
+      "match": "Saint-Lazare",
+      "mode": "train",
+      "tier_max": 1,
+      "terminus": true
+    },
+    {
+      "match": "Austerlitz",
+      "mode": "train",
+      "tier_max": 1,
+      "terminus": true
+    },
+    {
+      "match": "La Défense",
+      "mode": "train",
+      "tier_max": 2
+    },
+    {
+      "match": "Châtelet - Les Halles",
+      "mode": "train",
+      "complex_modes": [
+        "train",
+        "subway"
+      ]
+    },
+    {
+      "match": "Aéroport Charles de Gaulle 2 TGV",
+      "tier_max": 2
+    },
+    {
+      "match": "^Vincennes$",
+      "tier_min": 3
+    },
+    {
+      "match": "Charles de Gaulle 2 TGV",
+      "tier_max": 1
+    }
+  ],
+  "lines": [
+    {
+      "match": "^RER A$",
+      "type": "regional"
+    },
+    {
+      "match": "^RER B$",
+      "type": "regional"
+    },
+    {
+      "match": "^Transilien Ligne H$",
+      "type": "regional"
+    },
+    {
+      "match": "^Transilien K$",
+      "type": "regional"
+    },
+    {
+      "match": "^Ligne 1 :",
+      "type": "metro"
+    },
+    {
+      "match": "^Ligne 14 :",
+      "type": "metro"
+    },
+    {
+      "match": "^Tramway T1 ",
+      "type": "light_rail"
+    },
+    {
+      "match": "^Tramway T3a",
+      "type": "light_rail"
+    },
+    {
+      "match": "Eurostar : Paris ↔ London",
+      "type": "high_speed"
+    },
+    {
+      "match": "^Intercités : Paris-Austerlitz",
+      "type": "intercity"
+    },
+    {
+      "match": "^TER K13",
+      "type": "regional"
+    }
+  ]
+}

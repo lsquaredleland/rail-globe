@@ -1,0 +1,29 @@
+{
+  "directory": "../data",
+  "extracts": [
+    {
+      "output": "sf-bay-area.osm.pbf",
+      "output_format": "pbf",
+      "polygon": {
+        "file_name": "regions/sf-bay-area.geojson",
+        "file_type": "geojson"
+      }
+    },
+    {
+      "output": "paris.osm.pbf",
+      "output_format": "pbf",
+      "polygon": {
+        "file_name": "regions/paris.geojson",
+        "file_type": "geojson"
+      }
+    },
+    {
+      "output": "chengdu.osm.pbf",
+      "output_format": "pbf",
+      "polygon": {
+        "file_name": "regions/chengdu.geojson",
+        "file_type": "geojson"
+      }
+    }
+  ]
+}

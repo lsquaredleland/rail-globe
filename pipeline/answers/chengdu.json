@@ -1,0 +1,86 @@
+{
+  "_comment": "Draft answer list, written from general knowledge. Review before trusting.",
+  "stations": [
+    {
+      "match": "^成都东$",
+      "mode": "train",
+      "tier_max": 1,
+      "complex_modes": [
+        "train",
+        "subway"
+      ]
+    },
+    {
+      "match": "^天府$",
+      "mode": "train",
+      "tier_max": 1,
+      "complex_modes": [
+        "train",
+        "subway"
+      ]
+    },
+    {
+      "match": "^成都西站$",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^成都南$",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^成都$",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^春熙路$",
+      "mode": "subway",
+      "tier_min": 3
+    },
+    {
+      "match": "^天府广场$",
+      "mode": "subway",
+      "tier_min": 3
+    },
+    {
+      "match": "^犀浦$",
+      "mode": "train",
+      "complex_modes": [
+        "train",
+        "subway"
+      ]
+    }
+  ],
+  "lines": [
+    {
+      "match": "^成都地铁1号线$",
+      "type": "metro"
+    },
+    {
+      "match": "^成都地铁2号线$",
+      "type": "metro"
+    },
+    {
+      "match": "^成都地铁7号线$",
+      "type": "metro"
+    },
+    {
+      "match": "^成都地铁18号线$",
+      "type": "metro"
+    },
+    {
+      "match": "^成都有轨电车蓉2号线（主线）$",
+      "type": "light_rail"
+    },
+    {
+      "match": "^成都市域铁路S3资阳线$",
+      "type": "regional"
+    },
+    {
+      "match": "^C6358",
+      "type": "intercity"
+    }
+  ]
+}

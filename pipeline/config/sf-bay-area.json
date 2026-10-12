@@ -1,0 +1,54 @@
+{
+  "china": false,
+  "commuter_networks": [
+    "Caltrain",
+    "ACE",
+    "SMART",
+    "Altamont Corridor Express"
+  ],
+  "high_speed_networks_re": [],
+  "type_overrides": [
+    {
+      "match": {
+        "network": "BART",
+        "name_re": "Airport Connector"
+      },
+      "type": "other"
+    },
+    {
+      "match": {
+        "network": "BART"
+      },
+      "type": "metro"
+    },
+    {
+      "match": {
+        "network": "SFO AirTrain"
+      },
+      "type": "other"
+    },
+    {
+      "match": {
+        "name_re": "Cable Car"
+      },
+      "type": "other"
+    },
+    {
+      "match": {
+        "name_re": "Capitol Corridor|Gold Runner|San Joaquin"
+      },
+      "type": "regional"
+    },
+    {
+      "match": {
+        "network": "Amtrak"
+      },
+      "type": "intercity"
+    }
+  ],
+  "unrouted_main_type": "freight",
+  "main_terminals": [
+    "San Francisco 4th & King Street",
+    "San Jose Diridon"
+  ]
+}

@@ -1,0 +1,74 @@
+# Station model
+
+Model stations as three levels (complex, station, stop point), keep the OSM relations that tie them together, and rank stations by physical size alone, so large mainline terminals stand out.
+
+## The problem: one station, many objects
+
+A station a traveller thinks of as one place is usually several OSM objects, often one set per mode or operator. Gare de Lyon is three OSM stations (mainline, metro, untagged). Consolidation means deciding which objects belong together, at which level, and what the result is called and ranked by.
+
+| OSM object | What it tells you | Layer |
+| --- | --- | --- |
+| `railway=station` / `halt` node | That a station exists, its name and ids | Both |
+| `public_transport=station` (node or area) | Same, in the newer public transport scheme | Both |
+| `building=train_station`, `landuse=railway` area | Physical footprint and size | Infrastructure |
+| Platforms (`railway=platform`, `public_transport=platform`) | Platform count and numbers (`ref`), where people board | Infrastructure |
+| `public_transport=stop_position` node | Where a train halts on the track. Route relations list these as their `stop` members | Link |
+| `stop_area` relation | Groups one station's node, platforms and stop positions. Usually one per mode or operator | Link |
+| `stop_area_group` relation | Groups several stop areas into one interchange | Link |
+| Route relation members (roles `stop`, `platform`) | Which lines call here, in what order | Service |
+
+The hard part is coverage. There are 18,157 `stop_area` relations against 97,053 stations and 34,452 halts, so at most about 14% of rail stations have one. For most stations the grouping has to be inferred, not read.
+
+## Model
+
+```
+                Complex  (the place a traveller names; one label at low zoom)
+                from stop_area_group, else inferred from shared wikidata, name or building
+                  |               |               |
+        Station: mainline   Station: metro   Station: tram     (one per mode; own lines and click panel)
+        stop_area, else station node
+                  |               |               |
+        Stop points: platforms and stop positions   (never drawn at low zoom)
+        each belongs to one station; routes list them as stop / platform members
+              |                                   |
+   Infrastructure layer                      Service layer
+   platforms, tracks, building, land         route stop members, route_master (OSM only)
+   -> the size score: the ONLY ranking signal -> lines for the click panel, not ranking
+```
+
+## How to build it
+
+Run after the infrastructure build, since stations attach to track and land areas. Every grouping records how it was made (`mapped` or `inferred`) so QA can review the inferred ones.
+
+1. **Stations from stop areas.** Each `stop_area` becomes a Station. Its members give the node, platforms and stop positions.
+2. **Stations without a stop area.** Each remaining station or halt node becomes a Station. Attach nearby platforms and stop positions of the same mode whose name matches, or that sit inside the same `landuse=railway` area. Starting radius about 300 m for mainline and 100 m for metro and tram, tuned on the pilot regions.
+3. **Merge duplicates.** Two Stations of the same mode become one when they share a `wikidata`, `uic_ref` or `railway:ref`, or have the same normalised name within the radius. This fixes the untagged third object at Gare de Lyon.
+4. **Lines at each station.** For every route relation, map each `stop` and `platform` member to its Station through the step 1–3 membership table. Count distinct `route_master`s, not relations. A stop that maps to no Station goes to the nearest Station of the same mode with a matching name, or is reported in QA.
+5. **Complexes.** Each `stop_area_group` becomes a Complex. Otherwise group Stations of different modes that share a `wikidata`, or share a normalised name within about 300 m, or sit in the same station building. Distance alone never groups: that is how Magenta borrowed Gare du Nord's lines in the Paris test.
+6. **Points.** A Station sits at its station node, else the centroid of its platforms. A Complex sits at its largest Station.
+7. **Size score.** Rank by physical size only: mainline platforms, mainline tracks ending in or passing through the station, building and railway land area. Metro and tram platforms don't count, so a heavily interlined subway hub can't outrank a mainline terminal. A terminus flag (mainline track ends inside the station's railway land) adds weight. The score becomes tiers for zoom and label order. Line counts stay in the record for the click panel but never set rank, since services are under-mapped in China and inflated by interlining in places like New York. Weights and tier cut-offs are tuned on the answer lists. Major stations (name pattern, canonical list, or a terminus or large mainline station beside high-speed track; see `00-overview.md`) are then raised to tier 1.
+
+Check it on the three pilot regions (SF Bay Area, Chengdu, Paris) against a short hand-made answer list (e.g. Gare du Nord: one complex holding mainline, RER and metro stations; Chengdu East: top tier) before any larger run.
+
+## Schema
+
+Ids reuse OSM where it has one, so they survive monthly rebuilds.
+
+| Record | Id | Key fields |
+| --- | --- | --- |
+| **Complex** | `stop_area_group` id, else the id of its largest Station | name, names, point, station ids, wikidata, grouping (`mapped` / `inferred`) |
+| **Station** | `stop_area` id, else the station node id | complex id, name, names, modes, operator, network, point, uic_ref, railway_ref, wikidata, platform count, size score and tier, terminus flag, line ids (panel only), grouping, source OSM ids |
+| **Stop point** | OSM id of the platform or stop position | station id, kind (platform / stop position), platform ref, mode, route ids that use it |
+
+Size and rank come only from the infrastructure layer. Lines come from the service layer through stop points and only fill the click panel, so a Station with no mapped services ranks the same. That is the normal case for intercity China.
+
+## Output
+
+| Output | Contents | Zooms |
+| --- | --- | --- |
+| `complexes` tile layer | One point per Complex: name, English name, size tier, modes, terminus, platform count, line count | Labels from z5 by tier |
+| `stations` tile layer | One point per Station: id, name, English name, modes, size tier, terminus, platform count, line count by type (for tooltips) | From z10, or z8 for top tiers |
+| `platforms` tile layer | Platform areas and lines with ref | From z14 |
+| `stations/<id>.json` | Full record: lines in order, platforms, names, ids, links | Loaded on click |
+
+Every view sorts labels by the size tier through MapLibre's `symbol-sort-key`.

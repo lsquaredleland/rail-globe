@@ -1,0 +1,34 @@
+{
+  "_comment": "Hand-written per-region rules (docs/01-features.md, rail types). First matching override wins.",
+  "china": false,
+  "commuter_networks": [
+    "RER",
+    "Transilien"
+  ],
+  "high_speed_networks_re": [
+    "^TGV",
+    "^Eurostar",
+    "^Thalys",
+    "^Ouigo$",
+    "^Ouigo ",
+    "^ICE"
+  ],
+  "type_overrides": [
+    {
+      "match": {
+        "network_re": "^Ouigo Train Classique"
+      },
+      "type": "intercity"
+    }
+  ],
+  "main_terminals": [
+    "Gare du Nord",
+    "Gare de Lyon",
+    "Gare de l'Est",
+    "Gare Montparnasse",
+    "Gare Saint-Lazare",
+    "Gare d'Austerlitz",
+    "Gare de Bercy",
+    "Marne-la-Vallée - Chessy"
+  ]
+}

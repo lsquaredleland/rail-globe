@@ -1,0 +1,115 @@
+{
+  "_comment": "Draft answer list, written from general knowledge. Review before trusting.",
+  "stations": [
+    {
+      "match": "4th & King Street",
+      "mode": "train",
+      "tier_max": 1,
+      "terminus": true,
+      "complex_modes": [
+        "train",
+        "light_rail"
+      ]
+    },
+    {
+      "match": "San Jose Diridon",
+      "mode": "train",
+      "tier_max": 1,
+      "complex_modes": [
+        "train",
+        "light_rail"
+      ]
+    },
+    {
+      "match": "^Millbrae$",
+      "mode": "train",
+      "complex_modes": [
+        "train",
+        "subway"
+      ]
+    },
+    {
+      "match": "^Richmond$",
+      "mode": "train",
+      "complex_modes": [
+        "train",
+        "subway"
+      ]
+    },
+    {
+      "match": "^Embarcadero$",
+      "mode": "subway",
+      "tier_min": 3,
+      "complex_modes": [
+        "subway",
+        "light_rail"
+      ]
+    },
+    {
+      "match": "^Powell Street$",
+      "mode": "subway",
+      "complex_modes": [
+        "subway",
+        "light_rail"
+      ]
+    },
+    {
+      "match": "Jack London Square",
+      "mode": "train",
+      "tier_min": 2
+    },
+    {
+      "match": "^24th Street Mission$",
+      "mode": "subway",
+      "tier_min": 3
+    }
+  ],
+  "lines": [
+    {
+      "match": "^Richmond–Millbrae\\+SFO Line$",
+      "type": "metro"
+    },
+    {
+      "match": "^Dublin/Pleasanton–Daly City Line$",
+      "type": "metro"
+    },
+    {
+      "match": "^Muni Metro N-Judah$",
+      "type": "light_rail"
+    },
+    {
+      "match": "^Muni Streetcar F-Market",
+      "type": "light_rail"
+    },
+    {
+      "match": "^Muni Powell/Hyde Cable Car$",
+      "type": "other"
+    },
+    {
+      "match": "^Amtrak Capitol Corridor$",
+      "type": "regional"
+    },
+    {
+      "match": "^Coast Starlight$",
+      "type": "intercity"
+    },
+    {
+      "match": "^Express$",
+      "network": "Caltrain",
+      "type": "regional"
+    },
+    {
+      "match": "^Altamont Corridor Express$",
+      "type": "regional"
+    },
+    {
+      "match": "^Blue Line$",
+      "network": "VTA",
+      "type": "light_rail"
+    },
+    {
+      "match": "BART Oakland Airport Connector",
+      "type": "other"
+    }
+  ]
+}

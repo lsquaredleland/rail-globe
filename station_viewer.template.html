@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Station Feature Viewer</title>
+<style>
+:root{--bg:#fff;--fg:#1c1c1e;--mut:#6b6b70;--pan:#f4f4f6;--bd:#d8d8de}
+@media(prefers-color-scheme:dark){:root{--bg:#161618;--fg:#eee;--mut:#9a9aa2;--pan:#202024;--bd:#34343a}}
+*{box-sizing:border-box}body{margin:0;font:13px system-ui,sans-serif;background:var(--bg);color:var(--fg);display:flex;height:100vh}
+#side{width:290px;background:var(--pan);border-right:1px solid var(--bd);overflow:auto;padding:12px;flex:none}
+#main{flex:1;position:relative}canvas{width:100%;height:100%;display:block;cursor:grab}
+h3{margin:14px 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
+.tabs button,select{font:inherit;padding:5px 9px;border:1px solid var(--bd);background:var(--bg);color:var(--fg);border-radius:6px;cursor:pointer}
+.tabs button.on{background:var(--fg);color:var(--bg)}
+label.row{display:flex;align-items:center;gap:7px;padding:2px 0;cursor:pointer}
+.sw{width:14px;height:14px;border-radius:3px;flex:none}.n{margin-left:auto;color:var(--mut);font-variant-numeric:tabular-nums}
+#tip{position:absolute;pointer-events:none;background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:8px;max-width:340px;font-size:12px;display:none;box-shadow:0 2px 8px #0003;white-space:pre-wrap;word-break:break-word}
+.mini{font-size:11px;color:var(--mut);margin-top:10px;line-height:1.4}
+@media(max-width:700px){body{flex-direction:column}#side{width:100%;height:40%;border-right:0}}
+</style></head><body>
+<div id="side">
+ <div class="tabs" id="tabs"></div>
+ <h3>Labels</h3>
+ <select id="lab"><option value="name">name</option><option value="ref">ref</option><option value="none">none</option></select>
+ <label class="row" style="margin-top:6px"><input type="checkbox" id="labAll"> label all (not just stations)</label>
+ <h3>Layers <a href="#" id="allOn">all</a> · <a href="#" id="allOff">none</a></h3>
+ <div id="layers"></div>
+ <div class="mini">Drag to pan, wheel to zoom, hover for OSM tags. Counts are for the loaded station.</div>
+</div>
+<div id="main"><canvas id="c"></canvas><div id="tip"></div></div>
+<script>
+const DATA=__DATA__;
+const CATS=[
+ ['rail','Rail track (main)','#3a3a3f','line'],
+ ['subway','Subway track','#d6336c','line'],
+ ['light_rail','Light rail track','#e8590c','line'],
+ ['tram','Tram track','#9c36b5','line'],
+ ['service','Yard / siding / crossover / spur','#999','line'],
+ ['construction','Construction / proposed / disused','#c9a227','line'],
+ ['otherline','Other railway lines','#777','line'],
+ ['station_area','Station area / building','#4dabf7','area'],
+ ['platform','Platforms','#2f9e44','area'],
+ ['yard_area','Yard / depot area','#b08968','area'],
+ ['station','Station nodes','#e03131','pt',7],
+ ['stop','Stop positions / railway=stop','#1971c2','pt',3.5],
+ ['entrance','Entrances','#f08c00','pt',3.5],
+ ['switch','Switches','#868e96','pt',2.5],
+ ['buffer','Buffer stops','#5f3dc4','pt',3],
+ ['crossing','Crossings / signals','#0b7285','pt',3],
+ ['other','Other','#adb5bd','pt',3]];
+function cat(f){
+ const p=f.properties,g=f.geometry.type,r=p.railway,pt=p.public_transport;
+ const poly=g=='MultiPolygon'||g=='Polygon';
+ if(r=='platform'||pt=='platform')return 'platform';
+ if(r=='station'&&g=='Point'||r=='halt'&&g=='Point')return 'station';
+ if(p.building=='train_station'||pt=='station'||r=='station'||r=='halt')return g=='Point'?'station':'station_area';
+ if(r=='yard'||p.landuse=='railway')return poly?'yard_area':(p.service?'service':'otherline');
+ if(r=='stop'||pt=='stop_position')return 'stop';
+ if(r=='subway_entrance'||r=='train_station_entrance'||p.entrance)return 'entrance';
+ if(r=='switch')return 'switch'; if(r=='buffer_stop')return 'buffer';
+ if(r=='railway_crossing'||r=='level_crossing'||r=='signal'||r=='crossing')return 'crossing';
+ if(g=='LineString'){
+  if(['construction','proposed','disused','abandoned','preserved'].includes(r))return 'construction';
+  if(p.service)return 'service';
+  if(['rail','subway','light_rail','tram'].includes(r))return r;
+  return 'otherline';}
+ return poly?'yard_area':'other';
+}
+const cv=document.getElementById('c'),ctx=cv.getContext('2d'),tip=document.getElementById('tip');
+let cur,feats,vis={},view,mx,my;
+const tabs=document.getElementById('tabs');
+Object.keys(DATA).forEach((k,i)=>{const b=document.createElement('button');b.textContent=k;b.onclick=()=>load(k);tabs.append(b)});
+function proj(c){return[(c[0]-view.lon0)*view.k,-(c[1]-view.lat0)*view.k*view.cl]}
+function load(k){cur=k;[...tabs.children].forEach(b=>b.classList.toggle('on',b.textContent==k));
+ feats=DATA[k].features.map(f=>({f,c:cat(f)}));
+ let xs=[],ys=[];feats.forEach(o=>coords(o.f.geometry).forEach(c=>{xs.push(c[0]);ys.push(c[1])}));
+ const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+ const cl=Math.cos((y0+y1)/2*Math.PI/180);
+ view={lon0:(x0+x1)/2,lat0:(y0+y1)/2,cl,k:1,tx:0,ty:0,s:1};
+ const W=cv.clientWidth,H=cv.clientHeight;
+ view.s=Math.min(W/((x1-x0)*cl*1.1),H/((y1-y0)*1.1));view.k=1;view.cl=1;
+ view.proj=c=>[(c[0]-view.lon0)*cl*view.s+W/2+view.tx,-(c[1]-view.lat0)*view.s+H/2+view.ty];
+ view.cx=cl;buildLayers();draw()}
+function coords(g){const c=g.coordinates;if(g.type=='Point')return[c];if(g.type=='LineString')return c;
+ if(g.type=='Polygon')return c.flat();if(g.type=='MultiPolygon')return c.flat(2);if(g.type=='MultiLineString')return c.flat();return[]}
+function buildLayers(){const el=document.getElementById('layers');el.innerHTML='';
+ const cnt={};feats.forEach(o=>cnt[o.c]=(cnt[o.c]||0)+1);
+ CATS.forEach(([id,name,col])=>{if(!cnt[id])return;if(!(id in vis))vis[id]=!['switch','service'].includes(id)||false;
+  if(!(id in vis))vis[id]=true;
+  const l=document.createElement('label');l.className='row';
+  l.innerHTML=`<input type="checkbox" ${vis[id]?'checked':''}><span class="sw" style="background:${col}"></span>${name}<span class="n">${cnt[id]}</span>`;
+  l.querySelector('input').onchange=e=>{vis[id]=e.target.checked;draw()};el.append(l)})}
+function setAll(v){CATS.forEach(c=>vis[c[0]]=v);buildLayers();draw()}
+document.getElementById('allOn').onclick=e=>{e.preventDefault();setAll(true)};
+document.getElementById('allOff').onclick=e=>{e.preventDefault();setAll(false)};
+document.getElementById('lab').onchange=draw;document.getElementById('labAll').onchange=draw;
+function resize(){const d=devicePixelRatio||1;cv.width=cv.clientWidth*d;cv.height=cv.clientHeight*d;ctx.setTransform(d,0,0,d,0,0)}
+function path(rings,close){rings.forEach(r=>{r.forEach((c,i)=>{const[p,q]=view.proj(c);i?ctx.lineTo(p,q):ctx.moveTo(p,q)});if(close)ctx.closePath()})}
+function draw(){if(!feats)return;resize();ctx.clearRect(0,0,cv.clientWidth,cv.clientHeight);
+ const order=['yard_area','station_area','platform','service','construction','otherline','rail','light_rail','tram','subway'];
+ const meta=Object.fromEntries(CATS.map(c=>[c[0],c]));
+ const isDark=matchMedia('(prefers-color-scheme:dark)').matches;
+ [...order,'switch','buffer','crossing','other','stop','entrance','station'].forEach(id=>{
+  if(!vis[id])return;const m=meta[id];
+  feats.filter(o=>o.c==id).forEach(o=>{const g=o.f.geometry;ctx.beginPath();
+   if(m[3]=='area'){const polys=g.type=='MultiPolygon'?g.coordinates:g.type=='Polygon'?[g.coordinates]:[[g.coordinates]];
+    polys.forEach(p=>path(p,true));ctx.fillStyle=m[2]+'55';ctx.strokeStyle=m[2];ctx.lineWidth=1;ctx.fill('evenodd');ctx.stroke()}
+   else if(m[3]=='line'){const ls=g.type=='LineString'?[g.coordinates]:g.type=='MultiLineString'?g.coordinates:[];path(ls,false);
+    ctx.strokeStyle=(id=='rail'&&isDark)?'#bbb':m[2];ctx.lineWidth=id=='service'?1:id=='rail'?2:2.5;ctx.stroke()}
+   else{const[x,y]=view.proj(g.coordinates);ctx.arc(x,y,m[4],0,7);ctx.fillStyle=m[2];ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke()}})});
+ const key=document.getElementById('lab').value;
+ if(key!='none'){ctx.font='11px system-ui';ctx.textBaseline='middle';const all=document.getElementById('labAll').checked;const seen=[];
+  feats.forEach(o=>{const t=o.f.properties[key];if(!t||!vis[o.c])return;
+   if(!all&&!['station','station_area','platform'].includes(o.c))return;
+   const g=o.f.geometry;let c;if(g.type=='Point')c=g.coordinates;else{const cs=coords(g);c=[cs.reduce((a,b)=>a+b[0],0)/cs.length,cs.reduce((a,b)=>a+b[1],0)/cs.length]}
+   const[x,y]=view.proj(c);if(x<0||y<0||x>cv.clientWidth||y>cv.clientHeight)return;
+   if(seen.some(s=>Math.abs(s[0]-x)<ctx.measureText(t).width&&Math.abs(s[1]-y)<12))return;seen.push([x,y]);
+   ctx.lineWidth=3;ctx.strokeStyle=isDark?'#161618':'#fff';ctx.strokeText(t,x+6,y);ctx.fillStyle=isDark?'#eee':'#1c1c1e';ctx.fillText(t,x+6,y)})}}
+// interaction
+let drag=null;
+cv.onmousedown=e=>drag=[e.clientX,e.clientY];
+addEventListener('mouseup',()=>{drag=null;cv.style.cursor='grab'});
+cv.onmousemove=e=>{if(drag){view.tx+=e.clientX-drag[0];view.ty+=e.clientY-drag[1];drag=[e.clientX,e.clientY];cv.style.cursor='grabbing';draw();tip.style.display='none';return}
+ hover(e)};
+cv.onwheel=e=>{e.preventDefault();const f=e.deltaY<0?1.2:1/1.2,r=cv.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top,W=cv.clientWidth,H=cv.clientHeight;
+ view.tx=px-W/2-(px-W/2-view.tx)*f;view.ty=py-H/2-(py-H/2-view.ty)*f;view.s*=f;draw()};
+function dseg(px,py,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],l=dx*dx+dy*dy;let t=l?((px-a[0])*dx+(py-a[1])*dy)/l:0;t=Math.max(0,Math.min(1,t));return Math.hypot(px-a[0]-t*dx,py-a[1]-t*dy)}
+function hover(e){const r=cv.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top;let best=null,bd=8;
+ feats.forEach(o=>{if(!vis[o.c])return;const g=o.f.geometry;let d=1e9;
+  if(g.type=='Point'){const[x,y]=view.proj(g.coordinates);d=Math.hypot(px-x,py-y)}
+  else{const rings=g.type=='LineString'?[g.coordinates]:g.type=='MultiPolygon'?g.coordinates.flat():g.type=='Polygon'?g.coordinates:[];
+   rings.forEach(rg=>{for(let i=1;i<rg.length;i++)d=Math.min(d,dseg(px,py,view.proj(rg[i-1]),view.proj(rg[i])))})}
+  if(o.c=='station_area'||o.c=='yard_area')d+=4; if(d<bd){bd=d;best=o}});
+ if(!best){tip.style.display='none';return}
+ const p=best.f.properties;tip.textContent=`[${best.c}] ${best.f.geometry.type}\n`+Object.entries(p).map(([k,v])=>`${k}=${v}`).join('\n');
+ tip.style.display='block';tip.style.left=Math.min(px+14,cv.clientWidth-350)+'px';tip.style.top=Math.min(py+14,cv.clientHeight-200)+'px'}
+addEventListener('resize',draw);
+load(Object.keys(DATA)[0]);
+</script></body></html>
