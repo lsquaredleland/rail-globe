@@ -1,8 +1,8 @@
-# Rail Atlas spec: Overview
+# Rail Globe spec: Overview
 
 As of 2026-10-11 · Leland
 
-Rail Atlas is a static web map of passenger rail built from OpenStreetMap. Its purpose is comparison: put city or region A next to city or region B, at the same real scale, and see the difference in magnitude.
+Rail Globe is a static web map of passenger rail built from OpenStreetMap. Its purpose is comparison: put city or region A next to city or region B, at the same real scale, and see the difference in magnitude.
 
 ## Goal and direction
 

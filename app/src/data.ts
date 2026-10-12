@@ -43,7 +43,7 @@ export const boundaryUrl = (slug: string) => `${base}${slug}.boundary.geojson`
 export const loadNamedLines = (slug: string) => get<NamedLine[]>(`${slug}/named-lines.json`)
 
 export type Tags = Record<string, string | string[]>
-/** Raw (filtered) OSM tags plus Rail Atlas derived fields for one feature, from the id-sharded side files. */
+/** Raw (filtered) OSM tags plus Rail Globe derived fields for one feature, from the id-sharded side files. */
 export async function loadFeatureTags(slug: string, osmId: string): Promise<Tags | null> {
   const n = Number(osmId.split('/')[1])
   if (!Number.isFinite(n)) return null

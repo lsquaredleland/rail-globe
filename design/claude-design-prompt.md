@@ -1,10 +1,10 @@
-# Prompt for Claude Design: Rail Atlas, first-pass UI
+# Prompt for Claude Design: Rail Globe, first-pass UI
 
 Attach `docs/00-overview.md` and `docs/01-features.md` along with this prompt.
 
 ---
 
-I'm building **Rail Atlas**, a web map of passenger rail built from OpenStreetMap. Its purpose is comparison: put one city or region next to another at the same real scale and see the difference in the size of their rail systems. The attached overview and features docs are the spec. Please design a first-pass UI I can hand to a developer.
+I'm building **Rail Globe**, a web map of passenger rail built from OpenStreetMap. Its purpose is comparison: put one city or region next to another at the same real scale and see the difference in the size of their rail systems. The attached overview and features docs are the spec. Please design a first-pass UI I can hand to a developer.
 
 ## Who uses it
 

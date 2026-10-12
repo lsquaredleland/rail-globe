@@ -7,7 +7,7 @@ from shapely.ops import unary_union
 def lookup(q, thr):
     t = time.time()
     url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(q)}&format=json&limit=1&polygon_geojson=1&polygon_threshold={thr}"
-    r = subprocess.run(["curl", "-s", "-m", "120", "-A", "rail-atlas/0.1", url], capture_output=True, text=True).stdout
+    r = subprocess.run(["curl", "-s", "-m", "120", "-A", "rail-globe/0.1", url], capture_output=True, text=True).stdout
     d = json.loads(r)[0]
     print(f"  {q}: {d['osm_type']} {d['osm_id']} {d['geojson']['type']} {len(r)/1e3:.0f} KB in {time.time()-t:.1f} s", flush=True)
     time.sleep(1.1)

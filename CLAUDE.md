@@ -1,4 +1,4 @@
-# Rail Atlas
+# Rail Globe
 
 A static web map of passenger rail built from OpenStreetMap, made for comparing two regions side by side at the same real scale (e.g. SF Bay Area vs Paris).
 

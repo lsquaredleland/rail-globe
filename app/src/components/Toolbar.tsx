@@ -77,7 +77,7 @@ export function MoreMenu({ c }: { c: Controls }) {
 export function Toolbar({ c }: { c: Controls }) {
   return (
     <div role="toolbar" aria-label="Map controls" className="toolbar">
-      <div className="brand">{Icon.brand}Rail Atlas</div>
+      <div className="brand">{Icon.brand}Rail Globe</div>
       <i className="vsep" />
       <Segmented label="Mode" value="explore" onChange={() => {}} options={[
         { value: 'explore', label: 'Explore' }, { value: 'compare', label: 'Compare', disabled: true, title: 'Compare view arrives in phase 4' }]} />

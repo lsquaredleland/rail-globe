@@ -308,7 +308,7 @@ def main(slug):
                 key=lambda v: -v["km"])
     json.dump(nl, open(side / "named-lines.json", "w"), ensure_ascii=False, separators=(",", ":"))
 
-    # raw (filtered) OSM tags plus Rail Atlas derived fields, sharded by id for the app's Inspect mode
+    # raw (filtered) OSM tags plus Rail Globe derived fields, sharded by id for the app's Inspect mode
     props_by_id = {f["properties"]["osm_id"]: f["properties"] for f in feats}
     shards = defaultdict(dict)
     for oid, pr in props_by_id.items():

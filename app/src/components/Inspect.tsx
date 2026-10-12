@@ -97,7 +97,7 @@ export function InspectPanel({ hit, onClose }: { hit: Hit; onClose(): void }) {
     <PanelFrame onClose={onClose} label="Inspect">
       <div className="eyebrow">Inspect · {hit.kind}</div>
       <h2 className="p-title mono">{d.title}</h2>
-      <div className="p-sub">{d.tags.length} OSM tags kept by the Rail Atlas filter</div>
+      <div className="p-sub">{d.tags.length} OSM tags kept by the Rail Globe filter</div>
       <div className="row gap8">
         {link && <a className="btn outline-btn" href={link} target="_blank" rel="noopener noreferrer">Open in OSM ↗</a>}
         <button type="button" className="btn outline-btn" onClick={copy}>{copied ? Icon.check : null}{copied ? 'Copied' : 'Copy tags'}</button>
@@ -105,7 +105,7 @@ export function InspectPanel({ hit, onClose }: { hit: Hit; onClose(): void }) {
       <Kv rows={d.tags} />
       {d.derived.length > 0 && (
         <section>
-          <h3 className="eyebrow">Derived by Rail Atlas</h3>
+          <h3 className="eyebrow">Derived by Rail Globe</h3>
           <Kv rows={d.derived} />
         </section>
       )}
