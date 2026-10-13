@@ -44,14 +44,24 @@ The docs did not cover these, so they were implemented as the obvious option and
 | Named railway lines | Where no route relation covers a piece of track (Chengdu has almost no train routes), the track's own `name` is used: as the tooltip title, as a map label from z11.5, and as an entry in the Lines list (grouped by rail type, with approximate length from the track pieces divided by `tracks`). Only names with about 1.5 km or more of track are listed |
 | Tooltip tier names | Tier 1 with a high-speed track nearby → "Major HSR station"; other tier 1 and tier 2 → "Major station"; tier 3 → "Minor station" |
 
-## Highlight performance: not tried yet
+## Highlight performance: what was tried, what is left
 
-- Split `lines/<id>.json` so hover reads only a `hl` file (ways, geometry): halves the largest files
-- Put the way ids of a line in the tiles themselves (the pieces already carry `ln`) so hover needs no fetch at z8 and closer
-- Set feature state only for the ways in view (needs a bounding box per way in the side file); matters for the 3,680-way Shanghai-Lhasa train
-- Draw the highlight from an exact-geometry GeoJSON layer instead of feature state (worker cost grows with geometry size)
-- Reduce the layer count (155 layers, 3 regions): fewer draw calls per frame, the frame after a highlight is mostly native GL time
-- Test on the real machine: the headless runs (M4 Max) never reached the reported 500 ms before the fixes above
+Measured 2026-10-13 in headless Chrome (Apple M4 Max, 2x pixel ratio, CPU throttled 6x, dense z14/z15 views). After the fixes in `00-overview.md` the hover highlight starts in 2-3 ms; what remains is MapLibre's first frame after a highlight, about 7 ms (40-50 ms throttled). Four experiments run in parallel, none kept:
+
+- **Pixel ratio 1 and no antialiasing:** first frame unchanged (42-49 ms against 41-52 ms). The frame is CPU-bound (style recalculation, source update), not fill-rate bound. Both cost visible sharpness. A 1.5 cap was not measured cleanly.
+- **Hit test and React cost:** a hit test takes about 0.1 ms throttled, so the pointer path is not the bottleneck. Skipping area-polygon queries below z12 would stop station grounds, buildings and platforms being hoverable there; a 3 px skip can leave a stale hover when tiles load under a still pointer. Not worth it.
+- **Highlight data without a fetch:** a slim `hl/<id>.json` saves 1% (the 3,680-way line is 94.5 KB against 95.1 KB; `ways` and `geom` dominate). A bundle of the 60 longest lines is 619 KB raw, 128 KB gzipped, loaded once per region, and saves one round trip on a cold hover at best. Gzip shrinks the files about 4x, so check the host compresses JSON (vite preview does not). Not worth the extra files yet.
+- **Highlight from GeoJSON at every zoom, no feature state:** no faster (45-54 ms at z15, 26-30 ms at z14); feature state itself is only 1-4 ms. The side-file geometry is simplified to about 100 m, so it was not checked for fit at close zoom, and a line mixing high-speed and other track would lose the per-piece ordering.
+
+Not tried, in the order I would try them:
+
+- Fewer or merged layers (155 layers, 3 regions): the frame cost is mostly per-layer work, and symbol placement runs again after state changes. Lazily add label layers per zoom
+- `crossSourceCollisions: false`, `renderWorldCopies: false`, `maxTileCacheSize`
+- Set feature state only for the ways in view (needs a bounding box per way in the side file); only matters for the 3,680-way Shanghai-Lhasa train
+- One deck.gl `PathLayer` (via `MapLibreOverlay`, interleaved) for only the hovered line. No published highlight benchmark found; needs exact geometry at close zoom. Moving tile rendering to deck's `MVTLayer` was judged a bad fit (own tile loader, loses the MapLibre styling)
+- Delivery on a real host: Brotli or gzip on the side JSON, long immutable cache headers, a service worker for hot tiles and line files
+- MapLibre WebGPU or off-main-thread rendering: not shipped, only on the roadmap
+- Test on the machine where 500 ms was seen: the headless runs never reproduced it, and the fixes above came from reading MapLibre and profiling clicks
 
 ## Parked (not in v1)
 
