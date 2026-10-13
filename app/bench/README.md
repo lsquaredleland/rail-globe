@@ -71,7 +71,7 @@ The app exposes `window.__map` when opened with `?debug` (the script adds it for
 
 ```
 --eval 'window.__map._fadeDuration=150'
---eval 'window.__map.getStyle().layers.filter(l => l.id.startsWith("hl-fs")).forEach(l => window.__map.setLayoutProperty(l.id, "visibility", "none"))'
+--eval 'window.__map.getStyle().layers.filter(l => l.id === "pilot:hl-fs").forEach(l => window.__map.setLayoutProperty(l.id, "visibility", "none"))'
 --eval 'window.__map.setPixelRatio(1)'
 ```
 

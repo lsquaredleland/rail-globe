@@ -237,3 +237,7 @@ Data sits in tiles a zoom before the style draws it (`track_minzoom` and `feat` 
 - The user's own testing was on localhost, probably the dev server on port 5173, which is slower than the production build measured here.
 - First visit with a cold cache and a throttled network.
 - Trackpad pinch input (the bench sends wheel ticks).
+
+### Step 5: high-speed twin layers (2026-10-13)
+
+Dropped the high-speed twins of the construction, construction casing and highlight layers (66 to 62 layers); track and strands keep theirs. Method: production builds before and after, served side by side, same bench, alternating run order. Missed frames: headless 6x 65 to 52; 120 Hz 4x 62 to 56; 1x 4 to 5. All within noise. Screenshots: 21 of 24 views pixel-identical; the rest differ only where open high-speed now draws over high-speed construction dashes.

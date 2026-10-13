@@ -22,6 +22,8 @@ function byType(f: (t: RailType) => number | string, key = 'type', fallback: num
   return out as Expr
 }
 
+/** layers that also have a high-speed twin (`<name>-hs`), see addRailSource */
+const TWINS = new Set(['track', 'strand', 'strand-casing'])
 const rank = byType((t) => (ALL_TYPES.length - ALL_TYPES.indexOf(t)))
 /** Speed colour ramp (km/h, lower bound of each band). Track with no usable maxspeed is drawn pale grey. */
 export const SPEED_BANDS: { min: number; color: string; label: string }[] = [
@@ -159,20 +161,27 @@ export function addRailSource(map: MLMap, source: string) {
     paint: { 'line-color': FILL.platform, 'line-width': 2 } })
 
   const roundJoin = { 'line-cap': 'round', 'line-join': 'round' } as const
-  // High-speed rail is always drawn on top of other rail: every track layer gets a "-hs" twin that is added after all the
-  // others (below only the station symbols). The base layer excludes high-speed, the twin holds only high-speed.
+  // High-speed rail is drawn on top of other rail. Inside a layer a line-sort-key does it (high-speed sorts last). Only the layers
+  // in TWINS also get a "-hs" twin added after all the others (below only the station symbols): the track, because the white
+  // high-speed casing must sit between it and the other rail, and the strands, which the casing and the high-speed track
+  // would otherwise cover. The base layer then excludes high-speed, the twin holds only high-speed.
   const top: LayerSpecification[] = []
-  const trackLayer = (spec: Record<string, unknown>, typeKey = 'type') => {
+  const hsLast = (typeKey: string): Expr => ['case', ['==', get(typeKey), 'high_speed'], 1, 0] as Expr
+  const trackLayer = (name: string, spec: Record<string, unknown>, typeKey = 'type') => {
     const f = spec.filter as Expr | undefined
-    add({ ...spec, filter: f ? ['all', ['!=', get(typeKey), 'high_speed'], f] : ['!=', get(typeKey), 'high_speed'] } as unknown as LayerSpecification)
-    top.push({ ...spec, id: `${spec.id}-hs`, filter: f ? ['all', ['==', get(typeKey), 'high_speed'], f] : ['==', get(typeKey), 'high_speed'] } as unknown as LayerSpecification)
+    const id = L(source, name)
+    if (!TWINS.has(name)) {
+      const layout = spec.layout as Record<string, unknown>
+      add({ ...spec, id, layout: { 'line-sort-key': hsLast(typeKey), ...layout } })
+      return
+    }
+    add({ ...spec, id, filter: f ? ['all', ['!=', get(typeKey), 'high_speed'], f] : ['!=', get(typeKey), 'high_speed'] } as unknown as LayerSpecification)
+    top.push({ ...spec, id: `${id}-hs`, filter: f ? ['all', ['==', get(typeKey), 'high_speed'], f] : ['==', get(typeKey), 'high_speed'] } as unknown as LayerSpecification)
   }
   // highlight layers are added last (after a veil, below), whatever order they are declared in
   const late: LayerSpecification[] = []
   const hlLayer = (spec: Record<string, unknown>) => {
-    const f = spec.filter as Expr | undefined
-    late.push({ ...spec, filter: f ? ['all', ['!=', get('type'), 'high_speed'], f] : ['!=', get('type'), 'high_speed'] } as unknown as LayerSpecification)
-    late.push({ ...spec, id: `${spec.id}-hs`, filter: f ? ['all', ['==', get('type'), 'high_speed'], f] : ['==', get('type'), 'high_speed'] } as unknown as LayerSpecification)
+    late.push({ ...spec, layout: { 'line-sort-key': hsLast('type'), ...(spec.layout as Record<string, unknown>) } } as unknown as LayerSpecification)
   }
   add({ id: L(source, 'yard'), type: 'line', ...src, 'source-layer': 'track', minzoom: 13, filter: ['==', get('type'), 'yard'],
     layout: roundJoin, paint: { 'line-color': TYPE_COLOR.yard, 'line-width': widthExpr() } })
@@ -183,7 +192,7 @@ export function addRailSource(map: MLMap, source: string) {
     layout: roundJoin,
     paint: { 'line-color': '#FFFFFF', 'line-opacity': 0.9, 'line-gap-width': 0,
       'line-width': ['interpolate', ['linear'], ['zoom'], 10, 6, 12, 7.5, 15, 9] } } as LayerSpecification)
-  trackLayer({ id: L(source, 'track'), type: 'line', ...src, 'source-layer': 'track', minzoom: 0,
+  trackLayer('track', { type: 'line', ...src, 'source-layer': 'track', minzoom: 0,
     filter: ['all', ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight']],
     layout: { ...roundJoin, 'line-sort-key': rank },
     paint: { 'line-color': typeColor, 'line-width': widthExpr(), 'line-opacity': 1 } })
@@ -193,9 +202,10 @@ export function addRailSource(map: MLMap, source: string) {
     4, ['+', ['max', 2.6, ['*', byType((t) => TYPE_WIDTH[t][0]), 1.2]], extra],
     10, ['+', ['max', 1.8, ['*', byType((t) => TYPE_WIDTH[t][0]), 1.2]], extra], 12, ['+', ['max', 2.2, ['*', byType((t) => TYPE_WIDTH[t][1]), 1.2]], extra],
     15, ['+', ['max', 3, ['*', byType((t) => TYPE_WIDTH[t][2]), 1.2]], extra]] as Expr
-  trackLayer({ id: L(source, 'construction-casing'), type: 'line', ...src, 'source-layer': 'track', filter: ['has', 'con'],
-    layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-opacity': 0.85, 'line-width': conW(2) } })
-  trackLayer({ id: L(source, 'construction'), type: 'line', ...src, 'source-layer': 'track', filter: ['has', 'con'],
+  trackLayer('construction-casing', { type: 'line', ...src, 'source-layer': 'track', filter: ['has', 'con'],
+    // an explicit sort key wins over hsLast; `rank` already puts high_speed last
+    layout: { 'line-cap': 'butt', 'line-join': 'round', 'line-sort-key': rank }, paint: { 'line-color': '#FFFFFF', 'line-opacity': 0.85, 'line-width': conW(2) } })
+  trackLayer('construction', { type: 'line', ...src, 'source-layer': 'track', filter: ['has', 'con'],
     layout: { 'line-cap': 'butt', 'line-join': 'round', 'line-sort-key': rank },
     paint: { 'line-color': ['match', get('type'), 'other', '#45423C', typeColor], 'line-width': conW(0), 'line-dasharray': [3, 2] } })
 
@@ -203,7 +213,7 @@ export function addRailSource(map: MLMap, source: string) {
   const hlW: Expr = ['interpolate', ['linear'], ['zoom'],
     8, ['+', ['*', byType((t) => TYPE_WIDTH[t][0]), 1.8], 2], 12, ['+', ['*', byType((t) => TYPE_WIDTH[t][1]), 1.8], 2.5],
     15, ['+', ['*', byType((t) => TYPE_WIDTH[t][2]), 1.8], 3]] as Expr
-  // Like the track, the highlight has a high-speed twin drawn above the white high-speed casing (which otherwise hides it).
+  // The highlight layers come after the casing, so no twin is needed; high-speed sorts last within each.
   // z8 and closer: the track pieces flagged with feature state by highlightLine (no tile reload, no copying geometry)
   hlLayer({ id: L(source, 'hl-fs'), type: 'line', ...src, 'source-layer': 'track', minzoom: 8,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
@@ -221,10 +231,10 @@ export function addRailSource(map: MLMap, source: string) {
   const strandW = (extra = 0): Expr => ['interpolate', ['linear'], ['zoom'],
     12, ['+', ['*', byType((t) => TYPE_WIDTH[t][1], 't', TYPE_WIDTH.other[1]), K], extra], 15, ['+', ['*', byType((t) => TYPE_WIDTH[t][2], 't', TYPE_WIDTH.other[2]), K], extra]] as Expr
   const offset: Expr = ['interpolate', ['linear'], ['zoom'], 12, ['*', ['*', U, K], 3.5], 15, ['*', ['*', U, K], 5.5]] as Expr
-  trackLayer({ id: L(source, 'strand-casing'), type: 'line', ...src, 'source-layer': 'lines', minzoom: 12,
+  trackLayer('strand-casing', { type: 'line', ...src, 'source-layer': 'lines', minzoom: 12,
     layout: { ...roundJoin, visibility: 'none' },
     paint: { 'line-color': '#1E1E1C', 'line-opacity': 0.28, 'line-width': strandW(1), 'line-offset': offset } }, 't')
-  trackLayer({ id: L(source, 'strand'), type: 'line', ...src, 'source-layer': 'lines', minzoom: 12,
+  trackLayer('strand', { type: 'line', ...src, 'source-layer': 'lines', minzoom: 12,
     layout: { ...roundJoin, visibility: 'none' },
     paint: { 'line-color': ['coalesce', get('c'), byType((t) => TYPE_COLOR[t], 't', TYPE_COLOR.other)],
       'line-opacity': ['case', ['has', 'c'], 1, 0.6], 'line-width': strandW(), 'line-offset': offset } }, 't')
@@ -347,15 +357,17 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     for (const n of ['lbl1', 'lbl2', 'lbl3', 'lblcon1', 'lblcon2', 'lblcon3']) map.setLayoutProperty(L(slug, n), 'text-field', nameExpr(s.lang, 'n', 'ne'))
     map.setLayoutProperty(L(slug, 'lbl-track'), 'text-field', nameExpr(s.lang, 'n', 'ne'))
     map.setLayoutProperty(L(slug, 'lbl-lines'), 'text-field', nameExpr(s.lang, 'lb', 'lbe'))
-    // paint, layout and filter changes reach a track layer and its high-speed twin together
-    const TWINS = new Set(['track', 'construction', 'construction-casing', 'strand', 'strand-casing', 'hl', 'hl-fs'])
+    // paint, layout and filter changes reach a layer and its high-speed twin (if it has one) together
     const names = (n: string) => (TWINS.has(n) ? [n, `${n}-hs`] : [n])
     const setPaint = (n: string, prop: string, v: unknown) => names(n).forEach((x) => map.setPaintProperty(L(slug, x), prop as never, v as never))
     const setVis = (n: string, v: string) => names(n).forEach((x) => map.setLayoutProperty(L(slug, x), 'visibility', v as never))
-    const setFilt = (n: string, f: Expr | null, typeKey = 'type') => names(n).forEach((x, i) => {
-      const hs: Expr = [i === 0 ? '!=' : '==', get(typeKey), 'high_speed'] as Expr
-      map.setFilter(L(slug, x), (f ? ['all', hs, f] : hs) as Expr)
-    })
+    const setFilt = (n: string, f: Expr | null, typeKey = 'type') => {
+      if (!TWINS.has(n)) { map.setFilter(L(slug, n), f); return }
+      names(n).forEach((x, i) => {
+        const hs: Expr = [i === 0 ? '!=' : '==', get(typeKey), 'high_speed'] as Expr
+        map.setFilter(L(slug, x), (f ? ['all', hs, f] : hs) as Expr)
+      })
+    }
     // proposed track rides on the construction layers (flag `prop`), drawn fainter; each switch shows its own kind
     setVis('construction', vis(s.construction || s.proposed)); setVis('construction-casing', vis(s.construction || s.proposed))
     const conKinds: Expr = ['any', ...(s.construction ? [['all', ['has', 'con'], ['!', ['has', 'prop']]]] : []), ...(s.proposed ? [['has', 'prop']] : [])] as unknown as Expr

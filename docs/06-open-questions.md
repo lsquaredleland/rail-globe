@@ -70,7 +70,7 @@ Listed 2026-10-13, updated the same day after the fast-zoom profile. Numbers: `r
 Done or dropped:
 
 1. **One tile source instead of three.** Done (`00-overview.md`). Missed frames 128 to 76 at 6x.
-2. **Drop the high-speed twin layers.** Being done now (2026-10-13). Every track layer has a `-hs` copy so high-speed draws on top; a different draw order would halve those layers.
+2. **Drop the high-speed twin layers.** Done 2026-10-13 (`00-overview.md`). Twins are kept only for track and strands; construction and the highlight use a sort key. 66 to 62 layers; speed gain within noise, kept as a simplification.
 3. **Lighter tiles (tooltip-only tags to side files).** Tried and dropped: 8.5% smaller `china.pmtiles`, no frame gain. A cheaper variant is to pack those tags into one property.
 
 Open, by measured payoff:
