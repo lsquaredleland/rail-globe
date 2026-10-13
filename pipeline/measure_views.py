@@ -19,7 +19,7 @@ VIEWS = {  # name -> (tile source, lon, lat); Chengdu and the Greater Bay Area a
     "Guangzhou": ("china", 113.27, 23.13),
 }
 SCREENS = {"laptop 1440x900": (1440, 900), "phone 390x844": (390, 844)}
-ZOOMS = [6, 8, 9.5, 10.6, 12, 13, 14]
+ZOOMS = [4, 5, 6, 8, 9.5, 10.6, 12, 13, 14]
 
 
 def world_px(lon, lat, z):

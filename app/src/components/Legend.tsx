@@ -1,32 +1,33 @@
+import { Fragment } from 'react'
 import { TYPE_COLOR, TYPE_LABEL, TYPE_ORDER, TYPE_WIDTH, type RailType } from '../palette'
 import type { LineIndex } from '../data'
 import { INACTIVE, SPEED_BANDS, SPEED_UNKNOWN, type ColorMode } from '../mapStyle'
 import { Icon, LineBadge, PlaneIcon } from './ui'
 
 /** Speed legend samples, fastest band first: each is drawn at the thickness of the rail type that typically runs at that speed. The map itself sets thickness by the track's real type. */
-const SPEED_SAMPLE_TYPE: RailType[] = ['high_speed', 'intercity', 'regional', 'regional', 'metro', 'light_rail']
+const SPEED_SAMPLE_TYPE: RailType[] = ['high_speed', 'high_speed', 'high_speed', 'high_speed', 'intercity', 'regional', 'regional', 'metro', 'light_rail']
 
-function Pill({ color, w, label, off, onClick }: { color: string; w: number; label: string; off: boolean; onClick: () => void }) {
+function Pill({ color, w, label, off, grey, onClick }: { color: string; w: number; label: string; off: boolean; grey?: boolean; onClick: () => void }) {
   return (
-    <button type="button" className={`pill${off ? ' off' : ''}`} aria-pressed={!off} title={off ? `Show ${label}` : `Hide ${label}`} onClick={onClick}>
-      <svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true"><line x1="2" y1="5" x2="20" y2="5" stroke={color} strokeWidth={w} strokeLinecap="round" /></svg>
+    <button type="button" className={`pill${off ? ' off' : ''}${grey ? ' grey' : ''}`} aria-pressed={!off} title={off ? `Show ${label}` : `Hide ${label}`} onClick={onClick}>
+      <svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true"><line x1="2" y1="5" x2="20" y2="5" stroke={grey ? INACTIVE : color} strokeWidth={grey ? Math.min(w, 1.6) : w} strokeLinecap="round" /></svg>
       <span>{label}</span>
     </button>
   )
 }
 
-function Row({ color, w, dash, label, note, dim, off, onClick }: {
-  color: string; w: number; dash?: boolean; label: string; note?: string; dim?: boolean; off?: boolean; onClick?: () => void
+function Row({ color, w, dash, label, note, dim, off, grey, onClick }: {
+  color: string; w: number; dash?: boolean; label: string; note?: string; dim?: boolean; off?: boolean; grey?: boolean; onClick?: () => void
 }) {
   const inner = (
     <>
       <svg width="30" height="10" viewBox="0 0 30 10" aria-hidden="true">
-        <line x1="2" y1="5" x2="28" y2="5" stroke={color} strokeWidth={w} strokeLinecap={dash ? 'butt' : 'round'} strokeDasharray={dash ? `${w * 2} ${w * 1.5}` : undefined} />
+        <line x1="2" y1="5" x2="28" y2="5" stroke={grey ? INACTIVE : color} strokeWidth={grey ? Math.min(w, 1.6) : w} strokeLinecap={dash ? 'butt' : 'round'} strokeDasharray={dash ? `${w * 2} ${w * 1.5}` : undefined} />
       </svg>
       <span className="grow" style={{ textDecoration: off ? 'line-through' : undefined }}>{label}</span>{note && <span className="muted sm">{note}</span>}
     </>
   )
-  const style = { opacity: dim || off ? 0.45 : 1 }
+  const style = { opacity: dim || off ? 0.45 : grey ? 0.7 : 1 }
   return onClick
     ? <button type="button" className="lg-row lg-btn" aria-pressed={!off} title={off ? `Show ${label}` : `Hide ${label}`} style={style} onClick={onClick}>{inner}</button>
     : <div className="lg-row" style={style}>{inner}</div>
@@ -55,24 +56,31 @@ export function Legend({ mode, hsrOnly, open, setOpen, freight, index, compact, 
       </button>
       {open && sp && (
         <div className="lg-body">
-          {SPEED_BANDS.map((b, i) => <Row key={b.min} color={b.color} w={TYPE_WIDTH[SPEED_SAMPLE_TYPE[i]][1]} label={b.label} />)}
-          <Row color={SPEED_UNKNOWN} w={TYPE_WIDTH.other[1]} label="Speed not mapped" />
+          {SPEED_BANDS.map((b, i) => (
+            <Fragment key={b.min}>
+              {/* the two definitions of high-speed rail: a thin rule under the last band of each */}
+              {b.min === 200 && <div className="lg-rule" role="separator"><span><b>250 km/h</b> and up: high-speed rail in China</span></div>}
+              {b.min === 160 && <div className="lg-rule" role="separator"><span><b>200 km/h</b> and up: high-speed rail by the international (UIC) definition</span></div>}
+              <Row color={b.color} w={TYPE_WIDTH[SPEED_SAMPLE_TYPE[i]][1]} label={b.label} grey={hsrOnly && b.min < 250} />
+            </Fragment>
+          ))}
+          <Row color={SPEED_UNKNOWN} w={TYPE_WIDTH.other[1]} label="Speed not mapped" grey={hsrOnly} />
           {hsrOnly && <Row color={INACTIVE} w={1.6} label="Not high-speed (greyed)" />}
-          <span className="muted sm">Colour from the maxspeed tag</span>
+          <span className="muted sm">Colour from the maxspeed tag. "High-speed" on this map follows China's 250 km/h line; 200-249 km/h track is Intercity.</span>
         </div>
       )}
       {open && !op && !sp && (
         <div className="lg-body">
           <div className="pill-head">
-            <span className="muted sm">Click a type to hide or show it</span>
+            <span className="muted sm">{hsrOnly ? 'HSR only is on: other types are greyed' : 'Click a type to hide or show it'}</span>
             <span className="pill-actions">
               <button type="button" className="pill sm" disabled={hidden.length === 0} onClick={onShowAll}>All</button>
               <button type="button" className="pill sm" disabled={TYPE_ORDER.every((t) => hidden.includes(t))} onClick={onHideAll}>None</button>
             </span>
           </div>
           <div className="pills">
-            {TYPE_ORDER.map((t) => <Pill key={t} color={TYPE_COLOR[t]} w={TYPE_WIDTH[t][1]} label={TYPE_LABEL[t]} off={hidden.includes(t)} onClick={() => onToggleType(t)} />)}
-            <Pill color={TYPE_COLOR.freight} w={TYPE_WIDTH.freight[1]} label="Freight" off={!freight} onClick={onToggleFreight} />
+            {TYPE_ORDER.map((t) => <Pill key={t} color={TYPE_COLOR[t]} w={TYPE_WIDTH[t][1]} label={TYPE_LABEL[t]} off={hidden.includes(t)} grey={hsrOnly && t !== 'high_speed'} onClick={() => onToggleType(t)} />)}
+            <Pill color={TYPE_COLOR.freight} w={TYPE_WIDTH.freight[1]} label="Freight" off={!freight} grey={hsrOnly} onClick={onToggleFreight} />
           </div>
           {hsrOnly && <Row color={INACTIVE} w={1.6} label="Not high-speed (greyed)" />}
           <Row color={TYPE_COLOR.yard} w={TYPE_WIDTH.yard[1]} label="Yard, siding" note="z13+" dim />
@@ -85,8 +93,8 @@ export function Legend({ mode, hsrOnly, open, setOpen, freight, index, compact, 
           {groups.map(([t, l]) => (
             <div key={t} className="lg-group">
               <button type="button" className="eyebrow eb-btn" aria-pressed={!hidden.includes(t)} title={hidden.includes(t) ? `Show ${TYPE_LABEL[t]}` : `Hide ${TYPE_LABEL[t]}`}
-                style={{ opacity: hidden.includes(t) ? 0.45 : 1, textDecoration: hidden.includes(t) ? 'line-through' : undefined }} onClick={() => onToggleType(t)}>{TYPE_LABEL[t]} {allCount(t)}</button>
-              <div className="chips" style={{ opacity: hidden.includes(t) ? 0.35 : 1 }}>{l.map(([id, e]) => <LineBadge key={id} e={e} />)}</div>
+                style={{ opacity: hidden.includes(t) ? 0.45 : hsrOnly && t !== 'high_speed' ? 0.5 : 1, textDecoration: hidden.includes(t) ? 'line-through' : undefined }} onClick={() => onToggleType(t)}>{TYPE_LABEL[t]} {allCount(t)}</button>
+              <div className="chips" style={{ opacity: hidden.includes(t) ? 0.35 : hsrOnly && t !== 'high_speed' ? 0.4 : 1 }}>{l.map(([id, e]) => <LineBadge key={id} e={e} />)}</div>
             </div>
           ))}
           <div className="lg-note"><svg width="30" height="10" aria-hidden="true"><line x1="2" y1="5" x2="28" y2="5" stroke={TYPE_COLOR.high_speed} strokeOpacity="0.6" strokeWidth={TYPE_WIDTH.high_speed[1]} strokeLinecap="round" /></svg>

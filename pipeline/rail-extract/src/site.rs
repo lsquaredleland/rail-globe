@@ -2,7 +2,7 @@
 //! region, from the cut's files in data/<slug>/ (was stations.py, con_stations.py and build_tiles.py). Writes the same files.
 
 use crate::pyjson::{self, COMPACT, SPACED};
-use crate::{construction, stations, tiles};
+use crate::{construction, stations, stats, tiles};
 use rayon::prelude::*;
 use serde_json::{Map, Value};
 use std::fs;
@@ -111,6 +111,9 @@ pub fn build(slug: &str, paths: &Paths, tiles_on: bool) -> Vec<String> {
     write_lines(&dir.join("stations.geojsonl"), &st.stations);
     write_lines(&dir.join("complexes.geojsonl"), &st.complexes);
     lap(&mut log, &mut t, format!("under construction: {con}"));
+
+    let summary = stats::run(slug, &inp, &st.stations, &paths.regions, &paths.out);
+    lap(&mut log, &mut t, format!("region statistics: {summary}"));
 
     let prep = tiles::run(slug, &inp, &st.stations, &st.complexes, &st.route_order, &dir, &paths.out, &paths.regions, tiles_on);
     lap(&mut log, &mut t, "tile input and side files written".to_string());

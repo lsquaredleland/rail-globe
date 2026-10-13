@@ -83,3 +83,21 @@ export async function loadFeatureTags(slug: string, osmId: string): Promise<Tags
   const shard = await get<Record<string, Tags>>(`${slug}/tags/${n % 256}.json`)
   return shard[osmId] ?? null
 }
+
+/** Rail totals for a region and the areas inside it (pipeline/rail-extract/src/stats.rs). Length is track km: every track counts,
+ *  so double track is about twice the route length. */
+export interface StatsArea {
+  slug: string; name: string; local: string | null; bbox: [number, number, number, number]
+  km: Record<string, { open: number; con: number }>
+  lines: Record<string, number>
+  stations: Record<string, number>
+}
+const statsCache = new Map<string, Promise<StatsArea[]>>()
+export function loadStats(slug: string): Promise<StatsArea[]> {
+  let p = statsCache.get(slug)
+  if (!p) {
+    p = fetch(`${base}${slug}/stats.json`).then((r) => (r.ok ? r.json() : { areas: [] })).then((j: { areas: StatsArea[] }) => j.areas).catch(() => [])
+    statsCache.set(slug, p)
+  }
+  return p
+}

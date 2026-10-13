@@ -1,8 +1,12 @@
 import type { Hit } from '../MapView'
 import { railwayOf, type LineIndex, type Railways } from '../data'
+import { speedBand } from '../mapStyle'
 import { AREA_LABEL, areaSize, electrification, gauge, km, lineBreakdown, maxSpeed, railTypeLabel, SERVICE_LABEL, tierLabel, UNKNOWN } from '../format'
 import { TYPE_LABEL } from '../palette'
 import { LineBadge, namePair, shortName, shortNameEn, useLang } from './ui'
+
+/** zoomed-out tiles keep a speed band, not the tag: "300-349 km/h", "400+ km/h", "under 80 km/h" */
+const bandSpeed = (kmh: number) => { const b = speedBand(kmh); return b.min === 0 ? 'under 80 km/h' : `${b.label}${b.label.includes('km/h') ? '' : ' km/h'}` }
 
 const Row = ({ k, v }: { k: string; v: string }) => (
   <div className="tt-row"><span className="k">{k}</span><span className={v === UNKNOWN ? 'v dim' : 'v'}>{v}</span></div>
@@ -91,7 +95,9 @@ export function TooltipBody({ hit, index, railways, touch, onMore, units = 'km' 
       {names.length > 0 && trackName && trackName !== title && <div className="tt-row"><span className="k">Track name</span><span className="v">{trackName}</span></div>}
       {/* zoomed out, track comes from the merged overview, which has no per-piece tags */}
       {p.id != null && <Row k="Electrified" v={electrification(p.el as string, p.v as string, p.fq as string)} />}
+      {/* the exact tag from z8; zoomed out only the speed band is in the tiles */}
       {p.id != null && !isYard && <Row k="Max speed" v={maxSpeed(p.ms as string)} />}
+      {p.id == null && !isYard && p.kmh != null && <Row k="Max speed" v={bandSpeed(Number(p.kmh))} />}
       {p.id != null && <Row k="Gauge" v={gauge(p.g as string)} />}
     </>
   )

@@ -21,7 +21,10 @@ use std::process::{Child, Command};
 const TYPE_ORDER: [&str; 8] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "other"];
 // Zoomed out (tile zooms 0..OVERVIEW_MAXZOOM) the track layer holds a merged overview instead of every piece (docs/00-overview.md)
 const OVERVIEW_MAXZOOM: i64 = 7;
-const SPEED_BAND_MINS: [i64; 6] = [250, 200, 160, 120, 80, 0]; // the speed colour bands of app/src/mapStyle.ts
+const SKETCH_MINZOOM: i64 = 4; // the metro sketch (type only) is drawn from here to the zoom before the metro overview starts
+const CITY_RADIUS_KM: f64 = 20.0; // stations this close are one city dot
+const CITY_MIN_STATIONS: usize = 3;
+const SPEED_BAND_MINS: [i64; 9] = [400, 350, 300, 250, 200, 160, 120, 80, 0]; // the speed colour bands of app/src/mapStyle.ts
 const HL_SIMPLIFY: f64 = 0.001; // degrees, about 100 m: under a pixel at z7
 const NAME_SHARDS: u32 = 256;
 const CSS_NAMES: [&str; 32] = ["red", "blue", "green", "yellow", "orange", "purple", "pink", "brown", "black", "grey", "gray", "darkblue", "skyblue",
@@ -74,7 +77,7 @@ fn coords(g: &Value) -> Vec<(f64, f64)> {
     g["coordinates"].as_array().into_iter().flatten().filter_map(|c| Some((c[0].as_f64()?, c[1].as_f64()?))).collect()
 }
 
-fn haversine_len(c: &[(f64, f64)]) -> f64 {
+pub(crate) fn haversine_len(c: &[(f64, f64)]) -> f64 {
     c.windows(2)
         .map(|w| {
             let ((x1, y1), (x2, y2)) = (w[0], w[1]);
@@ -225,6 +228,75 @@ pub struct Prepared {
     pub summary: String,
 }
 
+/// One dot per city with a metro or tram system: open stations of those types, grouped greedily (densest first) within
+/// CITY_RADIUS_KM; groups of fewer than CITY_MIN_STATIONS are dropped. Properties: m / l = metro / light-rail stations, n = all.
+fn city_dots(complexes: &[Value], cx_types: &FxHashMap<String, BTreeSet<String>>) -> String {
+    struct P { x: f64, y: f64, m: bool, l: bool }
+    let mut pts: Vec<P> = Vec::new();
+    for c in complexes {
+        let p = &c["properties"];
+        if p["construction"].as_bool() == Some(true) {
+            continue;
+        }
+        let Some(ty) = cx_types.get(p["id"].as_str().unwrap_or("")) else { continue };
+        let (m, l) = (ty.contains("metro"), ty.contains("light_rail"));
+        let xy = &c["geometry"]["coordinates"];
+        if let (true, Some(x), Some(y)) = (m || l, xy[0].as_f64(), xy[1].as_f64()) {
+            pts.push(P { x, y, m, l });
+        }
+    }
+    let km = |a: &P, b: &P| {
+        let dy = (a.y - b.y) * 111.2;
+        let dx = (a.x - b.x) * 111.2 * ((a.y + b.y) / 2.0).to_radians().cos();
+        (dx * dx + dy * dy).sqrt()
+    };
+    // grid of 0.2 degrees: neighbours are in the surrounding 5 x 5 cells
+    let cell = |v: f64| (v / 0.2).floor() as i32;
+    let mut grid: FxHashMap<(i32, i32), Vec<usize>> = FxHashMap::default();
+    for (i, p) in pts.iter().enumerate() {
+        grid.entry((cell(p.x), cell(p.y))).or_default().push(i);
+    }
+    let near = |i: usize| -> Vec<usize> {
+        let (cx, cy) = (cell(pts[i].x), cell(pts[i].y));
+        let mut out = Vec::new();
+        for gx in cx - 2..=cx + 2 {
+            for gy in cy - 2..=cy + 2 {
+                for &j in grid.get(&(gx, gy)).into_iter().flatten() {
+                    if km(&pts[i], &pts[j]) <= CITY_RADIUS_KM {
+                        out.push(j);
+                    }
+                }
+            }
+        }
+        out
+    };
+    let nbrs: Vec<Vec<usize>> = (0..pts.len()).map(near).collect();
+    let mut order: Vec<usize> = (0..pts.len()).collect();
+    order.sort_by_key(|&i| (std::cmp::Reverse(nbrs[i].len()), i));
+    let mut taken = vec![false; pts.len()];
+    let mut out = String::new();
+    for i in order {
+        if taken[i] {
+            continue;
+        }
+        let members: Vec<usize> = nbrs[i].iter().copied().filter(|&j| !taken[j]).collect();
+        for &j in &members {
+            taken[j] = true;
+        }
+        if members.len() < CITY_MIN_STATIONS {
+            continue;
+        }
+        let n = members.len() as f64;
+        let (x, y) = (members.iter().map(|&j| pts[j].x).sum::<f64>() / n, members.iter().map(|&j| pts[j].y).sum::<f64>() / n);
+        let mut pr = Map::new();
+        pr.insert("m".into(), json!(members.iter().filter(|&&j| pts[j].m).count()));
+        pr.insert("l".into(), json!(members.iter().filter(|&&j| pts[j].l).count()));
+        pr.insert("n".into(), json!(members.len()));
+        feat(&mut out, &pr, &format!("{{\"type\":\"Point\",\"coordinates\":[{:.5},{:.5}]}}", x, y), Some(2), Some(7));
+    }
+    out
+}
+
 /// Writes tippecanoe's input and starts it (unless `tiles` is false), then writes the side files. `stations` and `complexes`
 /// are the station model's features, construction stations appended.
 pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], route_order: &Map<String, Value>, data: &Path, out: &Path,
@@ -247,7 +319,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
 
     // ------------------------------------------------------------ track + strands
     let (mut track, mut strands, mut areas, mut buildings, mut plats) = (String::new(), String::new(), String::new(), String::new(), String::new());
-    let mut overview: Vec<(String, Map<String, Value>, &str, i64)> = Vec::new(); // (sort key, props, geometry, minzoom)
+    let mut overview: Vec<(String, Map<String, Value>, &str, i64, i64)> = Vec::new(); // (sort key, props, geometry, minzoom, maxzoom)
     let mut line_ways: FxHashMap<i64, Vec<String>> = FxHashMap::default();
     let mut name_ways: Vec<(String, Vec<String>, String)> = Vec::new(); // (name, ids, type), first-seen order
     let mut name_ix: FxHashMap<String, usize> = FxHashMap::default();
@@ -377,7 +449,13 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
                         ov.insert("nk".into(), json!(nk_of[n]));
                     }
                 }
-                overview.push((pyjson::sorted_key(&Value::Object(ov.clone())), ov, fe.graw.as_str(), mz));
+                // a sketch of the metro network for z4-6, with no attributes but the type, so it merges into a few long lines
+                if t == "metro" && !con {
+                    let mut sk = Map::new();
+                    sk.insert("type".into(), json!("metro"));
+                    overview.push((pyjson::sorted_key(&Value::Object(sk.clone())), sk, fe.graw.as_str(), SKETCH_MINZOOM, mz - 1));
+                }
+                overview.push((pyjson::sorted_key(&Value::Object(ov.clone())), ov, fe.graw.as_str(), mz, OVERVIEW_MAXZOOM));
             }
             if !lids.is_empty() && !con && t != "yard" {
                 for (i, l) in lids.iter().enumerate() {
@@ -587,14 +665,17 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
         feat(&mut cx_rows, &m, &pyjson::to_string(&c["geometry"], COMPACT), Some(minz), None);
     }
 
+    // ------------------------------------------------------------ city dots: where metro and tram systems are, visible from far out
+    let cities_text = city_dots(complexes, &cx_types);
+
     // ------------------------------------------------------------ tippecanoe: every layer in one run, the overview coalesced
     overview.sort_by(|a, b| a.0.cmp(&b.0));
     let mut ov_text = String::new();
-    for (_, props, geom, mz) in &overview {
-        feat(&mut ov_text, props, geom, Some(*mz), Some(OVERVIEW_MAXZOOM));
+    for (_, props, geom, mz, xz) in &overview {
+        feat(&mut ov_text, props, geom, Some(*mz), Some(*xz));
     }
-    let layers: [(&str, &String); 10] = [("track", &ov_text), ("track", &track), ("lines", &strands), ("areas", &areas), ("buildings", &buildings),
-        ("platforms", &plats), ("stations", &st_rows), ("complexes", &cx_rows), ("airports", &airports), ("airport_pts", &airport_pts)];
+    let layers: [(&str, &String); 11] = [("track", &ov_text), ("track", &track), ("lines", &strands), ("areas", &areas), ("buildings", &buildings),
+        ("platforms", &plats), ("stations", &st_rows), ("complexes", &cx_rows), ("airports", &airports), ("airport_pts", &airport_pts), ("cities", &cities_text)];
     let mut args: Vec<String> = Vec::new();
     for (k, (name, text)) in layers.iter().enumerate() {
         let file = tmp.join(if k == 0 { "track_overview.geojsonl".to_string() } else { format!("{name}.geojsonl") });

@@ -1,4 +1,5 @@
 {
+  "stat_name": "Paris region",
   "_comment": "Hand-written per-region rules (docs/01-features.md, rail types). First matching override wins.",
   "china": false,
   "commuter_networks": [

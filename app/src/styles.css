@@ -174,3 +174,18 @@ section { display: flex; flex-direction: column; gap: 8px; }
 .back { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; margin: 0 0 8px -4px; padding: 4px 8px 4px 4px; border: 0; border-radius: 6px; background: transparent; color: var(--ink2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .back:hover { background: var(--fill); }
 .line-row.static:hover { background: transparent; }
+
+/* legend: HSR only greys the other rail types; the speed list marks where high-speed starts */
+.pill.grey { color: var(--ink2); }
+.pill.grey span { opacity: 0.75; }
+.lg-rule { display: flex; align-items: center; gap: 8px; margin: 2px 0; font-size: 11px; line-height: 1.3; color: var(--ink2); }
+.lg-rule::before { content: ''; flex: 0 0 30px; border-top: 1px solid #A8A59D; }
+.lg-rule b { color: var(--ink); font-weight: 600; }
+
+/* region card: rail totals for the area under the view centre */
+.region-card { position: absolute; z-index: 4; left: 16px; top: 76px; width: 236px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: var(--white); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); font-size: 13px; }
+.rc-total { line-height: 1.3; }
+.rc-rows { display: flex; flex-direction: column; gap: 3px; }
+.rc-row { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+.rc-row i { width: 10px; height: 4px; border-radius: 2px; flex: none; }
+.rc-foot { line-height: 1.4; }

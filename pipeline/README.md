@@ -19,6 +19,7 @@ rail-extract/target/release/rail-extract build sf-bay-area paris china
 #   China: 11.9 s before tippecanoe (station model 6.4 s), tippecanoe 28.5 s
 rail-extract/target/release/rail-extract build greater-bay-area chengdu cn-beijing --no-tiles
 #   side files only: the app draws these regions from China's tiles (0.5 s for all three)
+#   also writes ../app/public/data/<slug>/stats.json (region card); areas inside a region: "stat_areas" in config/<slug>.json
 #   or: rail-extract cut <slugs> --build   (cut, then build straight away; --no-tiles applies to every slug)
 python3 check.py                                 # phase 2 "Done when": answer lists in answers/
 python3 measure_views.py                         # compressed tile bytes per view vs the 600 KB budget

@@ -10,6 +10,7 @@ import { Legend } from './components/Legend'
 import { TooltipBody } from './components/Tooltip'
 import { LinePanel, LinesList, StationPanel } from './components/Panels'
 import { Icon, LangContext, Segmented, Toggle, type Lang } from './components/ui'
+import { RegionCard } from './components/RegionCard'
 import { InspectPanel, InspectTooltipBody } from './components/Inspect'
 
 type Selected = { kind: 'station'; slug: string; id: string } | { kind: 'line'; slug: string; id: number } | { kind: 'lines' } | { kind: 'inspect'; hit: Hit } | null
@@ -57,6 +58,7 @@ export default function App() {
   const [listHoverName, setListHoverName] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const view = useRef<View | null>(init.view)
+  const [viewNow, setViewNow] = useState<View>(() => init.view ?? { center: init.region.center, zoom: init.region.zoom })
   const map = useRef<MapHandle>(null)
   const wrap = useRef<HTMLDivElement>(null)
 
@@ -69,7 +71,10 @@ export default function App() {
     loadNamedLines(region.slug).then((n) => setNamed((p) => (p[region.slug] ? p : { ...p, [region.slug]: n }))).catch(() => {})
   }, [region.slug])
 
-  const mapState = useMemo<MapState>(() => ({ mode, construction, proposed, freight, hidden, hsrOnly, lang }), [mode, construction, proposed, freight, hidden, hsrOnly, lang])
+  // a clicked line (or railway) dims all the others; hovering does not
+  const focusLine = selected?.kind === 'line' ? selected.id : null
+  const focusName = selected?.kind === 'line' ? null : selTrackName
+  const mapState = useMemo<MapState>(() => ({ mode, construction, proposed, freight, hidden, hsrOnly, lang, focusLine, focusName }), [mode, construction, proposed, freight, hidden, hsrOnly, lang, focusLine, focusName])
   const sync = useCallback(() => writeHash({ region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, inspect, view: view.current }), [region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, inspect])
   useEffect(sync, [sync])
 
@@ -175,7 +180,7 @@ export default function App() {
     <div className={`app${compact ? ' compact' : ''}`} ref={wrap}>
       <MapView ref={map} state={mapState} units={units} initial={init.view ?? { center: region.center, zoom: compact ? region.zoomPhone : region.zoom }}
         highlightSlug={hlLine != null || hlName != null ? hlSlug : null} selectedLine={hlLine} selectedTrackName={hlName} selectedStation={selPt} touch={touch}
-        onHover={onHover} onClick={onClick} onMoveEnd={(v) => { view.current = v; sync() }} />
+        onHover={onHover} onClick={onClick} onMoveEnd={(v) => { view.current = v; setViewNow(v); sync() }} />
 
       {!compact && <Toolbar c={controls} />}
       {compact && (
@@ -190,6 +195,7 @@ export default function App() {
         </>
       )}
 
+      {!compact && <RegionCard view={viewNow} units={units} />}
       {!compact && !selected && <Legend mode={mode} hsrOnly={hsrOnly} open={legendOpen} setOpen={setLegendOpen} freight={freight} index={idx} {...legendProps} />}
       {!compact && (
         <div className="zoom" role="group" aria-label="Zoom">

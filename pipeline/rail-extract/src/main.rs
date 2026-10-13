@@ -28,6 +28,7 @@ mod region;
 mod rules;
 mod site;
 mod stations;
+mod stats;
 mod tiles;
 
 use rayon::prelude::*;

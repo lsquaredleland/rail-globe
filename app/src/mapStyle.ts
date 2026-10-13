@@ -5,7 +5,9 @@ import { SOURCES, tilesOf } from './regions'
 import { boundaryUrl, loadLineHighlight, loadNameHighlight, pmtilesUrl, type Highlight } from './data'
 
 export type ColorMode = 'type' | 'operator' | 'speed'
-export interface MapState { mode: ColorMode; construction: boolean; proposed: boolean; freight: boolean; hidden: string[]; hsrOnly: boolean; lang: 'local' | 'en' }
+export interface MapState { mode: ColorMode; construction: boolean; proposed: boolean; freight: boolean; hidden: string[]; hsrOnly: boolean; lang: 'local' | 'en'
+  /** a clicked line (or named railway): every other line is drawn faint */
+  focusLine: number | null; focusName: string | null }
 
 const OFM = 'https://tiles.openfreemap.org/planet'
 export const ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
@@ -25,16 +27,21 @@ function byType(f: (t: RailType) => number | string, key = 'type', fallback: num
 const rank = byType((t) => (ALL_TYPES.length - ALL_TYPES.indexOf(t)))
 /** Speed colour ramp (km/h, lower bound of each band). Track with no usable maxspeed is drawn pale grey. */
 export const SPEED_BANDS: { min: number; color: string; label: string }[] = [
-  { min: 250, color: '#B3123A', label: '250+ km/h' },
+  { min: 400, color: '#4A0D2A', label: '400+ km/h' },
+  { min: 350, color: '#80102E', label: '350-399' },
+  { min: 300, color: '#B3123A', label: '300-349' },
+  { min: 250, color: '#D81B60', label: '250-299' },
   { min: 200, color: '#E8590C', label: '200-249' },
   { min: 160, color: '#E0A100', label: '160-199' },
   { min: 120, color: '#6FA33B', label: '120-159' },
   { min: 80, color: '#2F7FA8', label: '80-119' },
   { min: 0, color: '#7A6FA8', label: 'under 80' },
 ]
+/** the band a speed (or an overview band's lower bound) falls in */
+export const speedBand = (kmh: number) => SPEED_BANDS.find((b) => kmh >= b.min) ?? SPEED_BANDS[SPEED_BANDS.length - 1]
 export const SPEED_UNKNOWN = '#BDB9AE'
 const speedColor: Expr = ['case', ['has', 'kmh'],
-  ['step', get('kmh'), SPEED_BANDS[5].color, 80, SPEED_BANDS[4].color, 120, SPEED_BANDS[3].color, 160, SPEED_BANDS[2].color, 200, SPEED_BANDS[1].color, 250, SPEED_BANDS[0].color],
+  ['step', get('kmh'), SPEED_BANDS[SPEED_BANDS.length - 1].color, ...[...SPEED_BANDS].reverse().slice(1).flatMap((b) => [b.min, b.color])],
   SPEED_UNKNOWN] as Expr
 /** Grey-out mode has one definition of "active": high-speed track, and the stations that high-speed rail serves.
  *  Track (open or under construction), track names and stations all test these two expressions, so they cannot drift apart. */
@@ -177,15 +184,16 @@ export function addRegion(map: MLMap, slug: string) {
     layout: { ...roundJoin, 'line-sort-key': rank },
     paint: { 'line-color': typeColor, 'line-width': widthExpr(), 'line-opacity': 1 } })
 
-  // under construction: drawn above the track on a white casing so the dashes read, never thinner than 1.8 px
+  // under construction: drawn above the track on a white casing so the dashes read, never thinner than 2.6 px zoomed out (1.8 from z10) and with long dashes so simplified overview geometry keeps them
   const conW = (extra: number): Expr => ['interpolate', ['linear'], ['zoom'],
+    4, ['+', ['max', 2.6, ['*', byType((t) => TYPE_WIDTH[t][0]), 1.2]], extra],
     10, ['+', ['max', 1.8, ['*', byType((t) => TYPE_WIDTH[t][0]), 1.2]], extra], 12, ['+', ['max', 2.2, ['*', byType((t) => TYPE_WIDTH[t][1]), 1.2]], extra],
     15, ['+', ['max', 3, ['*', byType((t) => TYPE_WIDTH[t][2]), 1.2]], extra]] as Expr
   trackLayer({ id: L(slug, 'construction-casing'), type: 'line', ...src, 'source-layer': 'track', filter: ['has', 'con'],
     layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-opacity': 0.85, 'line-width': conW(2) } })
   trackLayer({ id: L(slug, 'construction'), type: 'line', ...src, 'source-layer': 'track', filter: ['has', 'con'],
     layout: { 'line-cap': 'butt', 'line-join': 'round', 'line-sort-key': rank },
-    paint: { 'line-color': ['match', get('type'), 'other', '#45423C', typeColor], 'line-width': conW(0), 'line-dasharray': [2, 1.5] } })
+    paint: { 'line-color': ['match', get('type'), 'other', '#45423C', typeColor], 'line-width': conW(0), 'line-dasharray': [3, 2] } })
 
   // highlight for the hovered or selected line: the same line drawn wider in its own colour, no outline
   const hlW: Expr = ['interpolate', ['linear'], ['zoom'],
@@ -254,6 +262,14 @@ export function addRegion(map: MLMap, slug: string) {
       'text-anchor': 'top', 'text-offset': [0, 0.9], 'text-letter-spacing': 0.06, 'text-padding': 4, 'text-allow-overlap': true, 'text-ignore-placement': true,
       'symbol-sort-key': 0 },
     paint: { 'text-color': '#4A463D', 'text-halo-color': FILL.land, 'text-halo-width': 1.8 } })
+
+  // cities with a metro or tram system: one dot each, from far out (z2) until the stations themselves show (z8)
+  const dotSize: Expr = ['step', get('n'), 0.85, 10, 1, 30, 1.3] as Expr
+  add({ id: L(slug, 'cities'), type: 'circle', ...src, 'source-layer': 'cities', maxzoom: 8,
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 2, ['*', 1.8, dotSize], 4, ['*', 2.8, dotSize], 7, ['*', 4.4, dotSize]],
+      'circle-color': ['case', ['>', get('m'), 0], TYPE_COLOR.metro, TYPE_COLOR.light_rail], 'circle-stroke-width': 1.2, 'circle-stroke-color': '#FFFFFF',
+      'circle-opacity': 0.95 },
+    layout: { 'circle-sort-key': get('n') } as never })
 
   // stations
   const circle = (name: string, tier: number, minzoom: number, r: [number, number, number], stroke: number, ring: Expr | string): void =>
@@ -365,11 +381,20 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     // proposed track rides on the construction layers (flag `prop`), drawn fainter; each switch shows its own kind
     setVis('construction', vis(s.construction || s.proposed)); setVis('construction-casing', vis(s.construction || s.proposed))
     const conKinds: Expr = ['any', ...(s.construction ? [['all', ['has', 'con'], ['!', ['has', 'prop']]]] : []), ...(s.proposed ? [['has', 'prop']] : [])] as unknown as Expr
-    setPaint('construction', 'line-opacity', ['case', ['has', 'prop'], 0.5, 1])
-    setPaint('construction-casing', 'line-opacity', ['case', ['has', 'prop'], 0.45, 0.85])
     setVis('strand', vis(operator)); setVis('strand-casing', vis(operator))
     const has = ['has', 'oc'] as Expr
-    const tun: Expr = ['step', ['zoom'], 1, 13, ['case', ['has', 'tun'], 0.45, 1]]
+    // a clicked line keeps full strength; everything else is drawn faint. zoom may only be the input of a top-level step, so the
+    // factor is multiplied into each branch instead of wrapping the whole expression
+    const focus = s.focusLine != null || s.focusName != null
+    const DIM = 0.2
+    const idStr = String(s.focusLine)
+    const trackMatch: Expr = (s.focusLine != null
+      ? ['in', `,${idStr},`, ['concat', ',', ['coalesce', get('ln'), ''], ',']]
+      : ['==', get('n'), s.focusName ?? '']) as Expr
+    const strandMatch: Expr = (s.focusLine != null ? ['==', ['to-string', get('lid')], idStr] : ['==', 1, 0]) as Expr
+    const f = (m: Expr): Expr => (focus ? (['case', m, 1, DIM] as Expr) : (1 as unknown as Expr))
+    const mul = (e: Expr | number, m: Expr): Expr => (focus ? (['*', e, f(m)] as Expr) : (e as Expr))
+    const tun: Expr = ['step', ['zoom'], mul(1, trackMatch), 13, mul(['case', ['has', 'tun'], 0.45, 1] as Expr, trackMatch)]
     // each colour mode sets its own colour and width; "HSR only" then greys and thins everything that is not high-speed, in any mode
     const greyOut = s.hsrOnly
     const grey = (c: Expr, active: Expr = activeTrack): Expr => (greyOut ? (['case', active, c, INACTIVE] as Expr) : c)
@@ -380,7 +405,7 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
       // below z12 each track takes one colour; from z12 tracks with mapped lines give way to the strands
       color = ['coalesce', get('oc'), typeColor] as Expr
       width = widthExpr(thin())
-      opacity = ['step', ['zoom'], ['case', has, 1, 0.6], 12, ['case', ['has', 'nl'], 0, 0.6]] as Expr
+      opacity = ['step', ['zoom'], mul(['case', has, 1, 0.6] as Expr, trackMatch), 12, mul(['case', ['has', 'nl'], 0, 0.6] as Expr, trackMatch)] as Expr
     } else if (s.mode === 'speed') {
       color = speedColor
       width = widthExpr(thin())
@@ -388,6 +413,9 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
       color = typeColor
       width = widthExpr(thin())
     }
+    setPaint('construction', 'line-opacity', mul(['case', ['has', 'prop'], 0.5, 1] as Expr, trackMatch))
+    setPaint('construction-casing', 'line-opacity', mul(['case', ['has', 'prop'], 0.45, 0.85] as Expr, trackMatch))
+    setPaint('strand', 'line-opacity', mul(['case', ['has', 'c'], 1, 0.6] as Expr, strandMatch))
     setPaint('track', 'line-color', grey(color))
     setPaint('track', 'line-width', width)
     setPaint('track', 'line-opacity', opacity)
@@ -396,13 +424,17 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     // under-construction track follows the same colour rule as open track
     setPaint('construction', 'line-color', grey(s.mode === 'speed' ? speedColor : (['match', get('type'), 'other', '#45423C', typeColor] as Expr)))
     setPaint('strand', 'line-color', grey(['coalesce', get('c'), byType((t) => TYPE_COLOR[t], 't', TYPE_COLOR.other)] as Expr, strandActive))
-    setPaint('strand-casing', 'line-opacity', greyOut ? (['case', strandActive, 0.28, 0] as Expr) : 0.28)
+    setPaint('strand-casing', 'line-opacity', mul(greyOut ? (['case', strandActive, 0.28, 0] as Expr) : 0.28, strandMatch))
     const hiddenT = s.hidden.length > 0
     const notHiddenT = (key: string): Expr[] => (hiddenT ? [['!', ['in', get(key), ['literal', s.hidden]]] as Expr] : [])
     setFilt('track', ['all', ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight'], ...notHiddenT('type')] as Expr)
     setFilt('construction', ['all', conKinds, ...notHiddenT('type')] as Expr)
     setFilt('construction-casing', ['all', conKinds, ...notHiddenT('type')] as Expr)
     map.setLayoutProperty(L(slug, 'casing'), 'visibility', vis(!s.hidden.includes('high_speed')))
+    // city dots: a city shows while one of its systems (metro, tram) is not hidden; "HSR only" has no metro or tram to show
+    const cityKinds: Expr[] = [...(s.hidden.includes('metro') ? [] : [['>', get('m'), 0]]), ...(s.hidden.includes('light_rail') ? [] : [['>', get('l'), 0]])] as Expr[]
+    map.setFilter(L(slug, 'cities'), cityKinds.length ? (['any', ...cityKinds] as Expr) : (['==', 1, 0] as Expr))
+    map.setLayoutProperty(L(slug, 'cities'), 'visibility', vis(!greyOut))
     // a station disappears when every rail type that serves it is hidden (stations with no known type stay)
     const ty: Expr = ['coalesce', get('ty'), ''] as Expr
     const served: Expr[] = hiddenT
