@@ -19,7 +19,8 @@ rail-extract/target/release/rail-extract build sf-bay-area paris china
 #   China: 11.9 s before tippecanoe (station model 6.4 s), tippecanoe 28.5 s
 rail-extract/target/release/rail-extract build greater-bay-area chengdu cn-beijing --no-tiles
 #   side files only: the app draws these regions from China's tiles (0.5 s for all three)
-#   also writes ../app/public/data/<slug>/stats.json (region card); areas inside a region: "stat_areas" in config/<slug>.json
+#   also writes ../app/public/data/<slug>/stats.json (region card); areas inside a region: "stat_areas" (a list) or "stat_auto" (all provinces and cities of a country) in config/<slug>.json;
+#   run `outlines --level 4` and `--level 5` first; also writes shapes.json (outlines for finding the area under the view)
 #   or: rail-extract cut <slugs> --build   (cut, then build straight away; --no-tiles applies to every slug)
 python3 check.py                                 # phase 2 "Done when": answer lists in answers/
 python3 measure_views.py                         # compressed tile bytes per view vs the 600 KB budget
@@ -54,6 +55,8 @@ to about 20 m):
 rail-extract/target/release/rail-extract outlines --level 2                # 218 countries: ../data/regions/cn.geojson, us, fr ... (0.4 s)
 rail-extract/target/release/rail-extract outlines --level 4                # 3,062 provinces / states: cn-sichuan, us-california ... (0.8 s)
 rail-extract/target/release/rail-extract outlines --level 4 --country CN   # just one country's
+rail-extract/target/release/rail-extract outlines --level 5 --country CN   # 342 Chinese prefecture-level cities (cn-chengdu ...); needed by the region cards
+#   (levels 2, 4 and 5 are in the cache; adding a level means rebuilding the cache, 47 s)
 rail-extract/target/release/rail-extract cut us-california cn-sichuan      # then cut any of them (about 1 s)
 ```
 

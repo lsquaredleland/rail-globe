@@ -84,10 +84,10 @@ export async function loadFeatureTags(slug: string, osmId: string): Promise<Tags
   return shard[osmId] ?? null
 }
 
-/** Rail totals for a region and the areas inside it (pipeline/rail-extract/src/stats.rs). Length is track km: every track counts,
- *  so double track is about twice the route length. */
+/** Rail totals for a region and the areas inside it: provinces and cities with a metro (pipeline/rail-extract/src/stats.rs).
+ *  Length is route km, double track counted once (about 10% accurate). */
 export interface StatsArea {
-  slug: string; name: string; local: string | null; bbox: [number, number, number, number]
+  slug: string; name: string; local: string | null; kind: 'region' | 'area' | 'province' | 'city'; bbox: [number, number, number, number]
   km: Record<string, { open: number; con: number }>
   lines: Record<string, number>
   stations: Record<string, number>
@@ -98,6 +98,18 @@ export function loadStats(slug: string): Promise<StatsArea[]> {
   if (!p) {
     p = fetch(`${base}${slug}/stats.json`).then((r) => (r.ok ? r.json() : { areas: [] })).then((j: { areas: StatsArea[] }) => j.areas).catch(() => [])
     statsCache.set(slug, p)
+  }
+  return p
+}
+
+/** Simplified outlines of a region's areas (polygons of rings of [lon, lat]), for finding the area under the view centre */
+export type Shapes = Record<string, number[][][][]>
+const shapesCache = new Map<string, Promise<Shapes>>()
+export function loadShapes(slug: string): Promise<Shapes> {
+  let p = shapesCache.get(slug)
+  if (!p) {
+    p = fetch(`${base}${slug}/shapes.json`).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))
+    shapesCache.set(slug, p)
   }
   return p
 }

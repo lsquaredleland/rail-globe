@@ -175,7 +175,7 @@ pub fn slugify(s: &str) -> String {
 
 pub fn outlines(c: &Cache, level: &str, country: Option<&str>, out: &Path) {
     let t0 = std::time::Instant::now();
-    assert!(rules::ADMIN_LEVELS.contains(&level.as_bytes()), "--level must be one of 2, 4 (the levels in the cache)");
+    assert!(rules::ADMIN_LEVELS.contains(&level.as_bytes()), "--level must be one of 2, 4, 5 (the levels in the cache)");
     let (all, failed) = load(c, &["2", level]);
     let countries: Vec<&Bnd> = all.iter().filter(|b| b.level == "2").collect();
 

@@ -22,16 +22,17 @@
   "main_terminals": [],
   "stat_name": "China",
   "stat_local": "中国",
-  "stat_areas": [
-    {
-      "slug": "cn-hong-kong",
-      "name": "Hong Kong",
-      "local": "香港"
-    },
-    {
-      "slug": "guangzhou",
-      "name": "Guangzhou",
-      "local": "广州"
-    }
-  ]
+  "stat_auto": {
+    "country": "CN",
+    "levels": [
+      "4",
+      "5"
+    ],
+    "min_metro": 20,
+    "exclude": [
+      "cn-hong-kong-island",
+      "cn-kowloon",
+      "cn-new-territories"
+    ]
+  }
 }

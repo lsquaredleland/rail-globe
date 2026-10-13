@@ -189,3 +189,4 @@ section { display: flex; flex-direction: column; gap: 8px; }
 .rc-row { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
 .rc-row i { width: 10px; height: 4px; border-radius: 2px; flex: none; }
 .rc-foot { line-height: 1.4; }
+.rc-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px; } .rc-kind { margin-left: auto; }

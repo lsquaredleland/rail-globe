@@ -65,8 +65,8 @@ pub fn cache_key(k: &[u8]) -> bool {
     )
 }
 
-/// admin levels whose boundaries the cache keeps, as region outlines (2 countries, 4 provinces / states)
-pub const ADMIN_LEVELS: [&[u8]; 2] = [b"2", b"4"];
+/// admin levels whose boundaries the cache keeps, as region outlines (2 countries, 4 provinces / states, 5 prefecture-level cities in China and similar)
+pub const ADMIN_LEVELS: [&[u8]; 3] = [b"2", b"4", b"5"];
 
 /// an administrative boundary relation the cache keeps for region outlines
 pub fn admin_boundary<T: Tags + ?Sized>(t: &T) -> bool {

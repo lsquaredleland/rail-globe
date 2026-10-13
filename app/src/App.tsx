@@ -11,6 +11,7 @@ import { TooltipBody } from './components/Tooltip'
 import { LinePanel, LinesList, StationPanel } from './components/Panels'
 import { Icon, LangContext, Segmented, Toggle, type Lang } from './components/ui'
 import { RegionCard } from './components/RegionCard'
+import { areaForView, useStats } from './stats'
 import { InspectPanel, InspectTooltipBody } from './components/Inspect'
 
 type Selected = { kind: 'station'; slug: string; id: string } | { kind: 'line'; slug: string; id: number } | { kind: 'lines' } | { kind: 'inspect'; hit: Hit } | null
@@ -74,6 +75,15 @@ export default function App() {
   // a clicked line (or railway) dims all the others; hovering does not
   const focusLine = selected?.kind === 'line' ? selected.id : null
   const focusName = selected?.kind === 'line' ? null : selTrackName
+  // the card follows the view; so does the pilot region in the picker (no fly: the map is already where the user put it)
+  const stats = useStats()
+  const cardArea = useMemo(() => areaForView([...stats.regions.filter((r) => !regionBySlug(r.slug).noCard), ...stats.areas], stats.shapes, viewNow, window.innerWidth), [stats, viewNow])
+  useEffect(() => {
+    const r = areaForView(stats.regions, stats.shapes, viewNow, window.innerWidth)
+    // depends on the view only: picking a region in the menu must not be undone by the (not yet moved) old view
+    if (r) setRegionState((cur) => (cur.slug === r.slug ? cur : regionBySlug(r.slug)))
+  }, [stats, viewNow])
+
   const mapState = useMemo<MapState>(() => ({ mode, construction, proposed, freight, hidden, hsrOnly, lang, focusLine, focusName }), [mode, construction, proposed, freight, hidden, hsrOnly, lang, focusLine, focusName])
   const sync = useCallback(() => writeHash({ region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, inspect, view: view.current }), [region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, inspect])
   useEffect(sync, [sync])
@@ -195,7 +205,7 @@ export default function App() {
         </>
       )}
 
-      {!compact && <RegionCard view={viewNow} units={units} />}
+      {!compact && <RegionCard area={cardArea} units={units} />}
       {!compact && !selected && <Legend mode={mode} hsrOnly={hsrOnly} open={legendOpen} setOpen={setLegendOpen} freight={freight} index={idx} {...legendProps} />}
       {!compact && (
         <div className="zoom" role="group" aria-label="Zoom">
