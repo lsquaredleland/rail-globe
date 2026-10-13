@@ -3,7 +3,7 @@ import * as maplibregl from 'maplibre-gl'   // MapLibre 6 is ESM-only: no defaul
 import type { GeoJSONSource, Map as MLMap, MapGeoJSONFeature } from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { addAirportIcon, addBoundary, addRegion, applyState, areaLayers, baseStyle, highlightLine, hitLayer, regionsInView, stationLayers, strandLayer, syncRegions, updateRegionsInView, yardHitLayer, type MapState } from './mapStyle'
+import { addAirportIcon, addBoundary, addRegion, applyState, areaLayers, baseStyle, highlightLine, hitLayer, prefetchHighlights, regionsInView, setFocus, stationLayers, strandLayer, syncRegions, updateRegionsInView, yardHitLayer, type MapState } from './mapStyle'
 import { REGIONS, SOURCES } from './regions'
 
 export type Hit =
@@ -28,6 +28,10 @@ interface Props {
   highlightSlug: string | null   // the region selectedLine / selectedTrackName belong to
   selectedLine: number | null
   selectedTrackName: string | null
+  /** What a hit highlights (its line, else its named railway), for highlighting straight from the hit test, without a React
+   *  render in between. null when hovering must not highlight (a line is selected, touch screens). */
+  hoverHighlight: ((hit: Hit | null) => { slug: string; line: number | null; name: string | null } | null) | null
+  focusSlug: string | null   // a line or railway is selected (clicked): the region whose lines stay, all others fade
   selectedStation: [number, number] | null
   touch: boolean
   onHover(hit: Hit | null, point: { x: number; y: number }): void
@@ -36,6 +40,9 @@ interface Props {
 }
 
 let protocolAdded = false
+// MapLibre 6 keeps its tile worker in two module files next to the library, which a bundler (and Vite's dependency cache) does
+// not carry along: production uses the copies vite.config.ts emits, dev the files in node_modules
+maplibregl.setWorkerUrl(new URL(import.meta.env.PROD ? 'maplibre/maplibre-gl-worker.mjs' : 'node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs', document.baseURI).href)
 
 function slugOf(layerId: string) { return layerId.split(':')[0] }
 
@@ -53,7 +60,12 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
     flyTo: (v) => mapRef.current?.flyTo({ center: v.center, zoom: v.zoom, duration: 900, essential: true }),
     getZoom: () => mapRef.current?.getZoom() ?? 0,
     zoomBy: (d) => mapRef.current?.zoomTo((mapRef.current?.getZoom() ?? 0) + d, { duration: 250 }),
-    resizeSoon: () => setTimeout(() => mapRef.current?.resize(), 50),
+    // only when the container really changed size: map.resize() reallocates the canvas and fires move events
+    resizeSoon: () => setTimeout(() => {
+      const m = mapRef.current
+      const c = m?.getContainer()
+      if (m && c && (c.clientWidth !== m.getCanvas().clientWidth || c.clientHeight !== m.getCanvas().clientHeight)) m.resize()
+    }, 50),
   }))
 
   useEffect(() => {
@@ -67,7 +79,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       fadeDuration: 0,
     })
     mapRef.current = map
-    if (import.meta.env.DEV) (window as unknown as { __map: MLMap }).__map = map
+    if (import.meta.env.DEV || location.search.includes('debug')) (window as unknown as { __map: MLMap }).__map = map   // ?debug: for profiling a production build
     map.touchZoomRotate.disableRotation()
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
     const sc = new maplibregl.ScaleControl({ maxWidth: 120, unit: p.current.units === 'km' ? 'metric' : 'imperial' })
@@ -85,6 +97,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       updateRegionsInView(map)
       applyState(map, p.current.state)
       highlightLine(map, p.current.highlightSlug, p.current.selectedLine, p.current.selectedTrackName)
+      setFocus(map, p.current.focusSlug)
       updateSelection(map, p.current.selectedStation)
     })
 
@@ -135,6 +148,8 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
         map.getCanvas().style.cursor = hit ? 'pointer' : ''
         if (!hit && !hovering) return
         hovering = !!hit
+        const hh = p.current.hoverHighlight
+        if (hh) { const t = hh(hit); highlightLine(map, t?.slug ?? null, t?.line ?? null, t?.name ?? null) }
         p.current.onHover(hit, pt)
       })
       pending = { x: e.point.x, y: e.point.y }
@@ -146,6 +161,15 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
     map.on('movestart', () => { hovering = false; p.current.onHover(null, { x: 0, y: 0 }) })
     // regions that came into view get the current state and highlight; a source that has just read its bounds may change the set
     map.on('sourcedata', (e) => { if (loaded.current && e.sourceDataType === 'metadata') syncRegions(map) })
+    // when the map settles in a view it has not prefetched yet (also the first one), load the highlight data of the lines on screen
+    let prefetched = ''
+    map.on('idle', () => {
+      const c = map.getCenter()
+      const key = `${c.lng.toFixed(3)}/${c.lat.toFixed(3)}/${map.getZoom().toFixed(2)}`
+      if (!loaded.current || key === prefetched) return
+      prefetched = key
+      setTimeout(() => { if (!map.isMoving()) prefetchHighlights(map) }, 150)
+    })
     map.on('moveend', () => {
       if (loaded.current) syncRegions(map)
       const c = map.getCenter()
@@ -156,6 +180,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
 
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) applyState(m, props.state) }, [props.state])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) highlightLine(m, props.highlightSlug, props.selectedLine, props.selectedTrackName) }, [props.highlightSlug, props.selectedLine, props.selectedTrackName])
+  useEffect(() => { const m = mapRef.current; if (m && loaded.current) setFocus(m, props.focusSlug) }, [props.focusSlug])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) updateSelection(m, props.selectedStation) }, [props.selectedStation])
   useEffect(() => {
     const m = mapRef.current

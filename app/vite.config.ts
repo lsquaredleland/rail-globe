@@ -1,6 +1,6 @@
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
-import { createReadStream, statSync } from 'node:fs'
+import { createReadStream, readFileSync, statSync } from 'node:fs'
 import { extname, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -38,8 +38,22 @@ function serveData(): Plugin {
   }
 }
 
+/** MapLibre 6 runs its tile worker from two ES module files that import each other by relative name. A bundler emits neither, and
+ *  hashing would break the import, so production builds copy both, unhashed, to maplibre/ (MapView.tsx points the worker there). */
+function maplibreWorker(): Plugin {
+  return {
+    name: 'maplibre-worker',
+    apply: 'build',
+    generateBundle() {
+      for (const f of ['maplibre-gl-worker.mjs', 'maplibre-gl-shared.mjs']) {
+        this.emitFile({ type: 'asset', fileName: `maplibre/${f}`, source: readFileSync(fileURLToPath(new URL(`./node_modules/maplibre-gl/dist/${f}`, import.meta.url))) })
+      }
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), serveData()],
+  plugins: [react(), serveData(), maplibreWorker()],
   base: './',
   // public/data holds the pipeline's tiles and tens of thousands of side files: served by serveData above, but not watched,
   // so a pipeline run does not keep the dev server busy reacting to every file it writes

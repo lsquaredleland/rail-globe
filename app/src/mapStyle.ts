@@ -5,9 +5,7 @@ import { SOURCES, tilesOf } from './regions'
 import { boundaryUrl, loadLineHighlight, loadNameHighlight, pmtilesUrl, type Highlight } from './data'
 
 export type ColorMode = 'type' | 'operator' | 'speed'
-export interface MapState { mode: ColorMode; construction: boolean; proposed: boolean; freight: boolean; hidden: string[]; hsrOnly: boolean; lang: 'local' | 'en'
-  /** a clicked line (or named railway): every other line is drawn faint */
-  focusLine: number | null; focusName: string | null }
+export interface MapState { mode: ColorMode; construction: boolean; proposed: boolean; freight: boolean; hidden: string[]; hsrOnly: boolean; lang: 'local' | 'en' }
 
 const OFM = 'https://tiles.openfreemap.org/planet'
 export const ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
@@ -170,6 +168,13 @@ export function addRegion(map: MLMap, slug: string) {
     add({ ...spec, filter: f ? ['all', ['!=', get(typeKey), 'high_speed'], f] : ['!=', get(typeKey), 'high_speed'] } as unknown as LayerSpecification)
     top.push({ ...spec, id: `${spec.id}-hs`, filter: f ? ['all', ['==', get(typeKey), 'high_speed'], f] : ['==', get(typeKey), 'high_speed'] } as unknown as LayerSpecification)
   }
+  // highlight layers are added last (after a veil, below), whatever order they are declared in
+  const late: LayerSpecification[] = []
+  const hlLayer = (spec: Record<string, unknown>) => {
+    const f = spec.filter as Expr | undefined
+    late.push({ ...spec, filter: f ? ['all', ['!=', get('type'), 'high_speed'], f] : ['!=', get('type'), 'high_speed'] } as unknown as LayerSpecification)
+    late.push({ ...spec, id: `${spec.id}-hs`, filter: f ? ['all', ['==', get('type'), 'high_speed'], f] : ['==', get('type'), 'high_speed'] } as unknown as LayerSpecification)
+  }
   add({ id: L(slug, 'yard'), type: 'line', ...src, 'source-layer': 'track', minzoom: 13, filter: ['==', get('type'), 'yard'],
     layout: roundJoin, paint: { 'line-color': TYPE_COLOR.yard, 'line-width': widthExpr() } })
   add({ id: L(slug, 'freight'), type: 'line', ...src, 'source-layer': 'track', minzoom: 8,
@@ -201,12 +206,12 @@ export function addRegion(map: MLMap, slug: string) {
     15, ['+', ['*', byType((t) => TYPE_WIDTH[t][2]), 1.8], 3]] as Expr
   // Like the track, the highlight has a high-speed twin drawn above the white high-speed casing (which otherwise hides it).
   // z8 and closer: the track pieces flagged with feature state by highlightLine (no tile reload, no copying geometry)
-  trackLayer({ id: L(slug, 'hl-fs'), type: 'line', ...src, 'source-layer': 'track', minzoom: 8,
+  hlLayer({ id: L(slug, 'hl-fs'), type: 'line', ...src, 'source-layer': 'track', minzoom: 8,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': typeColor, 'line-width': hlW, 'line-opacity': ['case', ['boolean', ['feature-state', 'hl'], false], 1, 0] } })
   // below z8 the merged overview has no per-piece ids: the line's simplified geometry from its side file
   map.addSource(L(slug, 'hl'), { type: 'geojson', data: EMPTY })
-  trackLayer({ id: L(slug, 'hl'), type: 'line', source: L(slug, 'hl'), maxzoom: 8,
+  hlLayer({ id: L(slug, 'hl'), type: 'line', source: L(slug, 'hl'), maxzoom: 8,
     layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': typeColor, 'line-width': hlW } })
 
   // operator-colour strands (side by side from z12)
@@ -226,6 +231,10 @@ export function addRegion(map: MLMap, slug: string) {
       'line-opacity': ['case', ['has', 'c'], 1, 0.6], 'line-width': strandW(), 'line-offset': offset } }, 't')
 
   top.forEach((l) => add(l)) // high-speed twins and casing: above every other rail layer
+  // Focus veil: while a line is selected the other lines fade. A background layer at constant opacity does it with a repaint only:
+  // changing a data-driven paint property (the obvious way) makes MapLibre re-parse and re-upload every loaded tile.
+  add({ id: L(slug, 'veil'), type: 'background', paint: { 'background-color': FILL.land, 'background-opacity': 0, 'background-opacity-transition': { duration: 120, delay: 0 } } })
+  late.forEach((l) => add(l))   // the highlight, above the veil
 
   // invisible, wider hit target for track tooltips
   // at every zoom: below z8 the track tiles hold the merged overview, which keeps the line ids and railway names a click needs
@@ -354,6 +363,13 @@ export function applyState(map: MLMap, s: MapState) {
   }
 }
 
+/** Fade every line but the highlighted one (a line or railway is selected), in the tile source `slug` draws from; null: no focus. */
+export function setFocus(map: MLMap, slug: string | null) {
+  const src = slug ? tilesOf(slug) : null
+  for (const s of SOURCES) if (map.getLayer(L(s, 'veil'))) map.setPaintProperty(L(s, 'veil'), 'background-opacity', s === src ? FOCUS_VEIL : 0)
+}
+const FOCUS_VEIL = 0.72
+
 /** After the map moves (or a source learns its bounds): regions now in view get the current state and highlight. */
 export function syncRegions(map: MLMap) {
   updateRegionsInView(map)
@@ -383,18 +399,7 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     const conKinds: Expr = ['any', ...(s.construction ? [['all', ['has', 'con'], ['!', ['has', 'prop']]]] : []), ...(s.proposed ? [['has', 'prop']] : [])] as unknown as Expr
     setVis('strand', vis(operator)); setVis('strand-casing', vis(operator))
     const has = ['has', 'oc'] as Expr
-    // a clicked line keeps full strength; everything else is drawn faint. zoom may only be the input of a top-level step, so the
-    // factor is multiplied into each branch instead of wrapping the whole expression
-    const focus = s.focusLine != null || s.focusName != null
-    const DIM = 0.2
-    const idStr = String(s.focusLine)
-    const trackMatch: Expr = (s.focusLine != null
-      ? ['in', `,${idStr},`, ['concat', ',', ['coalesce', get('ln'), ''], ',']]
-      : ['==', get('n'), s.focusName ?? '']) as Expr
-    const strandMatch: Expr = (s.focusLine != null ? ['==', ['to-string', get('lid')], idStr] : ['==', 1, 0]) as Expr
-    const f = (m: Expr): Expr => (focus ? (['case', m, 1, DIM] as Expr) : (1 as unknown as Expr))
-    const mul = (e: Expr | number, m: Expr): Expr => (focus ? (['*', e, f(m)] as Expr) : (e as Expr))
-    const tun: Expr = ['step', ['zoom'], mul(1, trackMatch), 13, mul(['case', ['has', 'tun'], 0.45, 1] as Expr, trackMatch)]
+    const tun: Expr = ['step', ['zoom'], 1, 13, ['case', ['has', 'tun'], 0.45, 1]]
     // each colour mode sets its own colour and width; "HSR only" then greys and thins everything that is not high-speed, in any mode
     const greyOut = s.hsrOnly
     const grey = (c: Expr, active: Expr = activeTrack): Expr => (greyOut ? (['case', active, c, INACTIVE] as Expr) : c)
@@ -405,7 +410,7 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
       // below z12 each track takes one colour; from z12 tracks with mapped lines give way to the strands
       color = ['coalesce', get('oc'), typeColor] as Expr
       width = widthExpr(thin())
-      opacity = ['step', ['zoom'], mul(['case', has, 1, 0.6] as Expr, trackMatch), 12, mul(['case', ['has', 'nl'], 0, 0.6] as Expr, trackMatch)] as Expr
+      opacity = ['step', ['zoom'], ['case', has, 1, 0.6], 12, ['case', ['has', 'nl'], 0, 0.6]] as Expr
     } else if (s.mode === 'speed') {
       color = speedColor
       width = widthExpr(thin())
@@ -413,9 +418,8 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
       color = typeColor
       width = widthExpr(thin())
     }
-    setPaint('construction', 'line-opacity', mul(['case', ['has', 'prop'], 0.5, 1] as Expr, trackMatch))
-    setPaint('construction-casing', 'line-opacity', mul(['case', ['has', 'prop'], 0.45, 0.85] as Expr, trackMatch))
-    setPaint('strand', 'line-opacity', mul(['case', ['has', 'c'], 1, 0.6] as Expr, strandMatch))
+    setPaint('construction', 'line-opacity', ['case', ['has', 'prop'], 0.5, 1])
+    setPaint('construction-casing', 'line-opacity', ['case', ['has', 'prop'], 0.45, 0.85])
     setPaint('track', 'line-color', grey(color))
     setPaint('track', 'line-width', width)
     setPaint('track', 'line-opacity', opacity)
@@ -424,7 +428,7 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     // under-construction track follows the same colour rule as open track
     setPaint('construction', 'line-color', grey(s.mode === 'speed' ? speedColor : (['match', get('type'), 'other', '#45423C', typeColor] as Expr)))
     setPaint('strand', 'line-color', grey(['coalesce', get('c'), byType((t) => TYPE_COLOR[t], 't', TYPE_COLOR.other)] as Expr, strandActive))
-    setPaint('strand-casing', 'line-opacity', mul(greyOut ? (['case', strandActive, 0.28, 0] as Expr) : 0.28, strandMatch))
+    setPaint('strand-casing', 'line-opacity', greyOut ? (['case', strandActive, 0.28, 0] as Expr) : 0.28)
     const hiddenT = s.hidden.length > 0
     const notHiddenT = (key: string): Expr[] => (hiddenT ? [['!', ['in', get(key), ['literal', s.hidden]]] as Expr] : [])
     setFilt('track', ['all', ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight'], ...notHiddenT('type')] as Expr)
@@ -460,16 +464,16 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
 }
 
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
-const HL_DELAY = 80   // ms the pointer rests on a line not yet loaded before it is fetched: moving across lines does no work
 let hlKey = ''          // what was asked for last
 let hlShown = ''        // what is on the map
-let hlTimer: ReturnType<typeof setTimeout> | undefined
 let hlCurrent: { slug: string; h: Highlight } | null = null
 const hlFlagged = new Set<string>()             // regions whose track pieces carry the current highlight's flags
 const hlLoaded = new Map<string, Highlight | null>()   // highlight data already fetched, by key: shown with no wait
 
 function clearHighlight(map: MLMap) {
-  for (const slug of hlFlagged) if (map.getSource(slug)) map.removeFeatureState({ source: slug, sourceLayer: 'track' })
+  // remove the flags we set, one id at a time: removing a whole source layer makes MapLibre re-send every id that was ever
+  // flagged on each later update, so a long session of hovering got slower and slower
+  if (hlCurrent) for (const slug of hlFlagged) if (map.getSource(slug)) for (const id of hlCurrent.h.ways) map.removeFeatureState({ source: slug, sourceLayer: 'track', id }, 'hl')
   hlFlagged.clear()
   if (hlCurrent) (map.getSource(L(tilesOf(hlCurrent.slug), 'hl')) as GeoJSONSource | undefined)?.setData(EMPTY)
   hlCurrent = null
@@ -507,15 +511,36 @@ export function highlightLine(map: MLMap, slug: string | null, lineId: number | 
   const key = slug && (lineId != null || trackName != null) ? `${slug}|${lineId ?? ''}|${trackName ?? ''}` : ''
   if (key === hlKey) return
   hlKey = key
-  clearTimeout(hlTimer)
   if (key === hlShown) return
   if (!key) { apply(map, '', null, null); return }
   if (hlLoaded.has(key)) { apply(map, key, slug, hlLoaded.get(key)!); return }
-  hlTimer = setTimeout(async () => {
+  // no delay: a hover starts loading at once (a line's file is a few KB and cached after the first time); a pointer that has
+  // moved on by the time it arrives is ignored (hlKey)
+  void (async () => {
     const h = await (lineId != null ? loadLineHighlight(slug!, lineId) : loadNameHighlight(slug!, trackName!)).catch(() => null)
     hlLoaded.set(key, h)
     if (hlKey === key) apply(map, key, slug, h)   // else something else was asked for while this loaded
-  }, HL_DELAY)
+  })()
+}
+
+/** While the map is idle, load the highlight data of the lines on screen so a hover finds it ready (a file is a few KB; a long
+ *  line's is up to ~100 KB). Cheap enough: one hit-layer query, at most PREFETCH_MAX files, a few at a time. */
+const PREFETCH_MAX = 48
+export function prefetchHighlights(map: MLMap) {
+  if (map.getZoom() < 6) return
+  const layers = regionsInView().map((r) => hitLayer(r)).filter((l) => map.getLayer(l))
+  if (!layers.length) return
+  const todo = new Map<string, () => Promise<unknown>>()
+  for (const f of map.queryRenderedFeatures({ layers })) {
+    if (todo.size >= PREFETCH_MAX) break
+    const slug = f.layer.id.split(':')[0]
+    const ln = Number(String(f.properties.ln ?? '').split(',')[0])
+    if (Number.isFinite(ln) && ln > 0) todo.set(`${slug}|${ln}`, () => loadLineHighlight(slug, ln))
+    else if (f.properties.n) todo.set(`${slug}|n|${f.properties.n}`, () => loadNameHighlight(slug, String(f.properties.n)))
+  }
+  const jobs = [...todo.values()]
+  const run = async () => { for (let j = jobs.shift(); j; j = jobs.shift()) await j().catch(() => null) }
+  for (let i = 0; i < 3; i++) void run()   // three at a time
 }
 
 /** Material "flight" glyph, 24x24 */

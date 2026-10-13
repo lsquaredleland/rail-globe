@@ -55,6 +55,7 @@ export default function App() {
   const railwaysRef = useRef(railways)   // for openHit, which memoized click handlers call
   railwaysRef.current = railways
   const [selTrackName, setSelTrackName] = useState<string | null>(null)
+  const [selTrackSlug, setSelTrackSlug] = useState<string | null>(null)   // the tile source of the clicked track; null: the Lines list's region
   const [listHoverLine, setListHoverLine] = useState<number | null>(null)
   const [listHoverName, setListHoverName] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -72,9 +73,6 @@ export default function App() {
     loadNamedLines(region.slug).then((n) => setNamed((p) => (p[region.slug] ? p : { ...p, [region.slug]: n }))).catch(() => {})
   }, [region.slug])
 
-  // a clicked line (or railway) dims all the others; hovering does not
-  const focusLine = selected?.kind === 'line' ? selected.id : null
-  const focusName = selected?.kind === 'line' ? null : selTrackName
   // the card follows the view; so does the pilot region in the picker (no fly: the map is already where the user put it)
   const stats = useStats()
   const cardArea = useMemo(() => areaForView([...stats.regions.filter((r) => !regionBySlug(r.slug).noCard), ...stats.areas], stats.shapes, viewNow, window.innerWidth), [stats, viewNow])
@@ -84,7 +82,7 @@ export default function App() {
     if (r) setRegionState((cur) => (cur.slug === r.slug ? cur : regionBySlug(r.slug)))
   }, [stats, viewNow])
 
-  const mapState = useMemo<MapState>(() => ({ mode, construction, proposed, freight, hidden, hsrOnly, lang, focusLine, focusName }), [mode, construction, proposed, freight, hidden, hsrOnly, lang, focusLine, focusName])
+  const mapState = useMemo<MapState>(() => ({ mode, construction, proposed, freight, hidden, hsrOnly, lang }), [mode, construction, proposed, freight, hidden, hsrOnly, lang])
   const sync = useCallback(() => writeHash({ region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, inspect, view: view.current }), [region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, inspect])
   useEffect(sync, [sync])
 
@@ -109,7 +107,7 @@ export default function App() {
   const openLine = (slug: string, id: number) => { setSelected({ kind: 'line', slug, id }); setListHoverLine(null); setListHoverName(null); setPeek(null); setHover(null); setSelPt(null); ensureIndex(slug) }
   const closePanel = () => { setSelected(null); setSelPt(null); setSelTrackName(null); setListHoverLine(null); setListHoverName(null) }
   const openList = () => { setSelected({ kind: 'lines' }); setSelPt(null); setSelTrackName(null); setPeek(null); setHover(null) }
-  const openNamed = (n: NamedLine) => { setSelTrackName(n.n); map.current?.fitBounds(n.bbox) }
+  const openNamed = (n: NamedLine) => { setSelTrackName(n.n); setSelTrackSlug(null); map.current?.fitBounds(n.bbox) }
   const openHit = (h: Hit) => {
     if (inspect) { setSelected({ kind: 'inspect', hit: h }); setSelPt(h.kind === 'station' ? h.lngLat : null); setPeek(null); setHover(null); setSelTrackName(null); return }
     if (h.kind === 'station') openStation(h.slug, String(h.props.id), h.lngLat)
@@ -120,7 +118,7 @@ export default function App() {
       if (Number.isFinite(first) && first > 0) openLine(h.slug, first)
       else {
         const name = railwayOf(railwaysRef.current[h.slug], h.props)?.[0] ?? (h.props.n ? String(h.props.n) : null)
-        if (name) { setSelected({ kind: 'lines' }); setSelPt(null); setPeek(null); setHover(null); setSelTrackName(name) }
+        if (name) { setSelected({ kind: 'lines' }); setSelPt(null); setPeek(null); setHover(null); setSelTrackName(name); setSelTrackSlug(h.slug) }
       }
     }
   }
@@ -179,8 +177,19 @@ export default function App() {
   const hlLine = selectedLine ?? listHoverLine ?? hoverLine
   const hlName = selectedLine == null && selTrackName == null ? (listHoverName ?? (listHoverLine == null ? hoverName : null)) : selTrackName
   const hlSlug = selected?.kind === 'line' ? selected.slug
+    : selTrackName != null && selTrackSlug ? selTrackSlug   // a clicked track keeps the source it was hit in, so its highlight is not redone
     : listHoverLine != null || listHoverName != null || selTrackName != null ? region.slug
     : hh ? hh.slug : null
+  // hovering highlights straight from the map's hit test (MapView), as long as nothing is selected
+  const hoverHighlight = useCallback((hit: Hit | null) => {
+    if (!hit) return null
+    const first = hit.kind === 'track' ? Number(String(hit.props.ln ?? '').split(',')[0]) : NaN
+    const line = hit.kind === 'line' ? Number(hit.props.lid) : Number.isFinite(first) && first > 0 ? first : null
+    if (line != null) return { slug: hit.slug, line, name: null }
+    if (hit.kind !== 'track') return null
+    const name = railwayOf(railwaysRef.current[hit.slug], hit.props)?.[0] ?? (hit.props.n ? String(hit.props.n) : null)
+    return name ? { slug: hit.slug, line: null, name } : null
+  }, [])
   const tip = !touch && hover && !selected ? hover : null
   const W = wrap.current?.clientWidth ?? 1200
   const tipLeft = tip ? (tip.x + 330 > W ? tip.x - 322 : tip.x + 16) : 0
@@ -189,7 +198,7 @@ export default function App() {
     <LangContext.Provider value={lang}>
     <div className={`app${compact ? ' compact' : ''}`} ref={wrap}>
       <MapView ref={map} state={mapState} units={units} initial={init.view ?? { center: region.center, zoom: compact ? region.zoomPhone : region.zoom }}
-        highlightSlug={hlLine != null || hlName != null ? hlSlug : null} selectedLine={hlLine} selectedTrackName={hlName} selectedStation={selPt} touch={touch}
+        highlightSlug={hlLine != null || hlName != null ? hlSlug : null} selectedLine={hlLine} selectedTrackName={hlName} hoverHighlight={touch || selected || listHoverLine != null || listHoverName != null ? null : hoverHighlight} focusSlug={selected?.kind === 'line' ? selected.slug : selTrackName != null ? (selTrackSlug ?? region.slug) : null} selectedStation={selPt} touch={touch}
         onHover={onHover} onClick={onClick} onMoveEnd={(v) => { view.current = v; setViewNow(v); sync() }} />
 
       {!compact && <Toolbar c={controls} />}
