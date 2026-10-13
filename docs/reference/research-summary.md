@@ -70,3 +70,62 @@ China: 26,104 stations and 2,514 physical lines, but only 530 `route=train` rela
 | Cloudflare Pages | 25 MiB per file, 20,000 files | Too small for a world PMTiles file |
 | GitHub Pages | 1 GB site, 100 MiB per file | Fine for the app shell |
 | OpenFreeMap | No stated limit | No key; commercial use allowed |
+
+## Zoom and pan benchmark baseline
+
+Measured 2026-10-13 on the production build, headless Chrome 155 at 1440×900, device scale 2, commit 96bc40f (working tree not clean: bench files only). Step 1 of `.omc/plans/zoom-pan-performance.md`: numbers only, no app change.
+
+Run it:
+
+```
+cd app && npm run build && npx vite preview --port 4173   # separate shell
+node bench/zoom-pan.mjs --runs 3 --throttle 6 --label baseline-t6
+```
+
+Flags: `--url` (default `http://localhost:4173`), `--runs` (default 3), `--throttle` (CPU slowdown, default 6, 1 = none), `--warmup` (unmeasured runs first, default 1), `--label`, `--chrome` (path to Chrome). Raw results go to `app/bench/results/` (git-ignored). The JSON holds every frame interval and long task, plus the environment, so runs can be re-scored later.
+
+What it does:
+
+- Views are China only: Chengdu East, Shenzhen, Guangzhou, Beijing, Shanghai. China has the densest network, and all five draw from the single `china.pmtiles`, so tile source cost is the same for every view.
+- Each view starts at z9, then flies to z14 (2.5 s), pans one screen east (1.5 s), eases out to z8 (2.5 s). Durations are fixed so runs do identical work.
+- One warm-up run comes first and is not measured. The basemap comes from the internet, so the warm-up fills the HTTP cache. Settle still includes some network time.
+- CPU throttle slows only the main thread, not MapLibre's workers. Tile-side changes (worker parse, tile size) show mainly in settle time, not in frame times.
+
+How to read the numbers:
+
+- Frame intervals are whole 60 Hz frames (16.7 ms, 33.3 ms, and so on). That is why percentiles are not used: p50 and p95 are always one frame.
+- Missed frames is the main metric: for each interval, round(ms / 16.67) − 1, summed. A 50 ms interval counts as 2.
+- Dropped is the count of intervals over 25 ms (1.5 frames). Max frame is the longest interval. Jank ms is the sum of time over 16.67 ms per interval.
+- Settle is the time from the end of a move until the map is idle (0 if it already is).
+- Numbers are the median of 3 runs. Spread is (max − min) / median of the per-run totals.
+
+Throttle 6x (about 179 s, 1,874 frames):
+
+| View | Missed in / pan / out | Missed total | Dropped >25 ms | Max frame ms | Jank ms | Settle in / pan / out ms |
+| --- | --- | --- | --- | --- | --- | --- |
+| Chengdu East | 22 / 0 / 5 | 26 | 14 | 100.1 | 442 | 142 / 0 / 0 |
+| Shenzhen | 16 / 0 / 4 | 19 | 14 | 66.6 | 326 | 196 / 0 / 0 |
+| Guangzhou | 20 / 0 / 4 | 25 | 19 | 66.7 | 425 | 208 / 0 / 0 |
+| Beijing | 12 / 0 / 2 | 14 | 12 | 50.0 | 243 | 154 / 0 / 0 |
+| Shanghai | 14 / 0 / 3 | 17 | 14 | 50.1 | 293 | 197 / 0 / 0 |
+| Total | | 103 | 76 | 100.1 | 1,761 | 892 summed |
+
+Per-run totals: missed 106, 100, 103 (spread 6%); jank 1,812, 1,712, 1,761 ms.
+
+No throttle (about 163 s, 1,974 frames):
+
+| View | Missed in / pan / out | Missed total | Dropped >25 ms | Max frame ms | Jank ms | Settle in / pan / out ms |
+| --- | --- | --- | --- | --- | --- | --- |
+| Chengdu East | 0 / 0 / 0 | 0 | 0 | 16.8 | 10 | 64 / 0 / 0 |
+| Shenzhen | 0 / 0 / 0 | 0 | 0 | 16.8 | 11 | 81 / 0 / 0 |
+| Guangzhou | 0 / 0 / 0 | 0 | 0 | 16.8 | 10 | 83 / 0 / 0 |
+| Beijing | 0 / 0 / 0 | 0 | 0 | 16.8 | 10 | 82 / 0 / 0 |
+| Shanghai | 0 / 0 / 0 | 0 | 0 | 16.8 | 10 | 83 / 0 / 0 |
+| Total | | 1 | 1 | 33.3 | 67 | 393 summed |
+
+Per-run totals: missed 1, 1, 0 (one 33 ms frame in two runs); jank 67, 68, 49 ms.
+
+- Unthrottled, the map is at 60 fps apart from one stray frame per run. Use throttle 6 to compare changes.
+- Under throttle, nearly all misses are in the zoom-in (z9 to z14). The pan and zoom-out are clean.
+- Total missed frames (103, spread 6%) and jank ms are the numbers to compare. Single views are noisier (spread up to 19%).
+- Settle in the pan and zoom-out is 0 because the map is already idle when the move ends (tiles are cached). Settle after the zoom-in is the number that reflects tile loading.

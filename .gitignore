@@ -23,3 +23,6 @@ __pycache__/
 
 # Rust extractor build output
 pipeline/rail-extract/target/
+
+# benchmark raw results
+app/bench/results/
