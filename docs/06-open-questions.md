@@ -63,21 +63,40 @@ Not tried, in the order I would try them:
 - MapLibre WebGPU or off-main-thread rendering: not shipped, only on the roadmap
 - Test on the machine where 500 ms was seen: the headless runs never reproduced it, and the fixes above came from reading MapLibre and profiling clicks
 
-## Smooth rendering and zoom: ideas to explore (not measured)
+## Smooth rendering and zoom: to do
 
-Listed 2026-10-13, after the highlight work above. Roughly by expected payoff. Status updated 2026-10-13 after step 4.
+Listed 2026-10-13, updated the same day after the fast-zoom profile. Numbers: `reference/research-summary.md` ("Fast zoom: profile and comparison"). How to measure: `app/bench/README.md`. The profile shows warm zooming is limited by the main thread (symbol placement, painting), not by tiles.
 
-1. **One tile source instead of three.** Done 2026-10-13 (`00-overview.md`). Layers 158 to 66. China views at throttle 6x: missed frames 128 to 76 (-41%), max frame 133 to 83 ms. Nearly all remaining misses are in the zoom-in.
-2. **Drop the high-speed twin layers.** Next; deferred by the user. Every track layer has a `-hs` copy so high-speed draws on top; a different draw order would halve those layers.
-3. **Lighter tiles.** Move per-piece tags only the tooltip and Inspect use (electrified, voltage, gauge, frequency, tracks) from the tiles to side files fetched on hover. Smaller tiles decode and upload faster, which is what makes zooming stutter. **Tried and dropped 2026-10-13:** taking the tooltip-only tags out of the tiles saved 8.5% of `china.pmtiles` and 2-5% per view, with no frame gain, and moved shard fetch and parse onto hover. If bytes matter later, a cheaper variant is to pack those tags into one property.
-4. **MapLibre Tiles (MLT).** MapLibre 6 reads MLT, which is smaller and faster to decode than MVT. tippecanoe does not write it, so it needs a conversion step; test on China's tiles first.
-5. **Pre-rendered raster tiles for z0-5.** Images draw almost for free at country scale; vector tiles from z6. Also fixes the z5 China views that are over the 600 KB budget.
-6. **Load the next zoom before it is needed.** Prefetch parent and child tiles around the view while idle, and raise `maxTileCacheSize` so zooming back out is instant.
-7. **Load label fonts at startup** for the scripts in use (Latin, CJK), so the first labels at a new zoom do not wait on a font download.
-8. **Move the tooltip with a CSS transform** instead of `top`/`left`, so following the pointer does not recompute layout.
-9. **Turn off checks the map does not need:** `crossSourceCollisions: false`, `renderWorldCopies: false`, and a `minzoom`/`maxzoom` on every layer so off-zoom layers are skipped early. **Partly tried 2026-10-13, not kept:** `renderWorldCopies: false`, `crossSourceCollisions: false` (it made basemap labels overlap station labels) and `maxTileCacheSize` 200/500 gave no measurable gain. Per-layer `minzoom`/`maxzoom` not tried.
+Done or dropped:
 
-Item 1 is done and 3 was dropped; 2 is next.
+1. **One tile source instead of three.** Done (`00-overview.md`). Missed frames 128 to 76 at 6x.
+2. **Drop the high-speed twin layers.** Being done now (2026-10-13). Every track layer has a `-hs` copy so high-speed draws on top; a different draw order would halve those layers.
+3. **Lighter tiles (tooltip-only tags to side files).** Tried and dropped: 8.5% smaller `china.pmtiles`, no frame gain. A cheaper variant is to pack those tags into one property.
+
+Open, by measured payoff:
+
+4. **Trim basemap layers.** The biggest measured cost: hiding the basemap took 18 missed frames to 6.5.
+5. **`fadeDuration` 150 instead of 0.** Measured gain (18 to 14; placement 24% to 8% of busy time). It changes how labels look: they fade in instead of popping. **Needs the user's decision.**
+6. **Hide the `hl-fs` layers when nothing is highlighted.** Small gain (18 to 15.5), free.
+7. **Align tile `minzoom` with style `minzoom`.** Five layers carry data a zoom before they are drawn (list in the research summary). Free bytes; not yet measured.
+8. **Stronger low-zoom simplification (`--low-detail`).** Not measured.
+9. **Corridor merging prototype at z8-11.** Not measured.
+10. **Stop tiles at z13 and overzoom.** The reference stops at z12. Not measured.
+11. **MapLibre Tiles (MLT).** MapLibre 6 reads MLT; tippecanoe does not write it, so it needs a conversion step.
+12. **Self-host Latin glyphs** (CJK stays on local fonts), so the first labels at a new zoom do not wait on a font download.
+13. **Production hosting.** `r2.dev` has no Cloudflare cache and is rate-limited. Use a custom domain with cache, or chunked tiles read by HTTP Range like the reference.
+14. **Pre-rendered raster tiles for z0-5.** Also fixes the z5 China views over the 600 KB budget.
+15. **Move the tooltip with a CSS transform** instead of `top`/`left`.
+16. **Per-layer `minzoom`/`maxzoom`** on every layer so off-zoom layers are skipped early. Not tried.
+
+Tile options the user wants benchmarked (items 7, 8, 11, plus 9 and the drop-ids idea): 1 align zooms, 2 simplification, 3 drop ids at z8-9 (the user is hesitant: it may affect presentation), 4 corridor merge, 7 MLT. Measure them on cold-cache and throttled-network scenarios and with trackpad pinch input, since the profile shows tiles are not the limit for warm zoom. The bench does not cover those two scenarios yet.
+
+Tried, no measurable gain (2026-10-13): `maxTileCacheSize` 200/500 (MapLibre 6.12 can only lower it; `maxTileCacheZoomLevels` is the raising knob), `cancelPendingTileRequestsWhileZooming` off plus `maxTileCacheZoomLevels` 8 (18 to 14.5, small), `renderWorldCopies: false`. `crossSourceCollisions: false` was tried and not kept: it made basemap labels overlap station labels.
+
+## To do later
+
+- **Move off tippecanoe** (user, 2026-10-13). Long-term goal; weigh tippecanoe-only settings against it.
+- **Fast Rust pipeline from OSM to MLT** (user, 2026-10-13). If the MLT benchmark (item 4 above) shows MLT is faster than MVT, rework the pipeline to write MLT directly from the Rust extractor (`pipeline/rail-extract`), without tippecanoe or a separate MVT-to-MLT conversion, and make it as fast as possible.
 
 ## Parked (not in v1)
 

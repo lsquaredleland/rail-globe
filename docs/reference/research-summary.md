@@ -75,6 +75,8 @@ China: 26,104 stations and 2,514 physical lines, but only 530 `route=train` rela
 
 Measured 2026-10-13 on the production build, headless Chrome 155 at 1440×900, device scale 2, commit 96bc40f (working tree not clean: bench files only). Step 1 of `.omc/plans/zoom-pan-performance.md`: numbers only, no app change.
 
+Full bench guide (all flags, scenarios, pitfalls): `app/bench/README.md`.
+
 Run it:
 
 ```
@@ -147,3 +149,91 @@ Missed frames per view, before to after: Chengdu East 36 to 22, Shenzhen 19 to 1
 The plan's target of 50% fewer missed frames (64 or fewer) was not reached. Nearly all remaining misses are in the zoom-in.
 
 The bench's refresh-halving guard is now a control: it takes the median rAF interval of an idle page, rather than testing each phase.
+
+## Fast zoom: profile and comparison (2026-10-13)
+
+How to run the bench and read its output: `app/bench/README.md`. These are the measurements.
+
+### Headless, 60 Hz, fast scenario (ours)
+
+- Throttle 1x: 0 missed frames in every view.
+- Throttle 6x: 18 missed frames in total (Chengdu East 4, Shenzhen 2, Guangzhou 4, Beijing 5, Shanghai 3), max frame 66.7 ms, jank 379 ms. 88% of the misses are in the zoom-in half.
+- The map is idle about 420 ms after the last wheel tick. 0 failed tile requests.
+- At 6x, 5-20% of pmtiles requests and up to 35% of OpenFreeMap requests are aborted (MapLibre's `cancelPendingTileRequestsWhileZooming`, on by default).
+
+### Profile at 6x (Guangzhou, unminified build, traced)
+
+- Main thread busy 8.3 s of 11.4 s. Shares of that: `_render` 61%, GL driver / native (program) 27.5%, `Map._updatePlacement` 24.3%, painter render 22%, `renderLayer` 16%, `_updateSources` 5.9%, GC 2.1%, paint recalculate 1.7%.
+- Worker busy 6%, no backlog. GPU process about 5%.
+- So the main thread is the limit when zooming warm, not tiles.
+
+### Toggles at 6x (missed frames, from 18)
+
+| Change | Missed |
+| --- | --- |
+| `fadeDuration` 150 | 14 (placement 24% to 8% of busy time; traced misses 42 to 17) |
+| `fadeDuration` 300 | 14 |
+| Hide `hl-fs` layers | 15.5 |
+| `cancelPendingTileRequestsWhileZooming` off + `maxTileCacheZoomLevels` 8 | 14.5 |
+| The three above combined | 11 |
+| Hide the basemap | 6.5 |
+| Hide rail labels | 14 |
+| Only `pilot:track*` visible | 0 |
+| `setPixelRatio(1)` | 14 |
+
+- `maxTileCacheSize` in MapLibre 6.12 can only lower the cache (`Math.min` with a view-dependent size). That explains the earlier no-gain result. `maxTileCacheZoomLevels` is the knob that raises it. MapLibre has no `prefetchZoomDelta`.
+- Our `fadeDuration: 0` (`MapView.tsx`, since the initial commit, never a recorded decision) forces full, unpaused symbol placement every frame in MapLibre 6.12 (`maplibre-gl-dev.mjs` `forceFullPlacement` at line 15655; placement never pauses at line 9248).
+
+### Headed, 120 Hz, against trains.theojaffee.net
+
+Fast scenario on a ProMotion display: measured control 8.3 ms, DPR 2, viewport 1440×757. Ours is the production build with tiles from localhost. Results are in `app/bench/results/ours-120-*` and `ref-120-*` (git-ignored).
+
+| | Throttle 1x ours | Throttle 1x ref | Throttle 4x ours | Throttle 4x ref |
+| --- | --- | --- | --- | --- |
+| Missed frames | 5 | 23 | 52 | 250 |
+| Max frame ms | 17 | 50 | 59 | 132 |
+| p95 ms | 9.5 | 9.0 | | |
+| p99 ms | 10.2 | 10.2 | 10.4 | 17.9 |
+| Jank ms | 739 | 744 | 2253 | 3923 |
+| Long tasks | | | 0 | 14 (~1.2 s) |
+
+Missed per view at 4x, ours / reference: Chengdu East 19 / 86, Shenzhen 8 / 43, Guangzhou 6 / 54, Beijing 10 / 32, Shanghai 9 / 35.
+
+Fairness caveats:
+
+- The reference clamps at z17 and ends about 0.55 levels higher.
+- Its rail tiles come over the network; ours come from localhost.
+- Its 4x run had no warm-up.
+- 66 style layers on ours against 57 on the reference.
+
+### Reference site teardown
+
+From its published files:
+
+- MapLibre 5.24, self-hosted, on GitHub Pages. 3 sources, `fadeDuration` 150.
+- Rail is gzipped MVT packed into chunk files, read by HTTP Range through `addProtocol` (several zoom levels per chunk, LRU caches).
+- Rail tiles z0-12, overzoomed above. Sampled tiles at most 36 KB. About 110.6 MB gzipped for the world.
+- OpenFreeMap vector basemap with heavy `minzoom`.
+- Latin glyph ranges self-hosted; CJK drawn with `localIdeographFontFamily`.
+
+### Our tile sizes
+
+Re-gzipped samples from `pilot.pmtiles`, dense Chinese cities. Largest tile per zoom: z3 261 KB, z4 218, z5 183, z6 94, z7 63, z8 165, z9 174, z10 159, z11 157, z12 89, z13 46, z14 36 KB. Medians are 2-39 KB.
+
+### Tile and style zoom mismatches
+
+Data sits in tiles a zoom before the style draws it (`track_minzoom` and `feat` calls in `pipeline/rail-extract/src/tiles.rs` against `minzoom` in `app/src/mapStyle.ts`):
+
+| Layer | In tiles from | Drawn from |
+| --- | --- | --- |
+| Strands | z11 | z12 |
+| Station grounds, yard areas | z10 | z12 |
+| Buildings | z12 | z13 |
+| Platforms | z13 | z14 |
+| Yard track | z12 | z13 |
+
+### Not measured yet
+
+- The user's own testing was on localhost, probably the dev server on port 5173, which is slower than the production build measured here.
+- First visit with a cold cache and a throttled network.
+- Trackpad pinch input (the bench sends wheel ticks).
