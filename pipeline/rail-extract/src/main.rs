@@ -78,6 +78,66 @@ fn build_regions(root: &Path, slugs: &[String], tiles: bool, data: Option<&Strin
             eprintln!("{l}");
         }
     }
+    if tiles && PILOT_SOURCES.iter().any(|p| slugs.iter().any(|s| s == p)) {
+        join_pilot(&paths.out);
+    }
+}
+
+/// the tiled pilot sources the app draws from one file (app/src/regions.ts, TILES); the app learns each one's bounds from pilot.parts.json
+const PILOT_SOURCES: [&str; 3] = ["sf-bay-area", "paris", "china"];
+
+/// data bounds [west, south, east, north] from a PMTiles v3 header (127 bytes; min lon, min lat, max lon, max lat are i32 in 1e-7 degrees at 102, 106, 110, 114)
+fn pmtiles_bounds(file: &Path) -> std::io::Result<[f64; 4]> {
+    use std::io::Read;
+    let mut h = [0u8; 127];
+    std::fs::File::open(file)?.read_exact(&mut h)?;
+    if &h[..7] != b"PMTiles" || h[7] != 3 {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "not a PMTiles v3 file"));
+    }
+    let e7 = |o: usize| i32::from_le_bytes(h[o..o + 4].try_into().unwrap()) as f64 / 1e7;
+    Ok([e7(102), e7(106), e7(110), e7(114)])
+}
+
+/// tile-join the pilot sources into pilot.pmtiles: one tile source (about 52 style layers instead of 155), and write pilot.parts.json
+/// (each source's slug and bounds, so the app can tell which side files a feature belongs to). Joins the per-region files already in
+/// `out`, so a partial rebuild refreshes the join; a missing file is warned about and skipped. The bounds must not overlap (OSM ids
+/// are unique across the sources only then). -pk: no tile size limit; layers and attributes are all kept. Both outputs are written
+/// to a temporary file and renamed on success.
+fn join_pilot(out: &Path) {
+    let t = Instant::now();
+    let mut parts: Vec<(&str, [f64; 4], PathBuf)> = Vec::new();
+    for s in PILOT_SOURCES {
+        let f = out.join(format!("{s}.pmtiles"));
+        match pmtiles_bounds(&f) {
+            Ok(b) => parts.push((s, b, f)),
+            Err(e) => eprintln!("warning: pilot join skipped: {}: {e}", f.display()),
+        }
+    }
+    if parts.len() < PILOT_SOURCES.len() {
+        return;
+    }
+    for (i, a) in parts.iter().enumerate() {
+        for b in &parts[i + 1..] {
+            let (p, q) = (a.1, b.1);
+            assert!(p[2] <= q[0] || q[2] <= p[0] || p[3] <= q[1] || q[3] <= p[1], "pilot join: bounds of {} and {} overlap ({:?} / {:?})", a.0, b.0, p, q);
+        }
+    }
+    // tile-join picks the format from the extension, so the temporary name keeps .pmtiles last
+    let tmp = out.join("pilot.tmp.pmtiles");
+    let status = std::process::Command::new("tile-join")
+        .args(["-f", "-pk", "-q", "-o"])
+        .arg(&tmp)
+        .args(parts.iter().map(|p| &p.2))
+        .stdout(std::process::Stdio::null())
+        .status()
+        .expect("start tile-join (comes with tippecanoe)");
+    assert!(status.success(), "tile-join failed");
+    let json: Vec<_> = parts.iter().map(|p| serde_json::json!({ "slug": p.0, "bounds": p.1 })).collect();
+    let tmp_json = out.join("pilot.parts.tmp.json");
+    std::fs::write(&tmp_json, serde_json::to_string_pretty(&json).unwrap() + "\n").expect("write pilot.parts.json");
+    std::fs::rename(&tmp, out.join("pilot.pmtiles")).expect("rename pilot.pmtiles");
+    std::fs::rename(&tmp_json, out.join("pilot.parts.json")).expect("rename pilot.parts.json");
+    eprintln!("join pilot.pmtiles: {:.1} s", t.elapsed().as_secs_f64());
 }
 
 fn main() {

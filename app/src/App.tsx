@@ -55,7 +55,7 @@ export default function App() {
   const railwaysRef = useRef(railways)   // for openHit, which memoized click handlers call
   railwaysRef.current = railways
   const [selTrackName, setSelTrackName] = useState<string | null>(null)
-  const [selTrackSlug, setSelTrackSlug] = useState<string | null>(null)   // the tile source of the clicked track; null: the Lines list's region
+  const [selTrackSlug, setSelTrackSlug] = useState<string | null>(null)   // the region part of the clicked track; null: the Lines list's region
   const [listHoverLine, setListHoverLine] = useState<number | null>(null)
   const [listHoverName, setListHoverName] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -177,7 +177,7 @@ export default function App() {
   const hlLine = selectedLine ?? listHoverLine ?? hoverLine
   const hlName = selectedLine == null && selTrackName == null ? (listHoverName ?? (listHoverLine == null ? hoverName : null)) : selTrackName
   const hlSlug = selected?.kind === 'line' ? selected.slug
-    : selTrackName != null && selTrackSlug ? selTrackSlug   // a clicked track keeps the source it was hit in, so its highlight is not redone
+    : selTrackName != null && selTrackSlug ? selTrackSlug   // a clicked track keeps the region part it was hit in, so its highlight is not redone
     : listHoverLine != null || listHoverName != null || selTrackName != null ? region.slug
     : hh ? hh.slug : null
   // hovering highlights straight from the map's hit test (MapView), as long as nothing is selected

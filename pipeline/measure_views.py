@@ -1,7 +1,8 @@
 """Phase 3 budget check: compressed PMTiles bytes needed to draw one view (docs: under 600 KB per view).
-Usage: python3 measure_views.py   (reads ../app/public/data/*.pmtiles)
+Usage: python3 measure_views.py   (reads ../app/public/data/*.pmtiles; TILES=pilot reads every view from that one file)
 A view = one screen; MapLibre uses 512 px tiles and loads tile zoom floor(map zoom)."""
 import math
+import os
 from pathlib import Path
 from pmtiles.reader import Reader, MmapSource
 
@@ -42,8 +43,11 @@ def tiles_for(lon, lat, z, w, h):
 def main():
     worst = 0
     readers = {}
+    if os.environ.get("TILES"):
+        print(f"measuring {DATA / (os.environ['TILES'] + '.pmtiles')} for every view")
     print(f"{'view':16} {'screen':16} " + " ".join(f"z{z:<5}" for z in ZOOMS) + "   (KB, compressed)")
     for name, (slug, lon, lat) in VIEWS.items():
+        slug = os.environ.get("TILES") or slug
         if slug not in readers:
             f = open(DATA / f"{slug}.pmtiles", "rb")
             readers[slug] = (Reader(MmapSource(f)), f)

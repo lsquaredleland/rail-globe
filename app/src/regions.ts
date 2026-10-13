@@ -6,8 +6,8 @@ export interface Region {
   center: [number, number] // lon, lat
   zoom: number
   zoomPhone: number
-  /** the region whose tiles draw this one, when it lies inside a bigger region: its own outline, Lines list and side files,
-   *  but drawn from the bigger region's tiles, so overlapping regions are not loaded and drawn twice */
+  /** the region whose tiles hold this one, when it lies inside a bigger region: its own outline, Lines list and side files,
+   *  but its rail is the bigger region's, so overlapping regions are not loaded and drawn twice */
   tiles?: string
   /** no card of its own: an area of the bigger region (a city, a province) already is this region */
   noCard?: boolean
@@ -24,7 +24,28 @@ export const REGIONS: Region[] = [
 
 export const regionBySlug = (s: string) => REGIONS.find((r) => r.slug === s) ?? REGIONS[1]
 
-/** the tile source that draws a region */
-export const tilesOf = (slug: string) => REGIONS.find((r) => r.slug === slug)?.tiles ?? slug
-/** the tile sources on the map: one per region that is not drawn from another's tiles */
-export const SOURCES: string[] = REGIONS.filter((r) => !r.tiles).map((r) => r.slug)
+/** The one tile source on the map: the sf-bay-area, paris and china PMTiles joined (rail-extract build, join_pilot). Style layer ids are `pilot:<name>`. */
+export const TILES = 'pilot'
+type Part = { slug: string; bounds: [number, number, number, number] }
+let parts: Part[] = []
+/** The per-region tile files that were joined, with their data bounds (PMTiles headers), from pilot.parts.json (written by the join in
+ *  rail-extract). Await once at startup before `partAt` / `regionOf`. They do not overlap. Tiles carry no region field, so a
+ *  feature's region (its side files: tags, lines, stations, highlights) is found from where it lies. */
+export async function loadParts() {
+  const r = await fetch(new URL(`data/${TILES}.parts.json`, document.baseURI).href)
+  if (!r.ok) throw new Error(`${TILES}.parts.json: ${r.status}`)
+  parts = await r.json()
+}
+/** the joined file a point (lon, lat) belongs to: the part whose bounds hold it, else the nearest */
+export function partAt([lng, lat]: [number, number]): string {
+  const d = (b: number[]) => Math.hypot(Math.max(b[0] - lng, 0, lng - b[2]), Math.max(b[1] - lat, 0, lat - b[3]))
+  return parts.reduce((a, p) => (d(p.bounds) < d(a.bounds) ? p : a)).slug
+}
+/** the region (a joined file's slug) a rendered feature belongs to, from its first point; `fallback` (a pointer position) when that is not a numeric pair */
+export function regionOf(f: { geometry: GeoJSON.Geometry }, fallback?: [number, number]): string {
+  let c = (f.geometry as GeoJSON.LineString | GeoJSON.Polygon | GeoJSON.Point).coordinates as unknown
+  while (Array.isArray(c) && Array.isArray(c[0])) c = c[0]
+  const ok = Array.isArray(c) && typeof c[0] === 'number' && typeof c[1] === 'number'
+  const pt = ok ? (c as [number, number]) : fallback
+  return pt ? partAt(pt) : parts[0].slug
+}

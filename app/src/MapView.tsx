@@ -3,8 +3,8 @@ import * as maplibregl from 'maplibre-gl'   // MapLibre 6 is ESM-only: no defaul
 import type { GeoJSONSource, Map as MLMap, MapGeoJSONFeature } from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { addAirportIcon, addBoundary, addRegion, applyState, areaLayers, baseStyle, highlightLine, hitLayer, prefetchHighlights, regionsInView, setFocus, stationLayers, strandLayer, syncRegions, updateRegionsInView, yardHitLayer, type MapState } from './mapStyle'
-import { REGIONS, SOURCES } from './regions'
+import { addAirportIcon, addBoundary, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayer, prefetchHighlights, setFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
+import { loadParts, regionOf, REGIONS, TILES } from './regions'
 
 export type Hit =
   | { kind: 'station'; slug: string; props: Record<string, string | number>; lngLat: [number, number] }
@@ -43,8 +43,6 @@ let protocolAdded = false
 // MapLibre 6 keeps its tile worker in two module files next to the library, which a bundler (and Vite's dependency cache) does
 // not carry along: production uses the copies vite.config.ts emits, dev the files in node_modules
 maplibregl.setWorkerUrl(new URL(import.meta.env.PROD ? 'maplibre/maplibre-gl-worker.mjs' : 'node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs', document.baseURI).href)
-
-function slugOf(layerId: string) { return layerId.split(':')[0] }
 
 export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref) {
   const el = useRef<HTMLDivElement>(null)
@@ -86,15 +84,16 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
     scale.current = sc
     map.addControl(sc, 'bottom-left')
 
-    map.on('load', () => {
+    map.on('load', async () => {
+      await loadParts()   // the joined files' bounds: needed to find a feature's region
+      if (mapRef.current !== map) return   // removed while waiting
       for (const r of REGIONS) addBoundary(map, r.slug)
-      for (const s of SOURCES) addRegion(map, s)   // regions inside China are drawn from China's tiles
+      addRailSource(map, TILES)   // one source: the pilot regions' tiles joined; regions inside China are drawn from China's part
       map.addSource('selection', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
       map.addLayer({ id: 'selection', type: 'circle', source: 'selection',
         paint: { 'circle-radius': 15, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#1E1E1C', 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.55 } })
       addAirportIcon(map)
       loaded.current = true
-      updateRegionsInView(map)
       applyState(map, p.current.state)
       highlightLine(map, p.current.highlightSlug, p.current.selectedLine, p.current.selectedTrackName)
       setFocus(map, p.current.focusSlug)
@@ -107,32 +106,33 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       const ll = map.unproject([pt.x, pt.y])
       const lngLat: [number, number] = [ll.lng, ll.lat]
       const q = (layers: string[]) => map.queryRenderedFeatures(box, { layers: layers.filter((l) => map.getLayer(l)) })
+      // the region (sf-bay-area, paris, china) whose side files a feature's ids refer to: found from where the feature lies
+      const slugOf = (f: MapGeoJSONFeature) => regionOf(f, lngLat)
       const toProps = (f: MapGeoJSONFeature) => f.properties as Record<string, string | number>
-      const inView = regionsInView()   // only the regions on screen are hit-tested
 
-      const st = q(inView.flatMap((r) => stationLayers(r)))
+      const st = q(stationLayers(TILES))
       if (st.length) {
         const best = [...st].sort((a, b) => Number(a.properties.tier) - Number(b.properties.tier))[0]
         const g = best.geometry as GeoJSON.Point
-        return { kind: 'station', slug: slugOf(best.layer.id), props: toProps(best), lngLat: g.coordinates as [number, number] }
+        return { kind: 'station', slug: slugOf(best), props: toProps(best), lngLat: g.coordinates as [number, number] }
       }
       if (p.current.state.mode === 'operator' && map.getZoom() >= 12) {
-        const ln = q(inView.flatMap((r) => [strandLayer(r), `${strandLayer(r)}-hs`]))
+        const ln = q([strandLayer(TILES), `${strandLayer(TILES)}-hs`])
           .filter((f) => !p.current.state.hsrOnly || f.properties.t === 'high_speed')
-        if (ln.length) return { kind: 'line', slug: slugOf(ln[0].layer.id), props: toProps(ln[0]), lngLat }
+        if (ln.length) return { kind: 'line', slug: slugOf(ln[0]), props: toProps(ln[0]), lngLat }
       }
-      const tr = q(inView.map((r) => hitLayer(r)))
+      const tr = q([hitLayer(TILES)])
       if (tr.length) {
         // most prominent type wins when tracks overlap
         const order = ['high_speed', 'intercity', 'regional', 'metro', 'light_rail', 'monorail', 'funicular', 'other', 'freight']
         const best = [...tr].sort((a, b) => order.indexOf(String(a.properties.type)) - order.indexOf(String(b.properties.type)))[0]
-        return { kind: 'track', slug: slugOf(best.layer.id), props: toProps(best), lngLat }
+        return { kind: 'track', slug: slugOf(best), props: toProps(best), lngLat }
       }
-      const yd = p.current.state.hsrOnly ? [] : q(inView.map((r) => yardHitLayer(r)))
-      if (yd.length) return { kind: 'track', slug: slugOf(yd[0].layer.id), props: toProps(yd[0]), lngLat }
+      const yd = p.current.state.hsrOnly ? [] : q([yardHitLayer(TILES)])
+      if (yd.length) return { kind: 'track', slug: slugOf(yd[0]), props: toProps(yd[0]), lngLat }
       // station grounds, yards, buildings and platforms (polygons are hit inside, with no tolerance)
-      const pt1 = map.queryRenderedFeatures([pt.x, pt.y], { layers: inView.flatMap((r) => areaLayers(r)).filter((l) => map.getLayer(l)) })
-      if (pt1.length) return { kind: 'area', slug: slugOf(pt1[0].layer.id), props: toProps(pt1[0]), lngLat }
+      const pt1 = map.queryRenderedFeatures([pt.x, pt.y], { layers: areaLayers(TILES).filter((l) => map.getLayer(l)) })
+      if (pt1.length) return { kind: 'area', slug: slugOf(pt1[0]), props: toProps(pt1[0]), lngLat }
       return null
     }
 
@@ -159,8 +159,6 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
     const showZoom = () => { if (zoomEl.current) zoomEl.current.textContent = `z${map.getZoom().toFixed(2)}` }
     map.on('move', showZoom); showZoom()
     map.on('movestart', () => { hovering = false; p.current.onHover(null, { x: 0, y: 0 }) })
-    // regions that came into view get the current state and highlight; a source that has just read its bounds may change the set
-    map.on('sourcedata', (e) => { if (loaded.current && e.sourceDataType === 'metadata') syncRegions(map) })
     // when the map settles in a view it has not prefetched yet (also the first one), load the highlight data of the lines on screen
     let prefetched = ''
     map.on('idle', () => {
@@ -171,7 +169,6 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       setTimeout(() => { if (!map.isMoving()) prefetchHighlights(map) }, 150)
     })
     map.on('moveend', () => {
-      if (loaded.current) syncRegions(map)
       const c = map.getCenter()
       p.current.onMoveEnd({ center: [c.lng, c.lat], zoom: map.getZoom() })
     })

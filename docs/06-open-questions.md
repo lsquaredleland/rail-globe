@@ -33,7 +33,7 @@ The docs did not cover these, so they were implemented as the obvious option and
 | Unrouted main line in the US | A per-region setting (`unrouted_main_type` in `pipeline/config/`). The SF Bay Area sets it to Freight, so unrouted `usage=main` track is muted grey instead of Intercity. Paris and Chengdu keep Intercity |
 | Track on shared line (phase 3) | Track takes the most prominent type of any line on it, so a classic line used by a few TGVs (e.g. Paris–Strasbourg east of Noisy-le-Sec) is drawn High-speed |
 | Operator strands (phase 3) | One strand per line per piece of track from z12. Above 7 lines on one piece, strand width and spacing shrink so the bundle stays at about 7 strands wide |
-| Tile layout (phase 3) | One PMTiles file per region for the pilot, not one file. Tier 1/2/3 stations appear in tiles from z7/z9/z11 and on screen (circles) from z8/z10/z12; labels come from the complexes layer from z10/z11/z13 |
+| Tile layout (phase 3) | Decided 2026-10-13 (see `00-overview.md`): the pilot is one joined tile source, `pilot.pmtiles`, built from per-region files. Phase 5 still decides the world layout. Tier 1/2/3 stations appear in tiles from z7/z9/z11 and on screen (circles) from z8/z10/z12; labels come from the complexes layer from z10/z11/z13 |
 | Design extras left out (phase 3) | Compare view (switch shown, disabled until phase 4) and the Terminus badge in tooltips (shown only in the station panel, per the design). Units (km/mi), Copy link and Inspect OSM tags are in |
 | Inspect OSM tags | Shows the tags the data spec keeps (not the full OSM tag set, which the filter drops) plus fields Rail Globe derives (rail type and how it was set, routes, stop area, station model fields). Tags load on demand from 256 id-sharded files per region (`data/<slug>/tags/`), so they are not in the tiles. Hover shows tags; click pins a panel with Open in OSM and Copy tags |
 | Airport icons | The plane icon and IATA code sit at the centre of the airport outline (commercial airports only: IATA code, not military, 300 ha or more; smaller airfields get outline and code, no icon). Stations at airports are ordinary circles; their tooltip and panel still say Airport. The track tooltip no longer shows a Tracks row (the value was unknown for most track) |
@@ -65,19 +65,19 @@ Not tried, in the order I would try them:
 
 ## Smooth rendering and zoom: ideas to explore (not measured)
 
-Listed 2026-10-13, after the highlight work above. Roughly by expected payoff.
+Listed 2026-10-13, after the highlight work above. Roughly by expected payoff. Status updated 2026-10-13 after step 4.
 
-1. **One tile source instead of three.** SF, Paris and China each add about 50 layers (155 in total). One PMTiles file, or one per continent, would cut the layer count about 3x; every frame and every style change loops over layers.
-2. **Drop the high-speed twin layers.** Every track layer has a `-hs` copy so high-speed draws on top; a different draw order would halve those layers.
-3. **Lighter tiles.** Move per-piece tags only the tooltip and Inspect use (electrified, voltage, gauge, frequency, tracks) from the tiles to side files fetched on hover. Smaller tiles decode and upload faster, which is what makes zooming stutter.
+1. **One tile source instead of three.** Done 2026-10-13 (`00-overview.md`). Layers 158 to 66. China views at throttle 6x: missed frames 128 to 76 (-41%), max frame 133 to 83 ms. Nearly all remaining misses are in the zoom-in.
+2. **Drop the high-speed twin layers.** Next; deferred by the user. Every track layer has a `-hs` copy so high-speed draws on top; a different draw order would halve those layers.
+3. **Lighter tiles.** Move per-piece tags only the tooltip and Inspect use (electrified, voltage, gauge, frequency, tracks) from the tiles to side files fetched on hover. Smaller tiles decode and upload faster, which is what makes zooming stutter. **Tried and dropped 2026-10-13:** taking the tooltip-only tags out of the tiles saved 8.5% of `china.pmtiles` and 2-5% per view, with no frame gain, and moved shard fetch and parse onto hover. If bytes matter later, a cheaper variant is to pack those tags into one property.
 4. **MapLibre Tiles (MLT).** MapLibre 6 reads MLT, which is smaller and faster to decode than MVT. tippecanoe does not write it, so it needs a conversion step; test on China's tiles first.
 5. **Pre-rendered raster tiles for z0-5.** Images draw almost for free at country scale; vector tiles from z6. Also fixes the z5 China views that are over the 600 KB budget.
 6. **Load the next zoom before it is needed.** Prefetch parent and child tiles around the view while idle, and raise `maxTileCacheSize` so zooming back out is instant.
 7. **Load label fonts at startup** for the scripts in use (Latin, CJK), so the first labels at a new zoom do not wait on a font download.
 8. **Move the tooltip with a CSS transform** instead of `top`/`left`, so following the pointer does not recompute layout.
-9. **Turn off checks the map does not need:** `crossSourceCollisions: false`, `renderWorldCopies: false`, and a `minzoom`/`maxzoom` on every layer so off-zoom layers are skipped early.
+9. **Turn off checks the map does not need:** `crossSourceCollisions: false`, `renderWorldCopies: false`, and a `minzoom`/`maxzoom` on every layer so off-zoom layers are skipped early. **Partly tried 2026-10-13, not kept:** `renderWorldCopies: false`, `crossSourceCollisions: false` (it made basemap labels overlap station labels) and `maxTileCacheSize` 200/500 gave no measurable gain. Per-layer `minzoom`/`maxzoom` not tried.
 
-Start with 1 and 3: they change the most, and are pipeline work (Rust) plus a small app change.
+Item 1 is done and 3 was dropped; 2 is next.
 
 ## Parked (not in v1)
 

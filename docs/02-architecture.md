@@ -58,6 +58,8 @@ Also: a QA report per region per build (broken route relations, orphan stations,
 
 ## Tile layers
 
+The app reads one tile source, `pilot` (`pilot.pmtiles`). Per-region PMTiles files are its input: `rail-extract build` joins them with `tile-join` and writes each part's bounds to `pilot.parts.json`. Tiles carry no region field, so the app finds a feature's region from its position (the part whose bounds hold it) to pick side files. See `00-overview.md`, 2026-10-13.
+
 | Layer | Geometry | Zooms | Key attributes |
 | --- | --- | --- | --- |
 | `track` (overview) | Merged lines, in the `track` layer (see `00-overview.md`, 2026-10-12) | z0–7 | type, con, prop, oc, kmh band, ln; nk (railway number) on track with no mapped line |

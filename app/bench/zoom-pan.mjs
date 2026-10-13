@@ -5,6 +5,7 @@
 import puppeteer from 'puppeteer-core'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { execSync } from 'node:child_process'
+import { loadavg } from 'node:os'
 
 const arg = (n, d) => { const i = process.argv.indexOf('--' + n); return i > 0 ? process.argv[i + 1] : d }
 const num = (n, d, min) => {
@@ -62,7 +63,15 @@ const IDLE = `window.__idle = () => new Promise((res, rej) => {
   m.once('idle', () => { clearTimeout(t); res() }); m.triggerRepaint()
 })`
 
-async function oneRun(browser) {
+// control: ~60 rAF intervals on the loaded page with the map not moving. A median near 33 ms means the display runs at 30 Hz.
+const CONTROL_MS = 25
+const control = (page) => page.evaluate(`new Promise((res) => {
+  const fr = []; let last = performance.now(), n = 0
+  const tick = (t) => { fr.push(t - last); last = t; if (++n < 61) requestAnimationFrame(tick); else { fr.shift(); res(fr) } }
+  requestAnimationFrame(tick)
+})`).then(median)
+
+async function oneRun(browser, ctl) {
   const page = await browser.newPage()
   try {
     await page.setViewport(VIEWPORT)
@@ -74,6 +83,7 @@ async function oneRun(browser) {
     await page.goto(URL_ + '/?debug', { waitUntil: 'load' })
     await page.waitForFunction('window.__map && window.__map.loaded()', { timeout: 120000 })
     await page.evaluate(IDLE)
+    ctl.push(await control(page))
     const out = {}
     for (const [name, lon, lat] of VIEWS) {
       await page.evaluate(`window.__map.jumpTo({ center: [${lon}, ${lat}], zoom: 9 })`)
@@ -111,6 +121,7 @@ async function oneRun(browser) {
       const s = combine(MV.map((k) => score(moves[k].fr, moves[k].long.map((x) => x.d))))
       process.stderr.write(`  ${name}: missed ${s.missed}, dropped ${s.dropped}/${s.frames}, max ${r1(s.max)} ms\n`)
     }
+    ctl.push(await control(page))
     return out
   } finally { await page.close() }
 }
@@ -126,6 +137,12 @@ function scoreRun(run) {
   total.settle = sum(Object.values(views).map((v) => sum(Object.values(v.settle))))
   return { views, total }
 }
+
+// Per-phase warning only (never used to exclude a run): a phase whose frames are all ~33.3 ms looks like a 30 Hz display, but at
+// 60 Hz genuinely slow frames also show as 33.3 ms. The control (idle page, before and after a run) decides whether a run is flagged.
+const halved = (fr) => fr.length >= 10 && (Math.min(...fr) >= 30 || (Math.abs(median(fr) - 2 * VSYNC) < 1.5 && fr.filter((x) => x < 20).length <= fr.length * 0.02))
+const phaseWarn = (run) => VIEWS.flatMap(([n]) => MV.filter((k) => halved(run[n][k].fr)).map((k) => `${n}/${k}`))
+const flagged = (c) => c.some((x) => x > CONTROL_MS)
 
 const spread = (a) => (median(a) ? (Math.max(...a) - Math.min(...a)) / median(a) : 0)   // unrounded
 function summarize(runs) {
@@ -155,29 +172,55 @@ const browser = await puppeteer.launch({ executablePath: CHROME, headless: true,
 const env = {
   chrome: await browser.version(), commit: git('rev-parse HEAD'), dirty: !!git('status --porcelain'),
   viewport: VIEWPORT, throttle: THROTTLE, runs: RUNS, warmup: WARMUP, vsyncMs: VSYNC, dropMs: DROP_MS, date: new Date().toISOString(),
+  loadAvg: loadavg(), loadAvgEnd: null, controlMs: [], refreshHalved: [], controlLimitMs: CONTROL_MS,
 }
+if (env.loadAvg[0] > 2) console.error(`WARNING: 1-min load average ${env.loadAvg[0].toFixed(1)} > 2: the machine is busy, results may be noisy`)
 mkdirSync(new URL('./results/', import.meta.url), { recursive: true })
 const file = new URL(`./results/${LABEL}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`, import.meta.url)
 const runs = []
-const save = () => writeFileSync(file, JSON.stringify({ label: LABEL, url: URL_, env, completedRuns: runs.length, summary: runs.length ? summarize(runs) : null, raw: runs }))
+const save = () => writeFileSync(file, JSON.stringify({ label: LABEL, url: URL_, env, completedRuns: runs.length, summary: runs.length ? summarize(runs) : null,
+  summaryCleanRuns: runs.length ? cleanSummary() : null, raw: runs }))
+const cleanIdx = () => runs.map((_, i) => i).filter((i) => !flagged(env.controlMs[i] || []))
+const cleanSummary = () => { const ix = cleanIdx(); return ix.length >= 2 ? { runs: ix.length, ...summarize(ix.map((i) => runs[i])) } : null }
 try {
-  for (let i = 0; i < WARMUP; i++) { console.error(`warmup ${i + 1}/${WARMUP} (not measured)`); await oneRun(browser) }
-  for (let i = 0; i < RUNS; i++) { console.error(`run ${i + 1}/${RUNS}`); runs.push(await oneRun(browser)); save() }
+  for (let i = 0; i < WARMUP; i++) { console.error(`warmup ${i + 1}/${WARMUP} (not measured)`); await oneRun(browser, []) }
+  for (let i = 0; i < RUNS; i++) {
+    console.error(`run ${i + 1}/${RUNS}`)
+    const ctl = []
+    runs.push(await oneRun(browser, ctl))
+    env.controlMs.push(ctl.map(r1))
+    const pw = phaseWarn(runs[runs.length - 1]), fl = flagged(ctl)
+    env.refreshHalved.push(fl)
+    if (fl) console.error(`!!! WARNING: run ${i + 1} looks REFRESH HALVED (30 Hz): idle-page control median ${ctl.map(r1).join(' / ')} ms (limit ${CONTROL_MS}). Environmental, not code. Run kept in the all-runs summary.`)
+    if (pw.length) console.error(`warning (info only, run kept): run ${i + 1} phases with all frames ~33 ms: ${pw.join(', ')}`)
+    save()
+  }
 } catch (e) {
   console.error('aborted: ' + e.message)
   process.exitCode = 1
-} finally { await browser.close(); if (runs.length) save() }
+} finally { await browser.close(); env.loadAvgEnd = loadavg(); if (runs.length) save() }
 
 if (runs.length) {
-  const { views, total: T } = summarize(runs)
   const p = (v, n) => String(v).padStart(n)
-  console.log(`\n${LABEL}: ${runs.length}/${RUNS} runs after ${WARMUP} warmup, throttle ${THROTTLE}x, median across runs, ${Math.round((Date.now() - t0) / 1000)} s`)
-  console.log('view          missed(in/pan/out)  total spread dropped  max ms  jank ms longTasks longMs  settle in/pan/out (ms)')
-  for (const [n, v] of Object.entries(views)) {
-    const m = v.missed
-    console.log(`${n.padEnd(13)} ${(m.zoomIn + '/' + m.pan + '/' + m.zoomOut).padStart(18)} ${p(m.total, 6)} ${p(Math.round(v.missedSpread * 100) + '%', 6)} ${p(v.dropped, 7)} ${p(r1(v.max), 7)} ${p(Math.round(v.jank), 8)} ${p(v.longTasks, 9)} ${p(Math.round(v.longMs), 6)}  ${MV.map((k) => Math.round(v.settle[k])).join('/')}`)
+  const print = (title, rs) => {
+    const { views, total: T } = summarize(rs)
+    console.log(`\n${title}: ${rs.length} runs of ${RUNS} after ${WARMUP} warmup, throttle ${THROTTLE}x, median across runs, ${Math.round((Date.now() - t0) / 1000)} s`)
+    console.log('view          missed(in/pan/out)  total spread dropped  max ms  jank ms longTasks longMs  settle in/pan/out (ms)')
+    for (const [n, v] of Object.entries(views)) {
+      const m = v.missed
+      console.log(`${n.padEnd(13)} ${(m.zoomIn + '/' + m.pan + '/' + m.zoomOut).padStart(18)} ${p(m.total, 6)} ${p(Math.round(v.missedSpread * 100) + '%', 6)} ${p(v.dropped, 7)} ${p(r1(v.max), 7)} ${p(Math.round(v.jank), 8)} ${p(v.longTasks, 9)} ${p(Math.round(v.longMs), 6)}  ${MV.map((k) => Math.round(v.settle[k])).join('/')}`)
+    }
+    console.log(`${'TOTAL'.padEnd(13)} ${' '.repeat(18)} ${p(T.missed, 6)} ${p(Math.round(T.missedSpread * 100) + '%', 6)} ${p(T.dropped, 7)} ${p(r1(T.max), 7)} ${p(Math.round(T.jank), 8)} ${p(T.longTasks, 9)} ${p(Math.round(T.longMs), 6)}  ${Math.round(T.settle)} summed`)
+    console.log(`frames ${T.frames}; jank spread ${Math.round(T.jankSpread * 100)}%`)
   }
-  console.log(`${'TOTAL'.padEnd(13)} ${' '.repeat(18)} ${p(T.missed, 6)} ${p(Math.round(T.missedSpread * 100) + '%', 6)} ${p(T.dropped, 7)} ${p(r1(T.max), 7)} ${p(Math.round(T.jank), 8)} ${p(T.longTasks, 9)} ${p(Math.round(T.longMs), 6)}  ${Math.round(T.settle)} summed`)
-  console.log(`frames ${T.frames}; jank spread ${Math.round(T.jankSpread * 100)}%`)
+  print(`${LABEL} (ALL ${runs.length} runs)`, runs)
+  const ix = cleanIdx()
+  if (ix.length < runs.length) {
+    console.log(`\n!!! REFRESH HALVED (30 Hz) control flagged run(s) ${runs.map((_, i) => i).filter((i) => !ix.includes(i)).map((i) => i + 1).join(', ')} (control medians ms: ${env.controlMs.map((c) => c.join('/')).join('; ')})`)
+    if (ix.length >= 2) print(`${LABEL} (CLEAN runs only: ${ix.length})`, ix.map((i) => runs[i]))
+    else console.log(`only ${ix.length} clean run(s): no clean-only summary`)
+  } else console.log('refresh-halved control: none flagged (control medians ms ' + env.controlMs.map((c) => c.join('/')).join('; ') + ')')
+  const f = (a) => a.map((x) => x.toFixed(2)).join(' ')
+  console.log(`load avg at start ${f(env.loadAvg)}; at end ${f(env.loadAvgEnd)}`)
   console.error('wrote ' + file.pathname)
 }

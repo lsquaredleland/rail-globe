@@ -17,6 +17,10 @@ rail-extract/target/release/rail-extract build sf-bay-area paris china
 #   per region, in parallel: station model (stations, complexes, size tiers), stations under construction, tile input,
 #   tippecanoe and side files into ../app/public/data (was stations.py, con_stations.py, build_tiles.py; ported 2026-10-13)
 #   China: 11.9 s before tippecanoe (station model 6.4 s), tippecanoe 28.5 s
+#   whenever tiles are built and any of sf-bay-area, paris, china is among the regions, `tile-join -pk` merges the per-region PMTiles already in ../app/public/data
+#   into pilot.pmtiles (19 s, 161.3 MB, same bytes per view), so a partial rebuild (e.g. only paris) refreshes the join; a missing region file is warned about and the join skipped.
+#   It also writes pilot.parts.json (each file's slug and bounds, read from its PMTiles header) and fails if two bounds overlap. Both are written to a temporary file and renamed.
+#   The app draws all rail from pilot.pmtiles (one set of ~46 style layers instead of 3 x 50) and learns the parts from pilot.parts.json; the per-region .pmtiles are kept as join input
 rail-extract/target/release/rail-extract build greater-bay-area chengdu cn-beijing --no-tiles
 #   side files only: the app draws these regions from China's tiles (0.5 s for all three)
 #   also writes ../app/public/data/<slug>/stats.json (region card); areas inside a region: "stat_areas" (a list) or "stat_auto" (all provinces and cities of a country) in config/<slug>.json;

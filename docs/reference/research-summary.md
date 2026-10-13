@@ -129,3 +129,21 @@ Per-run totals: missed 1, 1, 0 (one 33 ms frame in two runs); jank 67, 68, 49 ms
 - Under throttle, nearly all misses are in the zoom-in (z9 to z14). The pan and zoom-out are clean.
 - Total missed frames (103, spread 6%) and jank ms are the numbers to compare. Single views are noisier (spread up to 19%).
 - Settle in the pan and zoom-out is 0 because the map is already idle when the move ends (tiles are cached). Settle after the zoom-in is the number that reflects tile loading.
+
+### One tile source (step 4)
+
+Measured 2026-10-13, same bench and flags as the baseline above (5 China views, 3 runs, 1 warm-up, throttle 6x), after joining the pilot regions into one source. Machine load average was 2.3-3.4, higher during the after runs, so the gain is if anything understated.
+
+| Throttle 6x | Before | After |
+| --- | --- | --- |
+| Missed frames (all views) | 128 | 76 (-41%) |
+| Jank ms | 2178 | 1314 |
+| Max frame ms | 133 | 83 (Chengdu East) |
+| Zoom-in settle, summed ms | 952 | 852 |
+| Run spread | 30% | 11% |
+
+Missed frames per view, before to after: Chengdu East 36 to 22, Shenzhen 19 to 12, Guangzhou 26 to 17, Beijing 19 to 12, Shanghai 25 to 15. At throttle 1x both runs missed 0 frames.
+
+The plan's target of 50% fewer missed frames (64 or fewer) was not reached. Nearly all remaining misses are in the zoom-in.
+
+The bench's refresh-halving guard is now a control: it takes the median rAF interval of an idle page, rather than testing each phase.

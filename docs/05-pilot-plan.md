@@ -19,7 +19,7 @@ Boundaries are administrative areas (decided).
 | 0 · Setup | Repo, `docs/`, `CLAUDE.md`. Vite + React + TypeScript app skeleton. One osmium config cutting the three regions | Three extracts from one planet pass; empty app runs locally |
 | 1 · Data | Filter to the data spec: features, relations side table, stop positions. QA report per region | Every data spec checklist item done; QA report lists broken routes and orphan stations |
 | 2 · Types and stations | Rail type classification, station model, size tiers, per-region commuter lists and override file | A hand-made answer list of about 10 stations and 10 lines per region passes (e.g. Gare du Nord is one complex; Chengdu East is top tier; BART is Metro) |
-| 3 · Map | Tiles per region, minimal basemap, both colour modes, construction and freight toggles, labels and tooltips, outlines | Each region reads correctly on a laptop and a phone; views under 600 KB |
+| 3 · Map | One joined tile source (`pilot.pmtiles`, from per-region files), minimal basemap, both colour modes, construction and freight toggles, labels and tooltips, outlines | Each region reads correctly on a laptop and a phone; views under 600 KB |
 | 4 · Compare | The three presets, same-scale side by side, synced zoom, stats panel with region size | SF vs Paris and Paris vs Chengdu show the right totals at the same real scale |
 | 5 · Scale | One country (France), then the world. Corridor merging spike and the low-zoom overview. Custom domain before public launch | World build runs end to end; low-zoom views stay inside the budget |
 

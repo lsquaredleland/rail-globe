@@ -1,7 +1,7 @@
 import type { ExpressionSpecification, GeoJSONSource, LayerSpecification, Map as MLMap, StyleSpecification } from 'maplibre-gl'
 import { STATION_ZOOM } from './config'
 import { FILL, INK, TYPE_COLOR, TYPE_WIDTH, TYPE_ORDER, type RailType } from './palette'
-import { SOURCES, tilesOf } from './regions'
+import { regionOf, TILES } from './regions'
 import { boundaryUrl, loadLineHighlight, loadNameHighlight, pmtilesUrl, type Highlight } from './data'
 
 export type ColorMode = 'type' | 'operator' | 'speed'
@@ -122,7 +122,6 @@ export function baseStyle(): StyleSpecification {
   }
 }
 
-/** All rail layers for one region, stacked in drawing order. */
 /** A region's faint outline (every region, also those drawn from a bigger region's tiles). Added before the rail layers. */
 export function addBoundary(map: MLMap, slug: string) {
   map.addSource(L(slug, 'boundary'), { type: 'geojson', data: boundaryUrl(slug) })
@@ -130,33 +129,33 @@ export function addBoundary(map: MLMap, slug: string) {
     paint: { 'line-color': '#B9B5AD', 'line-width': 1.1, 'line-dasharray': [6, 5], 'line-opacity': 0.8 } })
 }
 
-/** All rail layers of one tile source (see SOURCES), stacked in drawing order. */
-export function addRegion(map: MLMap, slug: string) {
+/** All rail layers of the tile source `source` (TILES), stacked in drawing order; ids are `<source>:<name>`. */
+export function addRailSource(map: MLMap, source: string) {
   // a track piece's OSM id ("way/123") is its feature id, so a highlighted line can be flagged with feature state
-  map.addSource(slug, { type: 'vector', url: pmtilesUrl(slug), attribution: ATTRIBUTION, promoteId: { track: 'id' } })
+  map.addSource(source, { type: 'vector', url: pmtilesUrl(source), attribution: ATTRIBUTION, promoteId: { track: 'id' } })
   const add = (l: Record<string, unknown>): void => { map.addLayer(l as unknown as LayerSpecification) }
-  const src = { source: slug } as const
+  const src = { source } as const
 
   // airport outline and terminals, drawn as infrastructure
-  add({ id: L(slug, 'airport-fill'), type: 'fill', ...src, 'source-layer': 'airports', minzoom: 8, filter: ['==', get('k'), 'aerodrome'],
+  add({ id: L(source, 'airport-fill'), type: 'fill', ...src, 'source-layer': 'airports', minzoom: 8, filter: ['==', get('k'), 'aerodrome'],
     paint: { 'fill-color': '#E6E0D2', 'fill-opacity': 0.85 } })
-  add({ id: L(slug, 'airport-line'), type: 'line', ...src, 'source-layer': 'airports', minzoom: 8, filter: ['==', get('k'), 'aerodrome'],
+  add({ id: L(source, 'airport-line'), type: 'line', ...src, 'source-layer': 'airports', minzoom: 8, filter: ['==', get('k'), 'aerodrome'],
     layout: { 'line-join': 'round' },
     paint: { 'line-color': '#9A927E', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.8, 12, 1.4, 15, 2.2] } })
-  add({ id: L(slug, 'airport-terminal'), type: 'fill', ...src, 'source-layer': 'airports', minzoom: 12, filter: ['==', get('k'), 'terminal'],
+  add({ id: L(source, 'airport-terminal'), type: 'fill', ...src, 'source-layer': 'airports', minzoom: 12, filter: ['==', get('k'), 'terminal'],
     paint: { 'fill-color': '#CBC1AD', 'fill-outline-color': '#A99F8A' } })
 
-  add({ id: L(slug, 'ground'), type: 'fill', ...src, 'source-layer': 'areas', minzoom: 12, filter: ['==', get('k'), 'land'],
+  add({ id: L(source, 'ground'), type: 'fill', ...src, 'source-layer': 'areas', minzoom: 12, filter: ['==', get('k'), 'land'],
     paint: { 'fill-color': FILL.ground, 'fill-opacity': 0.9 } })
-  add({ id: L(slug, 'yard-fill'), type: 'fill', ...src, 'source-layer': 'areas', minzoom: 12, filter: ['==', get('k'), 'yard'],
+  add({ id: L(source, 'yard-fill'), type: 'fill', ...src, 'source-layer': 'areas', minzoom: 12, filter: ['==', get('k'), 'yard'],
     paint: { 'fill-color': FILL.yard } })
-  add({ id: L(slug, 'ground-edge'), type: 'line', ...src, 'source-layer': 'areas', minzoom: 12,
+  add({ id: L(source, 'ground-edge'), type: 'line', ...src, 'source-layer': 'areas', minzoom: 12,
     paint: { 'line-color': FILL.groundEdge, 'line-width': 0.8 } })
-  add({ id: L(slug, 'buildings'), type: 'fill', ...src, 'source-layer': 'buildings', minzoom: 13,
+  add({ id: L(source, 'buildings'), type: 'fill', ...src, 'source-layer': 'buildings', minzoom: 13,
     paint: { 'fill-color': FILL.building, 'fill-outline-color': FILL.buildingEdge } })
-  add({ id: L(slug, 'platforms-fill'), type: 'fill', ...src, 'source-layer': 'platforms', minzoom: 14, filter: ['==', ['geometry-type'], 'Polygon'],
+  add({ id: L(source, 'platforms-fill'), type: 'fill', ...src, 'source-layer': 'platforms', minzoom: 14, filter: ['==', ['geometry-type'], 'Polygon'],
     paint: { 'fill-color': FILL.platform } })
-  add({ id: L(slug, 'platforms-line'), type: 'line', ...src, 'source-layer': 'platforms', minzoom: 14, filter: ['==', ['geometry-type'], 'LineString'],
+  add({ id: L(source, 'platforms-line'), type: 'line', ...src, 'source-layer': 'platforms', minzoom: 14, filter: ['==', ['geometry-type'], 'LineString'],
     paint: { 'line-color': FILL.platform, 'line-width': 2 } })
 
   const roundJoin = { 'line-cap': 'round', 'line-join': 'round' } as const
@@ -175,16 +174,16 @@ export function addRegion(map: MLMap, slug: string) {
     late.push({ ...spec, filter: f ? ['all', ['!=', get('type'), 'high_speed'], f] : ['!=', get('type'), 'high_speed'] } as unknown as LayerSpecification)
     late.push({ ...spec, id: `${spec.id}-hs`, filter: f ? ['all', ['==', get('type'), 'high_speed'], f] : ['==', get('type'), 'high_speed'] } as unknown as LayerSpecification)
   }
-  add({ id: L(slug, 'yard'), type: 'line', ...src, 'source-layer': 'track', minzoom: 13, filter: ['==', get('type'), 'yard'],
+  add({ id: L(source, 'yard'), type: 'line', ...src, 'source-layer': 'track', minzoom: 13, filter: ['==', get('type'), 'yard'],
     layout: roundJoin, paint: { 'line-color': TYPE_COLOR.yard, 'line-width': widthExpr() } })
-  add({ id: L(slug, 'freight'), type: 'line', ...src, 'source-layer': 'track', minzoom: 8,
+  add({ id: L(source, 'freight'), type: 'line', ...src, 'source-layer': 'track', minzoom: 8,
     filter: ['all', ['==', get('type'), 'freight'], ['!', ['has', 'con']]],
     layout: { ...roundJoin, visibility: 'none' }, paint: { 'line-color': TYPE_COLOR.freight, 'line-width': widthExpr() } })
-  top.push({ id: L(slug, 'casing'), type: 'line', ...src, 'source-layer': 'track', filter: ['all', ['==', get('type'), 'high_speed'], ['!', ['has', 'con']]],
+  top.push({ id: L(source, 'casing'), type: 'line', ...src, 'source-layer': 'track', filter: ['all', ['==', get('type'), 'high_speed'], ['!', ['has', 'con']]],
     layout: roundJoin,
     paint: { 'line-color': '#FFFFFF', 'line-opacity': 0.9, 'line-gap-width': 0,
       'line-width': ['interpolate', ['linear'], ['zoom'], 10, 6, 12, 7.5, 15, 9] } } as LayerSpecification)
-  trackLayer({ id: L(slug, 'track'), type: 'line', ...src, 'source-layer': 'track', minzoom: 0,
+  trackLayer({ id: L(source, 'track'), type: 'line', ...src, 'source-layer': 'track', minzoom: 0,
     filter: ['all', ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight']],
     layout: { ...roundJoin, 'line-sort-key': rank },
     paint: { 'line-color': typeColor, 'line-width': widthExpr(), 'line-opacity': 1 } })
@@ -194,9 +193,9 @@ export function addRegion(map: MLMap, slug: string) {
     4, ['+', ['max', 2.6, ['*', byType((t) => TYPE_WIDTH[t][0]), 1.2]], extra],
     10, ['+', ['max', 1.8, ['*', byType((t) => TYPE_WIDTH[t][0]), 1.2]], extra], 12, ['+', ['max', 2.2, ['*', byType((t) => TYPE_WIDTH[t][1]), 1.2]], extra],
     15, ['+', ['max', 3, ['*', byType((t) => TYPE_WIDTH[t][2]), 1.2]], extra]] as Expr
-  trackLayer({ id: L(slug, 'construction-casing'), type: 'line', ...src, 'source-layer': 'track', filter: ['has', 'con'],
+  trackLayer({ id: L(source, 'construction-casing'), type: 'line', ...src, 'source-layer': 'track', filter: ['has', 'con'],
     layout: { 'line-cap': 'butt', 'line-join': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-opacity': 0.85, 'line-width': conW(2) } })
-  trackLayer({ id: L(slug, 'construction'), type: 'line', ...src, 'source-layer': 'track', filter: ['has', 'con'],
+  trackLayer({ id: L(source, 'construction'), type: 'line', ...src, 'source-layer': 'track', filter: ['has', 'con'],
     layout: { 'line-cap': 'butt', 'line-join': 'round', 'line-sort-key': rank },
     paint: { 'line-color': ['match', get('type'), 'other', '#45423C', typeColor], 'line-width': conW(0), 'line-dasharray': [3, 2] } })
 
@@ -206,12 +205,12 @@ export function addRegion(map: MLMap, slug: string) {
     15, ['+', ['*', byType((t) => TYPE_WIDTH[t][2]), 1.8], 3]] as Expr
   // Like the track, the highlight has a high-speed twin drawn above the white high-speed casing (which otherwise hides it).
   // z8 and closer: the track pieces flagged with feature state by highlightLine (no tile reload, no copying geometry)
-  hlLayer({ id: L(slug, 'hl-fs'), type: 'line', ...src, 'source-layer': 'track', minzoom: 8,
+  hlLayer({ id: L(source, 'hl-fs'), type: 'line', ...src, 'source-layer': 'track', minzoom: 8,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': typeColor, 'line-width': hlW, 'line-opacity': ['case', ['boolean', ['feature-state', 'hl'], false], 1, 0] } })
   // below z8 the merged overview has no per-piece ids: the line's simplified geometry from its side file
-  map.addSource(L(slug, 'hl'), { type: 'geojson', data: EMPTY })
-  hlLayer({ id: L(slug, 'hl'), type: 'line', source: L(slug, 'hl'), maxzoom: 8,
+  map.addSource(L(source, 'hl'), { type: 'geojson', data: EMPTY })
+  hlLayer({ id: L(source, 'hl'), type: 'line', source: L(source, 'hl'), maxzoom: 8,
     layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': typeColor, 'line-width': hlW } })
 
   // operator-colour strands (side by side from z12)
@@ -222,10 +221,10 @@ export function addRegion(map: MLMap, slug: string) {
   const strandW = (extra = 0): Expr => ['interpolate', ['linear'], ['zoom'],
     12, ['+', ['*', byType((t) => TYPE_WIDTH[t][1], 't', TYPE_WIDTH.other[1]), K], extra], 15, ['+', ['*', byType((t) => TYPE_WIDTH[t][2], 't', TYPE_WIDTH.other[2]), K], extra]] as Expr
   const offset: Expr = ['interpolate', ['linear'], ['zoom'], 12, ['*', ['*', U, K], 3.5], 15, ['*', ['*', U, K], 5.5]] as Expr
-  trackLayer({ id: L(slug, 'strand-casing'), type: 'line', ...src, 'source-layer': 'lines', minzoom: 12,
+  trackLayer({ id: L(source, 'strand-casing'), type: 'line', ...src, 'source-layer': 'lines', minzoom: 12,
     layout: { ...roundJoin, visibility: 'none' },
     paint: { 'line-color': '#1E1E1C', 'line-opacity': 0.28, 'line-width': strandW(1), 'line-offset': offset } }, 't')
-  trackLayer({ id: L(slug, 'strand'), type: 'line', ...src, 'source-layer': 'lines', minzoom: 12,
+  trackLayer({ id: L(source, 'strand'), type: 'line', ...src, 'source-layer': 'lines', minzoom: 12,
     layout: { ...roundJoin, visibility: 'none' },
     paint: { 'line-color': ['coalesce', get('c'), byType((t) => TYPE_COLOR[t], 't', TYPE_COLOR.other)],
       'line-opacity': ['case', ['has', 'c'], 1, 0.6], 'line-width': strandW(), 'line-offset': offset } }, 't')
@@ -233,22 +232,22 @@ export function addRegion(map: MLMap, slug: string) {
   top.forEach((l) => add(l)) // high-speed twins and casing: above every other rail layer
   // Focus veil: while a line is selected the other lines fade. A background layer at constant opacity does it with a repaint only:
   // changing a data-driven paint property (the obvious way) makes MapLibre re-parse and re-upload every loaded tile.
-  add({ id: L(slug, 'veil'), type: 'background', paint: { 'background-color': FILL.land, 'background-opacity': 0, 'background-opacity-transition': { duration: 120, delay: 0 } } })
+  add({ id: L(source, 'veil'), type: 'background', paint: { 'background-color': FILL.land, 'background-opacity': 0, 'background-opacity-transition': { duration: 120, delay: 0 } } })
   late.forEach((l) => add(l))   // the highlight, above the veil
 
   // invisible, wider hit target for track tooltips
   // at every zoom: below z8 the track tiles hold the merged overview, which keeps the line ids and railway names a click needs
-  add({ id: L(slug, 'hit'), type: 'line', ...src, 'source-layer': 'track', filter: ['!=', get('type'), 'yard'],
+  add({ id: L(source, 'hit'), type: 'line', ...src, 'source-layer': 'track', filter: ['!=', get('type'), 'yard'],
     layout: roundJoin, paint: { 'line-color': '#000000', 'line-opacity': 0, 'line-width': 12 } })
 
   // line names along the track: one label per line (from its strands), or the track's own name where no line is mapped
   const lblPaint = { 'text-color': '#33312C', 'text-halo-color': FILL.land, 'text-halo-width': 2, 'text-halo-blur': 0.3 }
-  add({ id: L(slug, 'lbl-lines'), type: 'symbol', ...src, 'source-layer': 'lines', minzoom: 11.5,
+  add({ id: L(source, 'lbl-lines'), type: 'symbol', ...src, 'source-layer': 'lines', minzoom: 11.5,
     layout: { 'symbol-placement': 'line', 'text-field': get('lb'), 'text-font': ['Noto Sans Regular'],
       'text-size': ['interpolate', ['linear'], ['zoom'], 11.5, 10, 15, 12], 'symbol-spacing': 320, 'text-max-angle': 30,
       'text-padding': 3, 'symbol-sort-key': get('i'), 'text-letter-spacing': 0.02 },
     paint: lblPaint })
-  add({ id: L(slug, 'lbl-track'), type: 'symbol', ...src, 'source-layer': 'track', minzoom: 11.5,
+  add({ id: L(source, 'lbl-track'), type: 'symbol', ...src, 'source-layer': 'track', minzoom: 11.5,
     filter: ['all', ['has', 'n'], ['!', ['has', 'nl']], ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight']],
     layout: { 'symbol-placement': 'line', 'text-field': get('n'), 'text-font': ['Noto Sans Regular'],
       'text-size': ['interpolate', ['linear'], ['zoom'], 11.5, 10, 15, 12], 'symbol-spacing': 360, 'text-max-angle': 30,
@@ -256,16 +255,16 @@ export function addRegion(map: MLMap, slug: string) {
     paint: lblPaint })
 
   // yard track gets its own hit layer: it only draws from z13
-  add({ id: L(slug, 'hit-yard'), type: 'line', ...src, 'source-layer': 'track', minzoom: 13, filter: ['==', get('type'), 'yard'],
+  add({ id: L(source, 'hit-yard'), type: 'line', ...src, 'source-layer': 'track', minzoom: 13, filter: ['==', get('type'), 'yard'],
     layout: roundJoin, paint: { 'line-color': '#000000', 'line-opacity': 0, 'line-width': 10 } })
 
   // outline label for small airfields; commercial airports get one icon point below
-  add({ id: L(slug, 'airport-label'), type: 'symbol', ...src, 'source-layer': 'airports', minzoom: 8, filter: ['all', ['==', get('k'), 'aerodrome'], ['!=', get('com'), 1]],
+  add({ id: L(source, 'airport-label'), type: 'symbol', ...src, 'source-layer': 'airports', minzoom: 8, filter: ['all', ['==', get('k'), 'aerodrome'], ['!=', get('com'), 1]],
     layout: { 'text-field': get('lb'), 'text-font': ['Noto Sans Regular'], 'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 14, 12],
       'text-letter-spacing': 0.08, 'text-max-width': 8, 'text-padding': 4 },
     paint: { 'text-color': '#6B665B', 'text-halo-color': FILL.land, 'text-halo-width': 1.6 } })
   // commercial airports: one plane icon at the centre of the outline with the IATA code under it
-  add({ id: L(slug, 'airport-icon'), type: 'symbol', ...src, 'source-layer': 'airport_pts', minzoom: 8,
+  add({ id: L(source, 'airport-icon'), type: 'symbol', ...src, 'source-layer': 'airport_pts', minzoom: 8,
     layout: { 'icon-image': 'airport', 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.6, 12, 0.85, 15, 1.05],
       'text-field': get('lb'), 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 14, 13],
       'text-anchor': 'top', 'text-offset': [0, 0.9], 'text-letter-spacing': 0.06, 'text-padding': 4, 'text-allow-overlap': true, 'text-ignore-placement': true,
@@ -274,7 +273,7 @@ export function addRegion(map: MLMap, slug: string) {
 
   // cities with a metro or tram system: one dot each, from far out (z2) until the stations themselves show (z8)
   const dotSize: Expr = ['step', get('n'), 0.85, 10, 1, 30, 1.3] as Expr
-  add({ id: L(slug, 'cities'), type: 'circle', ...src, 'source-layer': 'cities', maxzoom: 8,
+  add({ id: L(source, 'cities'), type: 'circle', ...src, 'source-layer': 'cities', maxzoom: 8,
     paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 2, ['*', 1.8, dotSize], 4, ['*', 2.8, dotSize], 7, ['*', 4.4, dotSize]],
       'circle-color': ['case', ['>', get('m'), 0], TYPE_COLOR.metro, TYPE_COLOR.light_rail], 'circle-stroke-width': 1.2, 'circle-stroke-color': '#FFFFFF',
       'circle-opacity': 0.95 },
@@ -282,7 +281,7 @@ export function addRegion(map: MLMap, slug: string) {
 
   // stations
   const circle = (name: string, tier: number, minzoom: number, r: [number, number, number], stroke: number, ring: Expr | string): void =>
-    add({ id: L(slug, name), type: 'circle', ...src, 'source-layer': 'stations', minzoom, filter: ['all', ['==', get('tier'), tier], ['!', ['has', 'con']]],
+    add({ id: L(source, name), type: 'circle', ...src, 'source-layer': 'stations', minzoom, filter: ['all', ['==', get('tier'), tier], ['!', ['has', 'con']]],
       layout: { 'circle-sort-key': tier === 1 ? 3 : tier === 2 ? 2 : 1 } as never,
       paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, r[0], 12, r[1], 15, r[2]],
         'circle-color': '#FFFFFF', 'circle-stroke-width': stroke, 'circle-stroke-color': ring, 'circle-pitch-alignment': 'map' } })
@@ -292,7 +291,7 @@ export function addRegion(map: MLMap, slug: string) {
 
   // stations still being built: hollow ring (red when high-speed), only shown while Construction is on; size follows the inferred tier
   const conCircle = (tier: 1 | 2 | 3, r: [number, number, number], stroke: number) =>
-    add({ id: L(slug, `stcon${tier}`), type: 'circle', ...src, 'source-layer': 'stations', minzoom: STATION_ZOOM[tier].dot,
+    add({ id: L(source, `stcon${tier}`), type: 'circle', ...src, 'source-layer': 'stations', minzoom: STATION_ZOOM[tier].dot,
       filter: ['all', ['has', 'con'], ['==', get('tier'), tier]],
       paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, r[0], 12, r[1], 15, r[2]], 'circle-color': '#FFFFFF',
         'circle-stroke-width': stroke, 'circle-stroke-color': ['case', ['==', get('hsr'), 1], '#B3123A', '#6B665B'], 'circle-stroke-opacity': 0.95 } })
@@ -301,7 +300,7 @@ export function addRegion(map: MLMap, slug: string) {
   conCircle(1, [4.5, 6.5, 7], 2.6)
 
   const label = (name: string, tier: number, minzoom: number, size: [number, number], bold: boolean) =>
-    add({ id: L(slug, name), type: 'symbol', ...src, 'source-layer': 'complexes', minzoom, filter: ['==', get('tier'), tier],
+    add({ id: L(source, name), type: 'symbol', ...src, 'source-layer': 'complexes', minzoom, filter: ['==', get('tier'), tier],
       layout: { 'text-field': get('n'), 'text-font': [bold ? 'Noto Sans Bold' : 'Noto Sans Regular'],
         'text-size': ['interpolate', ['linear'], ['zoom'], minzoom, size[0], 15, size[1]], 'text-max-width': 7,
         'text-variable-anchor': ['top', 'bottom', 'right', 'left'], 'text-radial-offset': 1.0,
@@ -311,7 +310,7 @@ export function addRegion(map: MLMap, slug: string) {
   label('lbl2', 2, STATION_ZOOM[2].label, [12, 13], true)
   label('lbl3', 3, STATION_ZOOM[3].label, [10.5, 11.5], false)
   const conLabel = (tier: 1 | 2 | 3, size: [number, number]) =>
-    add({ id: L(slug, `lblcon${tier}`), type: 'symbol', ...src, 'source-layer': 'complexes', minzoom: STATION_ZOOM[tier].label,
+    add({ id: L(source, `lblcon${tier}`), type: 'symbol', ...src, 'source-layer': 'complexes', minzoom: STATION_ZOOM[tier].label,
       filter: ['all', ['has', 'con'], ['==', get('tier'), tier]],
       layout: { 'text-field': get('n'), 'text-font': [tier < 3 ? 'Noto Sans Bold' : 'Noto Sans Regular'],
         'text-size': ['interpolate', ['linear'], ['zoom'], 11, size[0], 15, size[1]], 'text-max-width': 7, 'text-anchor': 'top', 'text-offset': [0, 0.8], 'text-padding': 3 },
@@ -328,54 +327,17 @@ export const areaLayers = (slug: string) => ['platforms-fill', 'platforms-line',
 
 const vis = (on: boolean) => (on ? 'visible' : 'none')
 
-// ---------------------------------------------------------------- regions in view
-// Only regions on screen (and half a screen around it) get style changes, hit tests and highlight flags; a region that comes
-// into view catches up when the map stops moving (syncRegions). Six regions of about 45 layers each made every toggle and
-// every pointer move work on all of them.
-let inView: string[] = [...SOURCES]
-let lastState: MapState | null = null
-const appliedKey = new Map<string, string>()   // region -> the state its layers were last set to
-
-/** Recompute which regions are in or near the view, from each source's bounds (PMTiles header). */
-export function updateRegionsInView(map: MLMap): string[] {
-  const b = map.getBounds()
-  const [w, s, e, n] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
-  const pw = (e - w) / 2, ph = (n - s) / 2
-  inView = SOURCES.filter((slug) => {
-    const src = map.getSource(slug) as unknown as { bounds?: [number, number, number, number] } | undefined
-    if (!src) return false
-    const rb = src.bounds
-    if (!rb) return true   // bounds not known yet
-    return rb[0] <= e + pw && rb[2] >= w - pw && rb[1] <= n + ph && rb[3] >= s - ph
-  })
-  return inView
-}
-export const regionsInView = () => inView
-
-/** Push toggles / colour mode into the regions in view. Cheap enough to call on every state change. */
+/** Push toggles / colour mode into the rail layers. Cheap enough to call on every state change. */
 export function applyState(map: MLMap, s: MapState) {
-  lastState = s
-  const key = JSON.stringify(s)
-  for (const slug of inView) {
-    if (appliedKey.get(slug) === key || !map.getLayer(L(slug, 'track'))) continue
-    applyRegion(map, slug, s)
-    appliedKey.set(slug, key)
-  }
+  if (map.getLayer(L(TILES, 'track'))) applyRegion(map, TILES, s)
 }
 
-/** Fade every line but the highlighted one (a line or railway is selected), in the tile source `slug` draws from; null: no focus. */
+/** Fade every line but the highlighted one (a line or railway is selected); null: no focus. One source, so the veil covers
+ *  all regions on screen (it used to cover only the selected region's source and those below it). */
 export function setFocus(map: MLMap, slug: string | null) {
-  const src = slug ? tilesOf(slug) : null
-  for (const s of SOURCES) if (map.getLayer(L(s, 'veil'))) map.setPaintProperty(L(s, 'veil'), 'background-opacity', s === src ? FOCUS_VEIL : 0)
+  if (map.getLayer(L(TILES, 'veil'))) map.setPaintProperty(L(TILES, 'veil'), 'background-opacity', slug ? FOCUS_VEIL : 0)
 }
 const FOCUS_VEIL = 0.72
-
-/** After the map moves (or a source learns its bounds): regions now in view get the current state and highlight. */
-export function syncRegions(map: MLMap) {
-  updateRegionsInView(map)
-  if (lastState) applyState(map, lastState)
-  syncHighlight(map)
-}
 
 function applyRegion(map: MLMap, slug: string, s: MapState) {
   const operator = s.mode === 'operator'
@@ -466,46 +428,33 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
 let hlKey = ''          // what was asked for last
 let hlShown = ''        // what is on the map
-let hlCurrent: { slug: string; h: Highlight } | null = null
-const hlFlagged = new Set<string>()             // regions whose track pieces carry the current highlight's flags
+let hlCurrent: Highlight | null = null
 const hlLoaded = new Map<string, Highlight | null>()   // highlight data already fetched, by key: shown with no wait
 
 function clearHighlight(map: MLMap) {
   // remove the flags we set, one id at a time: removing a whole source layer makes MapLibre re-send every id that was ever
   // flagged on each later update, so a long session of hovering got slower and slower
-  if (hlCurrent) for (const slug of hlFlagged) if (map.getSource(slug)) for (const id of hlCurrent.h.ways) map.removeFeatureState({ source: slug, sourceLayer: 'track', id }, 'hl')
-  hlFlagged.clear()
-  if (hlCurrent) (map.getSource(L(tilesOf(hlCurrent.slug), 'hl')) as GeoJSONSource | undefined)?.setData(EMPTY)
+  if (hlCurrent && map.getSource(TILES)) for (const id of hlCurrent.ways) map.removeFeatureState({ source: TILES, sourceLayer: 'track', id }, 'hl')
+  if (hlCurrent) (map.getSource(L(TILES, 'hl')) as GeoJSONSource | undefined)?.setData(EMPTY)
   hlCurrent = null
 }
 
-/** flag the current highlight's track pieces in the regions in view that do not have them yet */
-function syncHighlight(map: MLMap) {
-  if (!hlCurrent) return
-  // regions overlap (China holds Beijing), and pieces keep their OSM ids in each, so every region in view is flagged
-  for (const s of inView) {
-    if (hlFlagged.has(s) || !map.getSource(s)) continue
-    for (const id of hlCurrent.h.ways) map.setFeatureState({ source: s, sourceLayer: 'track', id }, { hl: true })
-    hlFlagged.add(s)
-  }
-}
-
-function showHighlight(map: MLMap, slug: string, h: Highlight) {
+function showHighlight(map: MLMap, h: Highlight) {
   clearHighlight(map)
-  hlCurrent = { slug, h }
-  syncHighlight(map)
-  const src = map.getSource(L(tilesOf(slug), 'hl')) as GeoJSONSource | undefined   // drawn on the region's tile source
+  hlCurrent = h
+  for (const id of h.ways) map.setFeatureState({ source: TILES, sourceLayer: 'track', id }, { hl: true })
+  const src = map.getSource(L(TILES, 'hl')) as GeoJSONSource | undefined
   if (src && h.geom) src.setData({ type: 'Feature', properties: { type: h.type, ...(h.oc ? { oc: h.oc } : {}) }, geometry: h.geom })
 }
 
 function apply(map: MLMap, key: string, slug: string | null, h: Highlight | null) {
-  if (h && slug) showHighlight(map, slug, h)
+  if (h && slug) showHighlight(map, h)
   else clearHighlight(map)
   hlShown = key
 }
 
 /** Highlight a line (or, with no line, a named railway) of region `slug`: flags the line's track pieces with feature state in
- *  the regions in view and shows its simplified geometry below z8. No tile is decoded or reloaded. A line whose data is already
+ *  the tile source and shows its simplified geometry below z8. No tile is decoded or reloaded. A line whose data is already
  *  loaded is shown at once; otherwise its data is fetched once the pointer rests. */
 export function highlightLine(map: MLMap, slug: string | null, lineId: number | null, trackName: string | null = null) {
   const key = slug && (lineId != null || trackName != null) ? `${slug}|${lineId ?? ''}|${trackName ?? ''}` : ''
@@ -528,12 +477,12 @@ export function highlightLine(map: MLMap, slug: string | null, lineId: number | 
 const PREFETCH_MAX = 48
 export function prefetchHighlights(map: MLMap) {
   if (map.getZoom() < 6) return
-  const layers = regionsInView().map((r) => hitLayer(r)).filter((l) => map.getLayer(l))
+  const layers = [hitLayer(TILES)].filter((l) => map.getLayer(l))
   if (!layers.length) return
   const todo = new Map<string, () => Promise<unknown>>()
   for (const f of map.queryRenderedFeatures({ layers })) {
     if (todo.size >= PREFETCH_MAX) break
-    const slug = f.layer.id.split(':')[0]
+    const slug = regionOf(f)
     const ln = Number(String(f.properties.ln ?? '').split(',')[0])
     if (Number.isFinite(ln) && ln > 0) todo.set(`${slug}|${ln}`, () => loadLineHighlight(slug, ln))
     else if (f.properties.n) todo.set(`${slug}|n|${f.properties.n}`, () => loadNameHighlight(slug, String(f.properties.n)))
