@@ -63,6 +63,22 @@ Not tried, in the order I would try them:
 - MapLibre WebGPU or off-main-thread rendering: not shipped, only on the roadmap
 - Test on the machine where 500 ms was seen: the headless runs never reproduced it, and the fixes above came from reading MapLibre and profiling clicks
 
+## Smooth rendering and zoom: ideas to explore (not measured)
+
+Listed 2026-10-13, after the highlight work above. Roughly by expected payoff.
+
+1. **One tile source instead of three.** SF, Paris and China each add about 50 layers (155 in total). One PMTiles file, or one per continent, would cut the layer count about 3x; every frame and every style change loops over layers.
+2. **Drop the high-speed twin layers.** Every track layer has a `-hs` copy so high-speed draws on top; a different draw order would halve those layers.
+3. **Lighter tiles.** Move per-piece tags only the tooltip and Inspect use (electrified, voltage, gauge, frequency, tracks) from the tiles to side files fetched on hover. Smaller tiles decode and upload faster, which is what makes zooming stutter.
+4. **MapLibre Tiles (MLT).** MapLibre 6 reads MLT, which is smaller and faster to decode than MVT. tippecanoe does not write it, so it needs a conversion step; test on China's tiles first.
+5. **Pre-rendered raster tiles for z0-5.** Images draw almost for free at country scale; vector tiles from z6. Also fixes the z5 China views that are over the 600 KB budget.
+6. **Load the next zoom before it is needed.** Prefetch parent and child tiles around the view while idle, and raise `maxTileCacheSize` so zooming back out is instant.
+7. **Load label fonts at startup** for the scripts in use (Latin, CJK), so the first labels at a new zoom do not wait on a font download.
+8. **Move the tooltip with a CSS transform** instead of `top`/`left`, so following the pointer does not recompute layout.
+9. **Turn off checks the map does not need:** `crossSourceCollisions: false`, `renderWorldCopies: false`, and a `minzoom`/`maxzoom` on every layer so off-zoom layers are skipped early.
+
+Start with 1 and 3: they change the most, and are pipeline work (Rust) plus a small app change.
+
 ## Parked (not in v1)
 
 - GTFS of any kind: frequencies, timetables, Portolan, train animation
