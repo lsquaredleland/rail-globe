@@ -1,6 +1,6 @@
 import type { Hit } from '../MapView'
-import type { LineIndex } from '../data'
-import { AREA_LABEL, areaSize, electrification, gauge, lineBreakdown, maxSpeed, railTypeLabel, SERVICE_LABEL, tierLabel, UNKNOWN } from '../format'
+import { railwayOf, type LineIndex, type Railways } from '../data'
+import { AREA_LABEL, areaSize, electrification, gauge, km, lineBreakdown, maxSpeed, railTypeLabel, SERVICE_LABEL, tierLabel, UNKNOWN } from '../format'
 import { TYPE_LABEL } from '../palette'
 import { LineBadge, namePair, shortName, shortNameEn, useLang } from './ui'
 
@@ -18,7 +18,7 @@ function Names({ local, en }: { local: string; en: string }) {
   )
 }
 
-export function TooltipBody({ hit, index, touch, onMore, units = 'km' }: { hit: Hit; index: LineIndex | undefined; touch: boolean; onMore?: () => void; units?: 'km' | 'mi' }) {
+export function TooltipBody({ hit, index, railways, touch, onMore, units = 'km' }: { hit: Hit; index: LineIndex | undefined; railways?: Railways; touch: boolean; onMore?: () => void; units?: 'km' | 'mi' }) {
   const p = hit.props
   const lang = useLang()
   if (hit.kind === 'station') {
@@ -64,11 +64,15 @@ export function TooltipBody({ hit, index, touch, onMore, units = 'km' }: { hit: 
   }
   const ids = String(p.ln ?? '').split(',').filter(Boolean)
   const names = ids.map((id) => shortName(index?.[id])).filter(Boolean)
-  const trackName = p.n ? String(p.n) : ''
+  // zoomed out, track carries its railway's number (nk) instead of its name
+  const railway = railwayOf(railways, p)
+  const trackName = p.n ? String(p.n) : railway?.[0] ?? ''
+  const trackNameEn = p.ne ? String(p.ne) : railway?.[1] ?? null
   const isYard = p.type === 'yard'
   // the line's name leads; with no mapped line the track's own name (e.g. 成渝铁路) does; the rail type is the fallback
   const title = isYard ? (trackName || 'Yard track') : (names[0] ?? (trackName || railTypeLabel(String(p.type))))
-  const en = isYard || !names.length ? (p.ne ? String(p.ne) : null) : shortNameEn(index?.[ids[0]])
+  const en = isYard || !names.length ? trackNameEn : shortNameEn(index?.[ids[0]])
+  const line = names.length ? index?.[ids[0]] : undefined
   const [tMain, tOther] = namePair(lang, title, en)
   const rest = names.slice(1)
   const sub = isYard
@@ -79,11 +83,16 @@ export function TooltipBody({ hit, index, touch, onMore, units = 'km' }: { hit: 
       <div className="tt-names"><div className="tt-title lg">{tMain}</div>{tOther && <div className="tt-sub">{tOther}</div>}</div>
       <div className="tt-sub2">{sub}</div>
       {rest.length > 0 && <div className="tt-row"><span className="k">Also</span><span className="v">{rest.slice(0, 3).join(', ') + (rest.length > 3 ? ` +${rest.length - 3}` : '')}</span></div>}
+      {line?.o && <Row k="Operator" v={line.o} />}
+      {line?.f && line?.to && <Row k="Route" v={`${line.f} → ${line.to}`} />}
+      {line && line.km > 0 && <Row k="Length" v={km(line.km, units)} />}
+      {!line && !isYard && railway && railway[3] > 0 && <Row k="Railway length" v={km(railway[3], units)} />}
       {!isYard && names.length === 0 && <div className="tt-row"><span className="k">Lines</span><span className="v dim">none mapped in OSM</span></div>}
       {names.length > 0 && trackName && trackName !== title && <div className="tt-row"><span className="k">Track name</span><span className="v">{trackName}</span></div>}
-      <Row k="Electrified" v={electrification(p.el as string, p.v as string, p.fq as string)} />
-      {!isYard && <Row k="Max speed" v={maxSpeed(p.ms as string)} />}
-      <Row k="Gauge" v={gauge(p.g as string)} />
+      {/* zoomed out, track comes from the merged overview, which has no per-piece tags */}
+      {p.id != null && <Row k="Electrified" v={electrification(p.el as string, p.v as string, p.fq as string)} />}
+      {p.id != null && !isYard && <Row k="Max speed" v={maxSpeed(p.ms as string)} />}
+      {p.id != null && <Row k="Gauge" v={gauge(p.g as string)} />}
     </>
   )
 }

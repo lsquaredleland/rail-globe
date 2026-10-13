@@ -1,8 +1,8 @@
-import type { ExpressionSpecification, LayerSpecification, Map as MLMap, StyleSpecification } from 'maplibre-gl'
+import type { ExpressionSpecification, GeoJSONSource, LayerSpecification, Map as MLMap, StyleSpecification } from 'maplibre-gl'
 import { STATION_ZOOM } from './config'
 import { FILL, INK, TYPE_COLOR, TYPE_WIDTH, TYPE_ORDER, type RailType } from './palette'
-import { REGIONS } from './regions'
-import { boundaryUrl, pmtilesUrl } from './data'
+import { SOURCES, tilesOf } from './regions'
+import { boundaryUrl, loadLineHighlight, loadNameHighlight, pmtilesUrl, type Highlight } from './data'
 
 export type ColorMode = 'type' | 'operator' | 'speed'
 export interface MapState { mode: ColorMode; construction: boolean; proposed: boolean; freight: boolean; hidden: string[]; hsrOnly: boolean; lang: 'local' | 'en' }
@@ -118,14 +118,19 @@ export function baseStyle(): StyleSpecification {
 }
 
 /** All rail layers for one region, stacked in drawing order. */
-export function addRegion(map: MLMap, slug: string) {
-  map.addSource(slug, { type: 'vector', url: pmtilesUrl(slug), attribution: ATTRIBUTION })
+/** A region's faint outline (every region, also those drawn from a bigger region's tiles). Added before the rail layers. */
+export function addBoundary(map: MLMap, slug: string) {
   map.addSource(L(slug, 'boundary'), { type: 'geojson', data: boundaryUrl(slug) })
+  map.addLayer({ id: L(slug, 'boundary'), type: 'line', source: L(slug, 'boundary'), layout: { 'line-join': 'round' },
+    paint: { 'line-color': '#B9B5AD', 'line-width': 1.1, 'line-dasharray': [6, 5], 'line-opacity': 0.8 } })
+}
+
+/** All rail layers of one tile source (see SOURCES), stacked in drawing order. */
+export function addRegion(map: MLMap, slug: string) {
+  // a track piece's OSM id ("way/123") is its feature id, so a highlighted line can be flagged with feature state
+  map.addSource(slug, { type: 'vector', url: pmtilesUrl(slug), attribution: ATTRIBUTION, promoteId: { track: 'id' } })
   const add = (l: Record<string, unknown>): void => { map.addLayer(l as unknown as LayerSpecification) }
   const src = { source: slug } as const
-
-  add({ id: L(slug, 'boundary'), type: 'line', source: L(slug, 'boundary'), layout: { 'line-join': 'round' },
-    paint: { 'line-color': '#B9B5AD', 'line-width': 1.1, 'line-dasharray': [6, 5], 'line-opacity': 0.8 } })
 
   // airport outline and terminals, drawn as infrastructure
   add({ id: L(slug, 'airport-fill'), type: 'fill', ...src, 'source-layer': 'airports', minzoom: 8, filter: ['==', get('k'), 'aerodrome'],
@@ -186,7 +191,14 @@ export function addRegion(map: MLMap, slug: string) {
   const hlW: Expr = ['interpolate', ['linear'], ['zoom'],
     8, ['+', ['*', byType((t) => TYPE_WIDTH[t][0]), 1.8], 2], 12, ['+', ['*', byType((t) => TYPE_WIDTH[t][1]), 1.8], 2.5],
     15, ['+', ['*', byType((t) => TYPE_WIDTH[t][2]), 1.8], 3]] as Expr
-  add({ id: L(slug, 'hl'), type: 'line', ...src, 'source-layer': 'track', filter: ['==', ['get', 'type'], '__none__'],
+  // Like the track, the highlight has a high-speed twin drawn above the white high-speed casing (which otherwise hides it).
+  // z8 and closer: the track pieces flagged with feature state by highlightLine (no tile reload, no copying geometry)
+  trackLayer({ id: L(slug, 'hl-fs'), type: 'line', ...src, 'source-layer': 'track', minzoom: 8,
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': typeColor, 'line-width': hlW, 'line-opacity': ['case', ['boolean', ['feature-state', 'hl'], false], 1, 0] } })
+  // below z8 the merged overview has no per-piece ids: the line's simplified geometry from its side file
+  map.addSource(L(slug, 'hl'), { type: 'geojson', data: EMPTY })
+  trackLayer({ id: L(slug, 'hl'), type: 'line', source: L(slug, 'hl'), maxzoom: 8,
     layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': typeColor, 'line-width': hlW } })
 
   // operator-colour strands (side by side from z12)
@@ -208,6 +220,7 @@ export function addRegion(map: MLMap, slug: string) {
   top.forEach((l) => add(l)) // high-speed twins and casing: above every other rail layer
 
   // invisible, wider hit target for track tooltips
+  // at every zoom: below z8 the track tiles hold the merged overview, which keeps the line ids and railway names a click needs
   add({ id: L(slug, 'hit'), type: 'line', ...src, 'source-layer': 'track', filter: ['!=', get('type'), 'yard'],
     layout: roundJoin, paint: { 'line-color': '#000000', 'line-opacity': 0, 'line-width': 12 } })
 
@@ -290,20 +303,60 @@ export const areaLayers = (slug: string) => ['platforms-fill', 'platforms-line',
 
 const vis = (on: boolean) => (on ? 'visible' : 'none')
 
-/** Push toggles / colour mode into the map. Cheap enough to call on every state change. */
+// ---------------------------------------------------------------- regions in view
+// Only regions on screen (and half a screen around it) get style changes, hit tests and highlight flags; a region that comes
+// into view catches up when the map stops moving (syncRegions). Six regions of about 45 layers each made every toggle and
+// every pointer move work on all of them.
+let inView: string[] = [...SOURCES]
+let lastState: MapState | null = null
+const appliedKey = new Map<string, string>()   // region -> the state its layers were last set to
+
+/** Recompute which regions are in or near the view, from each source's bounds (PMTiles header). */
+export function updateRegionsInView(map: MLMap): string[] {
+  const b = map.getBounds()
+  const [w, s, e, n] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
+  const pw = (e - w) / 2, ph = (n - s) / 2
+  inView = SOURCES.filter((slug) => {
+    const src = map.getSource(slug) as unknown as { bounds?: [number, number, number, number] } | undefined
+    if (!src) return false
+    const rb = src.bounds
+    if (!rb) return true   // bounds not known yet
+    return rb[0] <= e + pw && rb[2] >= w - pw && rb[1] <= n + ph && rb[3] >= s - ph
+  })
+  return inView
+}
+export const regionsInView = () => inView
+
+/** Push toggles / colour mode into the regions in view. Cheap enough to call on every state change. */
 export function applyState(map: MLMap, s: MapState) {
+  lastState = s
+  const key = JSON.stringify(s)
+  for (const slug of inView) {
+    if (appliedKey.get(slug) === key || !map.getLayer(L(slug, 'track'))) continue
+    applyRegion(map, slug, s)
+    appliedKey.set(slug, key)
+  }
+}
+
+/** After the map moves (or a source learns its bounds): regions now in view get the current state and highlight. */
+export function syncRegions(map: MLMap) {
+  updateRegionsInView(map)
+  if (lastState) applyState(map, lastState)
+  syncHighlight(map)
+}
+
+function applyRegion(map: MLMap, slug: string, s: MapState) {
   const operator = s.mode === 'operator'
-  for (const { slug } of REGIONS) {
-    if (!map.getLayer(L(slug, 'track'))) continue
+  {
     map.setLayoutProperty(L(slug, 'freight'), 'visibility', vis(s.freight))
 
     for (const n of ['lbl1', 'lbl2', 'lbl3', 'lblcon1', 'lblcon2', 'lblcon3']) map.setLayoutProperty(L(slug, n), 'text-field', nameExpr(s.lang, 'n', 'ne'))
     map.setLayoutProperty(L(slug, 'lbl-track'), 'text-field', nameExpr(s.lang, 'n', 'ne'))
     map.setLayoutProperty(L(slug, 'lbl-lines'), 'text-field', nameExpr(s.lang, 'lb', 'lbe'))
     // paint, layout and filter changes reach a track layer and its high-speed twin together
-    const TWINS = new Set(['track', 'construction', 'construction-casing', 'strand', 'strand-casing'])
+    const TWINS = new Set(['track', 'construction', 'construction-casing', 'strand', 'strand-casing', 'hl', 'hl-fs'])
     const names = (n: string) => (TWINS.has(n) ? [n, `${n}-hs`] : [n])
-    const setPaint = (n: string, prop: string, v: unknown) => names(n).forEach((x) => map.setPaintProperty(L(slug, x), prop, v as never))
+    const setPaint = (n: string, prop: string, v: unknown) => names(n).forEach((x) => map.setPaintProperty(L(slug, x), prop as never, v as never))
     const setVis = (n: string, v: string) => names(n).forEach((x) => map.setLayoutProperty(L(slug, x), 'visibility', v as never))
     const setFilt = (n: string, f: Expr | null, typeKey = 'type') => names(n).forEach((x, i) => {
       const hs: Expr = [i === 0 ? '!=' : '==', get(typeKey), 'high_speed'] as Expr
@@ -338,7 +391,8 @@ export function applyState(map: MLMap, s: MapState) {
     setPaint('track', 'line-color', grey(color))
     setPaint('track', 'line-width', width)
     setPaint('track', 'line-opacity', opacity)
-    map.setPaintProperty(L(slug, 'hl'), 'line-color', grey(color))
+    setPaint('hl', 'line-color', grey(color))
+    setPaint('hl-fs', 'line-color', grey(color))
     // under-construction track follows the same colour rule as open track
     setPaint('construction', 'line-color', grey(s.mode === 'speed' ? speedColor : (['match', get('type'), 'other', '#45423C', typeColor] as Expr)))
     setPaint('strand', 'line-color', grey(['coalesce', get('c'), byType((t) => TYPE_COLOR[t], 't', TYPE_COLOR.other)] as Expr, strandActive))
@@ -373,16 +427,63 @@ export function applyState(map: MLMap, s: MapState) {
   }
 }
 
-export function highlightLine(map: MLMap, lineId: number | null, trackName: string | null = null) {
-  const none: Expr = ['==', ['get', 'type'], '__none__']
-  const byLine: Expr | null = lineId == null ? null : (['in', `,${lineId},`, ['concat', ',', ['coalesce', get('ln'), ''], ',']] as Expr)
-  const byName: Expr | null = trackName == null ? null : (['==', get('n'), trackName] as Expr)
-  const parts = [byLine, byName].filter(Boolean) as Expr[]
-  const f: Expr = parts.length === 0 ? none : parts.length === 1 ? parts[0] : (['any', ...parts] as Expr)
-  for (const { slug } of REGIONS) {
-    if (!map.getLayer(L(slug, 'hl'))) continue
-    map.setFilter(L(slug, 'hl'), f)
+const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
+const HL_DELAY = 80   // ms the pointer rests on a line not yet loaded before it is fetched: moving across lines does no work
+let hlKey = ''          // what was asked for last
+let hlShown = ''        // what is on the map
+let hlTimer: ReturnType<typeof setTimeout> | undefined
+let hlCurrent: { slug: string; h: Highlight } | null = null
+const hlFlagged = new Set<string>()             // regions whose track pieces carry the current highlight's flags
+const hlLoaded = new Map<string, Highlight | null>()   // highlight data already fetched, by key: shown with no wait
+
+function clearHighlight(map: MLMap) {
+  for (const slug of hlFlagged) if (map.getSource(slug)) map.removeFeatureState({ source: slug, sourceLayer: 'track' })
+  hlFlagged.clear()
+  if (hlCurrent) (map.getSource(L(tilesOf(hlCurrent.slug), 'hl')) as GeoJSONSource | undefined)?.setData(EMPTY)
+  hlCurrent = null
+}
+
+/** flag the current highlight's track pieces in the regions in view that do not have them yet */
+function syncHighlight(map: MLMap) {
+  if (!hlCurrent) return
+  // regions overlap (China holds Beijing), and pieces keep their OSM ids in each, so every region in view is flagged
+  for (const s of inView) {
+    if (hlFlagged.has(s) || !map.getSource(s)) continue
+    for (const id of hlCurrent.h.ways) map.setFeatureState({ source: s, sourceLayer: 'track', id }, { hl: true })
+    hlFlagged.add(s)
   }
+}
+
+function showHighlight(map: MLMap, slug: string, h: Highlight) {
+  clearHighlight(map)
+  hlCurrent = { slug, h }
+  syncHighlight(map)
+  const src = map.getSource(L(tilesOf(slug), 'hl')) as GeoJSONSource | undefined   // drawn on the region's tile source
+  if (src && h.geom) src.setData({ type: 'Feature', properties: { type: h.type, ...(h.oc ? { oc: h.oc } : {}) }, geometry: h.geom })
+}
+
+function apply(map: MLMap, key: string, slug: string | null, h: Highlight | null) {
+  if (h && slug) showHighlight(map, slug, h)
+  else clearHighlight(map)
+  hlShown = key
+}
+
+/** Highlight a line (or, with no line, a named railway) of region `slug`: flags the line's track pieces with feature state in
+ *  the regions in view and shows its simplified geometry below z8. No tile is decoded or reloaded. A line whose data is already
+ *  loaded is shown at once; otherwise its data is fetched once the pointer rests. */
+export function highlightLine(map: MLMap, slug: string | null, lineId: number | null, trackName: string | null = null) {
+  const key = slug && (lineId != null || trackName != null) ? `${slug}|${lineId ?? ''}|${trackName ?? ''}` : ''
+  if (key === hlKey) return
+  hlKey = key
+  clearTimeout(hlTimer)
+  if (key === hlShown) return
+  if (!key) { apply(map, '', null, null); return }
+  if (hlLoaded.has(key)) { apply(map, key, slug, hlLoaded.get(key)!); return }
+  hlTimer = setTimeout(async () => {
+    const h = await (lineId != null ? loadLineHighlight(slug!, lineId) : loadNameHighlight(slug!, trackName!)).catch(() => null)
+    hlLoaded.set(key, h)
+    if (hlKey === key) apply(map, key, slug, h)   // else something else was asked for while this loaded
+  }, HL_DELAY)
 }
 
 /** Material "flight" glyph, 24x24 */

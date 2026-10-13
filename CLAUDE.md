@@ -26,7 +26,7 @@ A static web map of passenger rail built from OpenStreetMap, made for comparing 
 
 ## Stack (summary)
 
-- Pipeline: Python, osmium / pyosmium, shapely, tippecanoe, PMTiles
+- Pipeline: Rust extractor (`pipeline/rail-extract`: planet -> world rail cache -> region cuts, including rail type classification; `build`: station model, tile input, side files), tippecanoe, PMTiles
 - App: Vite + React + TypeScript, MapLibre GL JS, OpenFreeMap basemap restyled minimal
 - Hosting: Cloudflare R2 for tiles (`r2.dev` during the pilot), static host for the app
 

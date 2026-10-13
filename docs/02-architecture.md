@@ -6,10 +6,10 @@ A static site. An offline build turns OSM into one PMTiles file plus small JSON 
 
 | Part | Choice | Notes |
 | --- | --- | --- |
-| Source | OSM planet, cut into regions with one osmium pass | The pilot uses three regional extracts |
-| Filter and export | Python + pyosmium | Exactly as `03-data-spec.md` says |
+| Source | OSM planet, read once into a world rail cache (Rust, `pipeline/rail-extract`) | About 1 minute per planet |
+| Filter and export | Rust: each region cut from the cache by its outline (countries and provinces / states from the planet's admin boundaries, or hand-made) | Exactly as `03-data-spec.md` says; under a second per region, all of China included |
 | Processing | Python + shapely | PostGIS at build time only if corridor work needs it (phase 5) |
-| Tiles | tippecanoe → PMTiles | Overview (z0–8) and detail (z9–14) built in parallel, joined with `tile-join` |
+| Tiles | tippecanoe → PMTiles | One run: merged track overview (z0–7, `--coalesce`) and full detail (z8–14) in the same layers |
 | Hosting | Cloudflare R2 for tiles, a static host for the app | `r2.dev` for the pilot; custom domain at public launch |
 | Map | MapLibre GL JS | |
 | Basemap | OpenFreeMap, restyled minimal | See `01-features.md` |
@@ -45,8 +45,8 @@ URL state uses these, e.g. `#compare=sf-bay-area,paris&color=type`.
 
 ## Build pipeline
 
-1. **Extract** the regions from the planet in one osmium pass (one config file).
-2. **Filter** to the data spec: GeoJSON features, the relations side table, the stop positions file.
+1. **Cache** every rail candidate of the planet, with coordinates, in one read (`rail-extract cache`, once per planet).
+2. **Cut and filter** each region from the cache to the data spec: GeoJSON features, the relations side table, the stop positions file, airports (`rail-extract cut <slug>...`).
 3. **Classify** every track and line into a rail type (`01-features.md`, section 2).
 4. **Build stations** with the station model.
 5. **Build lines**: join each route's member ways into one feature per line.
@@ -60,8 +60,8 @@ Also: a QA report per region per build (broken route relations, orphan stations,
 
 | Layer | Geometry | Zooms | Key attributes |
 | --- | --- | --- | --- |
-| `track_overview` | Merged lines | z0–8 | type, highspeed |
-| `track` | Lines | z9–14 | id, type, usage, electrified, voltage, frequency, maxspeed, gauge, tracks, tunnel, bridge, construction, line ids |
+| `track` (overview) | Merged lines, in the `track` layer (see `00-overview.md`, 2026-10-12) | z0–7 | type, con, prop, oc, kmh band, ln; nk (railway number) on track with no mapped line |
+| `track` | Lines | z8–14 | id, type, usage, electrified, voltage, frequency, maxspeed, gauge, tracks, tunnel, bridge, construction, line ids |
 | `lines` | One feature per line | z9–14 | line id, type, colour, ref, name |
 | `areas` | Station grounds, yards | z12–14 | id, kind |
 | `buildings` | Station buildings | z13–14 | id |
@@ -70,7 +70,7 @@ Also: a QA report per region per build (broken route relations, orphan stations,
 | `complexes` | Points | z5 and up | id, name, name_en, size tier, terminus, platform count, line count |
 | `stations` | Points | z10 and up, z8 for top tiers | id, name, name_en, modes, size tier, terminus, platform count, line count by type, airport (when at a commercial airport) |
 
-Side files: `lines/<id>.json`, `stations/<id>.json`, `regions/<slug>.json`, search shards by name prefix (e.g. `search/pa.json`, queried with MiniSearch or similar), and one line index per region (`regions/<slug>/lines-index.json`: line id → name, colour, type, operator). The line index is loaded once so track tooltips can name the lines on a track without putting names in every track piece. Tooltip fields come from tiles plus the line index; click panels load the per-station or per-line JSON. Tiles carry `name` and an English name for labels and tooltips; other languages live in side files to keep tiles small.
+Side files: `lines/<id>.json` (with the line's highlight data: its track pieces' ids and a simplified geometry), `name-hl/<shard>.json` (the same for named railways, sharded by a hash of the name), `railways.json` (every railway name by number `nk`: name, English name, type, km), `stations/<id>.json`, `regions/<slug>.json`, search shards by name prefix (e.g. `search/pa.json`, queried with MiniSearch or similar), and one line index per region (`regions/<slug>/lines-index.json`: line id → name, colour, type, operator). The line index is loaded once so track tooltips can name the lines on a track without putting names in every track piece. Tooltip fields come from tiles plus the line index; click panels load the per-station or per-line JSON. Tiles carry `name` and an English name for labels and tooltips; other languages live in side files to keep tiles small.
 
 ## Zoom rules
 

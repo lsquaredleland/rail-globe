@@ -19,7 +19,12 @@ export interface LineRecord {
   network: string | null; from: string | null; to: string | null; km: number; osm: string
   routes: { id: string; name: string | null; from: string | null; to: string | null; km: number; stations: string[] }[]
   station_names: Record<string, { n: string | null; ne: string | null }>
+  hl?: Highlight
 }
+
+/** What a line or named railway is drawn with when highlighted: its track pieces' ids (feature state, z8 and closer) and a
+ *  simplified geometry (the merged overview below z8 has no per-piece ids). Written by pipeline/rail-extract/src/tiles.rs. */
+export interface Highlight { ways: string[]; geom: GeoJSON.MultiLineString | null; type: RailType; oc?: string }
 
 export interface NamedLine { n: string; ne?: string | null; t: RailType; km: number; ways: number; bbox: [number, number, number, number] }
 
@@ -41,6 +46,34 @@ export const loadLine = (slug: string, id: number | string) => get<LineRecord>(`
 export const pmtilesUrl = (slug: string) => `pmtiles://${base}${slug}.pmtiles`
 export const boundaryUrl = (slug: string) => `${base}${slug}.boundary.geojson`
 export const loadNamedLines = (slug: string) => get<NamedLine[]>(`${slug}/named-lines.json`)
+
+/** Every railway name of a region, numbered (track pieces of the zoomed-out overview carry the number `nk`):
+ *  [name, English name, most prominent rail type, length in km] */
+export type RailwayEntry = [string, string | null, RailType, number]
+export interface Railways { list: RailwayEntry[]; byName: Map<string, RailwayEntry> }
+const railwaysCache = new Map<string, Promise<Railways>>()
+export const loadRailways = (slug: string): Promise<Railways> => {
+  let p = railwaysCache.get(slug)
+  if (!p) {
+    p = get<RailwayEntry[]>(`${slug}/railways.json`).then((list) => ({ list, byName: new Map(list.map((r) => [r[0], r])) }))
+    p.catch(() => railwaysCache.delete(slug))
+    railwaysCache.set(slug, p)
+  }
+  return p
+}
+/** a track's railway: by its name (zoomed in) or its number (zoomed-out overview) */
+export const railwayOf = (rw: Railways | undefined, props: Record<string, string | number>): RailwayEntry | undefined =>
+  !rw ? undefined : props.n != null ? rw.byName.get(String(props.n)) : props.nk != null ? rw.list[Number(props.nk)] : undefined
+
+/** 32-bit FNV-1a of the UTF-8 bytes: the same hash rail-extract (tiles.rs) shards the named-railway highlight files by */
+function fnv1a(s: string): number {
+  let h = 0x811c9dc5
+  for (const b of new TextEncoder().encode(s)) h = Math.imul(h ^ b, 0x01000193) >>> 0
+  return h >>> 0
+}
+export const loadLineHighlight = async (slug: string, id: number) => (await loadLine(slug, id)).hl ?? null
+export const loadNameHighlight = async (slug: string, name: string) =>
+  (await get<Record<string, Highlight>>(`${slug}/name-hl/${fnv1a(name) % 256}.json`))[name] ?? null
 
 export type Tags = Record<string, string | string[]>
 /** Raw (filtered) OSM tags plus Rail Globe derived fields for one feature, from the id-sharded side files. */

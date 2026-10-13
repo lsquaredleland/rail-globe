@@ -1,0 +1,24 @@
+[package]
+name = "rail-extract"
+version = "0.1.0"
+edition = "2021"
+description = "Planet -> world rail cache -> per-region filter output for Rail Globe"
+
+[dependencies]
+rayon = "1.12"         # parallel blob decoding and region cuts
+libdeflater = "1.26"   # whole-buffer zlib decompression
+rustc-hash = "2.1"     # fast hash maps and sets for ids
+# reading region GeoJSON and the pipeline's JSON files: key order kept (the outputs follow it), geometry passed through as
+# raw text, floats parsed exactly
+serde_json = { version = "1.0", features = ["preserve_order", "raw_value", "float_roundtrip"] }
+memmap2 = "0.9"        # the cache is memory-mapped, so a cut touches only the pages it needs
+regex = { version = "1.11", default-features = false, features = ["std", "unicode", "perf"] }   # config patterns (classify, stations)
+geo = "0.33"                    # station model geometry: distances, containment, union and intersection, simplification
+rstar = "0.13"                  # spatial indexes (shapely's STRtree in the Python version)
+unicode-normalization = "0.1"   # station name normalisation (NFKD, as stations.py)
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"

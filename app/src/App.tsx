@@ -3,7 +3,7 @@ import { MapView, type Hit, type MapHandle, type View } from './MapView'
 import type { ColorMode, MapState } from './mapStyle'
 import { regionBySlug } from './regions'
 import { TYPE_ORDER } from './palette'
-import { loadLineIndex, loadNamedLines, loadStation, type LineIndex, type NamedLine } from './data'
+import { loadLineIndex, loadNamedLines, loadRailways, loadStation, railwayOf, type LineIndex, type NamedLine, type Railways } from './data'
 import { readHash, writeHash } from './urlState'
 import { Toolbar, RegionPicker, type Controls } from './components/Toolbar'
 import { Legend } from './components/Legend'
@@ -49,6 +49,9 @@ export default function App() {
   const [peek, setPeek] = useState<Hit | null>(null)
   const [indexes, setIndexes] = useState<Record<string, LineIndex>>({})
   const [named, setNamed] = useState<Record<string, NamedLine[]>>({})
+  const [railways, setRailways] = useState<Record<string, Railways>>({})
+  const railwaysRef = useRef(railways)   // for openHit, which memoized click handlers call
+  railwaysRef.current = railways
   const [selTrackName, setSelTrackName] = useState<string | null>(null)
   const [listHoverLine, setListHoverLine] = useState<number | null>(null)
   const [listHoverName, setListHoverName] = useState<string | null>(null)
@@ -59,6 +62,7 @@ export default function App() {
 
   const ensureIndex = useCallback((slug: string) => {
     loadLineIndex(slug).then((ix) => setIndexes((p) => (p[slug] ? p : { ...p, [slug]: ix }))).catch(() => {})
+    loadRailways(slug).then((rw) => setRailways((p) => (p[slug] ? p : { ...p, [slug]: rw }))).catch(() => {})
   }, [])
   useEffect(() => ensureIndex(region.slug), [region.slug, ensureIndex])
   useEffect(() => {
@@ -99,7 +103,10 @@ export default function App() {
       // outside inspect mode a click on track opens the first line that runs on it, else the Lines list on that named railway
       const first = Number(String(h.props.ln ?? '').split(',')[0])
       if (Number.isFinite(first) && first > 0) openLine(h.slug, first)
-      else if (h.props.n) { setSelected({ kind: 'lines' }); setSelPt(null); setPeek(null); setHover(null); setSelTrackName(String(h.props.n)) }
+      else {
+        const name = railwayOf(railwaysRef.current[h.slug], h.props)?.[0] ?? (h.props.n ? String(h.props.n) : null)
+        if (name) { setSelected({ kind: 'lines' }); setSelPt(null); setPeek(null); setHover(null); setSelTrackName(name) }
+      }
     }
   }
 
@@ -114,7 +121,7 @@ export default function App() {
       if (!hit) { setPeek(null); return }
       ensureIndex(hit.slug)
       setPeek((cur) => {
-        if (cur && hitKey(cur) === hitKey(hit) && (inspect || hit.kind === 'station' || hit.kind === 'line' || (hit.kind === 'track' && !!(hit.props.ln || hit.props.n)))) { setTimeout(() => openHit(hit), 0); return cur }
+        if (cur && hitKey(cur) === hitKey(hit) && (inspect || hit.kind === 'station' || hit.kind === 'line' || (hit.kind === 'track' && !!(hit.props.ln || hit.props.n || hit.props.nk != null)))) { setTimeout(() => openHit(hit), 0); return cur }
         return hit
       })
       return
@@ -151,7 +158,14 @@ export default function App() {
   const hh = !touch && !selected && hover ? hover.hit : null
   const firstLn = hh?.kind === 'track' ? Number(String(hh.props.ln ?? '').split(',')[0]) : NaN
   const hoverLine = hh?.kind === 'line' ? Number(hh.props.lid) : Number.isFinite(firstLn) && firstLn > 0 ? firstLn : null
-  const hoverName = hh?.kind === 'track' && hoverLine == null && hh.props.n ? String(hh.props.n) : null
+  // a track with no mapped line highlights its railway: by name zoomed in, by railway number (nk) in the zoomed-out overview
+  const hoverName = hh?.kind === 'track' && hoverLine == null ? (railwayOf(railways[hh.slug], hh.props)?.[0] ?? (hh.props.n ? String(hh.props.n) : null)) : null
+  // the region the highlighted line belongs to: the selected line's, else the Lines list's (current region), else the hovered one's
+  const hlLine = selectedLine ?? listHoverLine ?? hoverLine
+  const hlName = selectedLine == null && selTrackName == null ? (listHoverName ?? (listHoverLine == null ? hoverName : null)) : selTrackName
+  const hlSlug = selected?.kind === 'line' ? selected.slug
+    : listHoverLine != null || listHoverName != null || selTrackName != null ? region.slug
+    : hh ? hh.slug : null
   const tip = !touch && hover && !selected ? hover : null
   const W = wrap.current?.clientWidth ?? 1200
   const tipLeft = tip ? (tip.x + 330 > W ? tip.x - 322 : tip.x + 16) : 0
@@ -160,7 +174,7 @@ export default function App() {
     <LangContext.Provider value={lang}>
     <div className={`app${compact ? ' compact' : ''}`} ref={wrap}>
       <MapView ref={map} state={mapState} units={units} initial={init.view ?? { center: region.center, zoom: compact ? region.zoomPhone : region.zoom }}
-        selectedLine={selectedLine ?? listHoverLine ?? hoverLine} selectedTrackName={selectedLine == null && selTrackName == null ? (listHoverName ?? (listHoverLine == null ? hoverName : null)) : selTrackName} selectedStation={selPt} touch={touch}
+        highlightSlug={hlLine != null || hlName != null ? hlSlug : null} selectedLine={hlLine} selectedTrackName={hlName} selectedStation={selPt} touch={touch}
         onHover={onHover} onClick={onClick} onMoveEnd={(v) => { view.current = v; sync() }} />
 
       {!compact && <Toolbar c={controls} />}
@@ -187,13 +201,13 @@ export default function App() {
 
       {tip && (
         <div className={`tooltip${inspect ? ' inspect' : ''}`} role="tooltip" style={{ left: tipLeft, top: Math.min(tip.y + 14, (wrap.current?.clientHeight ?? 800) - 260) }}>
-          {inspect ? <InspectTooltipBody hit={tip.hit} /> : <TooltipBody hit={tip.hit} index={indexes[tip.hit.slug]} touch={false} units={units} />}
+          {inspect ? <InspectTooltipBody hit={tip.hit} /> : <TooltipBody hit={tip.hit} index={indexes[tip.hit.slug]} railways={railways[tip.hit.slug]} touch={false} units={units} />}
         </div>
       )}
       {touch && peek && !selected && (
         <div className="peek" role="status">
           <button type="button" className="close" aria-label="Dismiss" onClick={() => setPeek(null)}>{Icon.close}</button>
-          {inspect ? <><InspectTooltipBody hit={peek} /><button type="button" className="more" onClick={() => openHit(peek)}>More</button></> : <TooltipBody hit={peek} index={indexes[peek.slug]} touch onMore={() => openHit(peek)} units={units} />}
+          {inspect ? <><InspectTooltipBody hit={peek} /><button type="button" className="more" onClick={() => openHit(peek)}>More</button></> : <TooltipBody hit={peek} index={indexes[peek.slug]} railways={railways[peek.slug]} touch onMore={() => openHit(peek)} units={units} />}
         </div>
       )}
 

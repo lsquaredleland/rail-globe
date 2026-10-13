@@ -42,7 +42,7 @@ What the filter keeps from the OSM planet, and what it drops. v3 (2026-10-11) ap
 - Station-related: station, halt, platform
 - Yard areas: yard, and `landuse=railway` polygons
 - Service track: siding, spur, crossover, and yard track (`service=yard`, Changed: was dropped)
-- Airport outlines and terminals (New): `aeroway=aerodrome` with an IATA or ICAO code, and `aeroway=terminal` with a name, IATA code or ref, as polygons. Written by `pipeline/airports.py`, not by the main filter
+- Airport outlines and terminals (New): `aeroway=aerodrome` with an IATA or ICAO code, and `aeroway=terminal` with a name, IATA code or ref, as polygons. Written to their own file (`airports.geojsonl`) by the region cut (`pipeline/rail-extract`)
 - Station buildings and public transport areas (`building=train_station`, `public_transport=station|platform`)
 
 ## Features dropped

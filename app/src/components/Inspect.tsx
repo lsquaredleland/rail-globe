@@ -37,6 +37,8 @@ async function inspect(hit: Hit): Promise<Inspected | null> {
       sources: l.route_ids.slice(0, 6),
     }
   }
+  // zoomed out, track comes from the merged overview: no OSM id to look up
+  if (!id) return { title: 'Zoom in (z8 or closer) to inspect this track', osm: null, tags: [], derived: [] }
   const t = await loadFeatureTags(hit.slug, id)
   if (!t) return { title: id, osm: id || null, tags: [], derived: [] }
   return {

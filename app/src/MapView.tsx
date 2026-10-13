@@ -1,9 +1,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
-import maplibregl, { type GeoJSONSource, type Map as MLMap, type MapGeoJSONFeature } from 'maplibre-gl'
+import * as maplibregl from 'maplibre-gl'   // MapLibre 6 is ESM-only: no default export
+import type { GeoJSONSource, Map as MLMap, MapGeoJSONFeature } from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { addAirportIcon, addRegion, applyState, areaLayers, baseStyle, highlightLine, hitLayer, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
-import { REGIONS } from './regions'
+import { addAirportIcon, addBoundary, addRegion, applyState, areaLayers, baseStyle, highlightLine, hitLayer, regionsInView, stationLayers, strandLayer, syncRegions, updateRegionsInView, yardHitLayer, type MapState } from './mapStyle'
+import { REGIONS, SOURCES } from './regions'
 
 export type Hit =
   | { kind: 'station'; slug: string; props: Record<string, string | number>; lngLat: [number, number] }
@@ -24,6 +25,7 @@ interface Props {
   state: MapState
   units: 'km' | 'mi'
   initial: View
+  highlightSlug: string | null   // the region selectedLine / selectedTrackName belong to
   selectedLine: number | null
   selectedTrackName: string | null
   selectedStation: [number, number] | null
@@ -73,14 +75,16 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
     map.addControl(sc, 'bottom-left')
 
     map.on('load', () => {
-      for (const r of REGIONS) addRegion(map, r.slug)
+      for (const r of REGIONS) addBoundary(map, r.slug)
+      for (const s of SOURCES) addRegion(map, s)   // regions inside China are drawn from China's tiles
       map.addSource('selection', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
       map.addLayer({ id: 'selection', type: 'circle', source: 'selection',
         paint: { 'circle-radius': 15, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#1E1E1C', 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.55 } })
       addAirportIcon(map)
       loaded.current = true
+      updateRegionsInView(map)
       applyState(map, p.current.state)
-      highlightLine(map, p.current.selectedLine, p.current.selectedTrackName)
+      highlightLine(map, p.current.highlightSlug, p.current.selectedLine, p.current.selectedTrackName)
       updateSelection(map, p.current.selectedStation)
     })
 
@@ -91,45 +95,59 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       const lngLat: [number, number] = [ll.lng, ll.lat]
       const q = (layers: string[]) => map.queryRenderedFeatures(box, { layers: layers.filter((l) => map.getLayer(l)) })
       const toProps = (f: MapGeoJSONFeature) => f.properties as Record<string, string | number>
+      const inView = regionsInView()   // only the regions on screen are hit-tested
 
-      const st = q(REGIONS.flatMap((r) => stationLayers(r.slug)))
+      const st = q(inView.flatMap((r) => stationLayers(r)))
       if (st.length) {
         const best = [...st].sort((a, b) => Number(a.properties.tier) - Number(b.properties.tier))[0]
         const g = best.geometry as GeoJSON.Point
         return { kind: 'station', slug: slugOf(best.layer.id), props: toProps(best), lngLat: g.coordinates as [number, number] }
       }
       if (p.current.state.mode === 'operator' && map.getZoom() >= 12) {
-        const ln = q(REGIONS.flatMap((r) => [strandLayer(r.slug), `${strandLayer(r.slug)}-hs`]))
+        const ln = q(inView.flatMap((r) => [strandLayer(r), `${strandLayer(r)}-hs`]))
           .filter((f) => !p.current.state.hsrOnly || f.properties.t === 'high_speed')
         if (ln.length) return { kind: 'line', slug: slugOf(ln[0].layer.id), props: toProps(ln[0]), lngLat }
       }
-      const tr = q(REGIONS.map((r) => hitLayer(r.slug)))
+      const tr = q(inView.map((r) => hitLayer(r)))
       if (tr.length) {
         // most prominent type wins when tracks overlap
         const order = ['high_speed', 'intercity', 'regional', 'metro', 'light_rail', 'monorail', 'funicular', 'other', 'freight']
         const best = [...tr].sort((a, b) => order.indexOf(String(a.properties.type)) - order.indexOf(String(b.properties.type)))[0]
         return { kind: 'track', slug: slugOf(best.layer.id), props: toProps(best), lngLat }
       }
-      const yd = p.current.state.hsrOnly ? [] : q(REGIONS.map((r) => yardHitLayer(r.slug)))
+      const yd = p.current.state.hsrOnly ? [] : q(inView.map((r) => yardHitLayer(r)))
       if (yd.length) return { kind: 'track', slug: slugOf(yd[0].layer.id), props: toProps(yd[0]), lngLat }
       // station grounds, yards, buildings and platforms (polygons are hit inside, with no tolerance)
-      const pt1 = map.queryRenderedFeatures([pt.x, pt.y], { layers: REGIONS.flatMap((r) => areaLayers(r.slug)).filter((l) => map.getLayer(l)) })
+      const pt1 = map.queryRenderedFeatures([pt.x, pt.y], { layers: inView.flatMap((r) => areaLayers(r)).filter((l) => map.getLayer(l)) })
       if (pt1.length) return { kind: 'area', slug: slugOf(pt1[0].layer.id), props: toProps(pt1[0]), lngLat }
       return null
     }
 
+    // at most one hit test per frame, and no React update while the pointer moves over empty map
+    let pending: { x: number; y: number } | null = null
+    let hovering = false
     map.on('mousemove', (e) => {
       if (p.current.touch) return
-      const hit = hitAt(e.point)
-      map.getCanvas().style.cursor = hit ? 'pointer' : ''
-      p.current.onHover(hit, e.point)
+      if (!pending) requestAnimationFrame(() => {
+        const pt = pending!
+        pending = null
+        const hit = hitAt(pt)
+        map.getCanvas().style.cursor = hit ? 'pointer' : ''
+        if (!hit && !hovering) return
+        hovering = !!hit
+        p.current.onHover(hit, pt)
+      })
+      pending = { x: e.point.x, y: e.point.y }
     })
-    map.on('mouseout', () => p.current.onHover(null, { x: 0, y: 0 }))
+    map.on('mouseout', () => { hovering = false; p.current.onHover(null, { x: 0, y: 0 }) })
     map.on('click', (e) => p.current.onClick(hitAt(e.point), e.point))
     const showZoom = () => { if (zoomEl.current) zoomEl.current.textContent = `z${map.getZoom().toFixed(2)}` }
     map.on('move', showZoom); showZoom()
-    map.on('movestart', () => p.current.onHover(null, { x: 0, y: 0 }))
+    map.on('movestart', () => { hovering = false; p.current.onHover(null, { x: 0, y: 0 }) })
+    // regions that came into view get the current state and highlight; a source that has just read its bounds may change the set
+    map.on('sourcedata', (e) => { if (loaded.current && e.sourceDataType === 'metadata') syncRegions(map) })
     map.on('moveend', () => {
+      if (loaded.current) syncRegions(map)
       const c = map.getCenter()
       p.current.onMoveEnd({ center: [c.lng, c.lat], zoom: map.getZoom() })
     })
@@ -137,7 +155,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
   }, [])
 
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) applyState(m, props.state) }, [props.state])
-  useEffect(() => { const m = mapRef.current; if (m && loaded.current) highlightLine(m, props.selectedLine, props.selectedTrackName) }, [props.selectedLine, props.selectedTrackName])
+  useEffect(() => { const m = mapRef.current; if (m && loaded.current) highlightLine(m, props.highlightSlug, props.selectedLine, props.selectedTrackName) }, [props.highlightSlug, props.selectedLine, props.selectedTrackName])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) updateSelection(m, props.selectedStation) }, [props.selectedStation])
   useEffect(() => {
     const m = mapRef.current

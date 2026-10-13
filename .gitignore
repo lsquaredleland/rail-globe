@@ -14,10 +14,12 @@ app/dist/
 # generated tiles and side files from pipeline/build_tiles.py
 app/public/data/
 
-# python and compiled filter
+# python
 __pycache__/
 *.pyc
-pipeline/cpp/rail_filter
 
 # generated prototype viewer (built from station_viewer.template.html)
 /station_viewer.html
+
+# Rust extractor build output
+pipeline/rail-extract/target/

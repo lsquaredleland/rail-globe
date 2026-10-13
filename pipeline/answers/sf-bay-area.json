@@ -83,7 +83,7 @@
     },
     {
       "match": "^Muni Powell/Hyde Cable Car$",
-      "type": "other"
+      "type": "funicular"
     },
     {
       "match": "^Amtrak Capitol Corridor$",
@@ -106,10 +106,6 @@
       "match": "^Blue Line$",
       "network": "VTA",
       "type": "light_rail"
-    },
-    {
-      "match": "BART Oakland Airport Connector",
-      "type": "other"
     }
   ]
 }

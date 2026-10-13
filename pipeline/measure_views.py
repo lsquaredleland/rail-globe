@@ -6,17 +6,17 @@ from pathlib import Path
 from pmtiles.reader import Reader, MmapSource
 
 DATA = Path(__file__).resolve().parent.parent / "app" / "public" / "data"
-VIEWS = {  # name -> (slug, lon, lat)
+VIEWS = {  # name -> (tile source, lon, lat); Chengdu and the Greater Bay Area are drawn from China's tiles
     "Paris centre": ("paris", 2.3553, 48.8785),
     "Paris default": ("paris", 2.35, 48.86),
     "SF Bay Area": ("sf-bay-area", -122.22, 37.7),
     "SF downtown": ("sf-bay-area", -122.40, 37.78),
-    "Chengdu": ("chengdu", 104.07, 30.66),
-    "Chengdu East": ("chengdu", 104.14, 30.63),
-    "GBA region": ("greater-bay-area", 113.55, 22.75),
-    "Shenzhen": ("greater-bay-area", 114.06, 22.58),
-    "Hong Kong": ("greater-bay-area", 114.17, 22.30),
-    "Guangzhou": ("greater-bay-area", 113.27, 23.13),
+    "Chengdu": ("china", 104.07, 30.66),
+    "Chengdu East": ("china", 104.14, 30.63),
+    "GBA region": ("china", 113.55, 22.75),
+    "Shenzhen": ("china", 114.06, 22.58),
+    "Hong Kong": ("china", 114.17, 22.30),
+    "Guangzhou": ("china", 113.27, 23.13),
 }
 SCREENS = {"laptop 1440x900": (1440, 900), "phone 390x844": (390, 844)}
 ZOOMS = [6, 8, 9.5, 10.6, 12, 13, 14]

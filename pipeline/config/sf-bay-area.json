@@ -7,14 +7,15 @@
     "Altamont Corridor Express"
   ],
   "high_speed_networks_re": [],
-  "type_overrides": [
+  "track_type_overrides": [
     {
       "match": {
-        "network": "BART",
-        "name_re": "Airport Connector"
+        "name_re": "^Niles Canyon Railway$"
       },
       "type": "other"
-    },
+    }
+  ],
+  "type_overrides": [
     {
       "match": {
         "network": "BART"
@@ -31,7 +32,7 @@
       "match": {
         "name_re": "Cable Car"
       },
-      "type": "other"
+      "type": "funicular"
     },
     {
       "match": {
