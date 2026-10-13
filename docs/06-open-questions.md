@@ -44,6 +44,15 @@ The docs did not cover these, so they were implemented as the obvious option and
 | Named railway lines | Where no route relation covers a piece of track (Chengdu has almost no train routes), the track's own `name` is used: as the tooltip title, as a map label from z11.5, and as an entry in the Lines list (grouped by rail type, with approximate length from the track pieces divided by `tracks`). Only names with about 1.5 km or more of track are listed |
 | Tooltip tier names | Tier 1 with a high-speed track nearby → "Major HSR station"; other tier 1 and tier 2 → "Major station"; tier 3 → "Minor station" |
 
+## Highlight performance: not tried yet
+
+- Split `lines/<id>.json` so hover reads only a `hl` file (ways, geometry): halves the largest files
+- Put the way ids of a line in the tiles themselves (the pieces already carry `ln`) so hover needs no fetch at z8 and closer
+- Set feature state only for the ways in view (needs a bounding box per way in the side file); matters for the 3,680-way Shanghai-Lhasa train
+- Draw the highlight from an exact-geometry GeoJSON layer instead of feature state (worker cost grows with geometry size)
+- Reduce the layer count (155 layers, 3 regions): fewer draw calls per frame, the frame after a highlight is mostly native GL time
+- Test on the real machine: the headless runs (M4 Max) never reached the reported 500 ms before the fixes above
+
 ## Parked (not in v1)
 
 - GTFS of any kind: frequencies, timetables, Portolan, train animation
