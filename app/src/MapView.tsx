@@ -74,7 +74,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
     const map = new maplibregl.Map({
       container: el.current!, style: baseStyle(), center: p.current.initial.center, zoom: p.current.initial.zoom,
       minZoom: 2, maxZoom: 17, attributionControl: false, dragRotate: false, pitchWithRotate: false, maxPitch: 0,
-      fadeDuration: 0,
+      fadeDuration: 100,   // 0 makes MapLibre redo full label placement every frame (never paused); any fade keeps it time-sliced
     })
     mapRef.current = map
     if (import.meta.env.DEV || location.search.includes('debug')) (window as unknown as { __map: MLMap }).__map = map   // ?debug: for profiling a production build
