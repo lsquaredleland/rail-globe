@@ -190,7 +190,7 @@ section { display: flex; flex-direction: column; gap: 8px; }
 .ac-big { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.15; }
 .ac-scale { display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px; border-radius: 6px; background: var(--fill); font-weight: 600; font-size: 11px; white-space: nowrap; }
 .ac-scale i { width: 9px; height: 9px; border-radius: 2px; background: var(--ink); } .ac-scale.small { padding: 2px 6px; font-size: 11px; } .ac-scale b { width: 8px; height: 8px; border-radius: 4px; background: var(--ink); }
-.sq-grid { display: grid; gap: 2px; justify-content: start; }
+.sq-grid { display: grid; grid-template-columns: repeat(auto-fill, 9px); gap: 2px; justify-content: start; }
 .sq-grid i { width: 9px; height: 9px; border-radius: 2px; background-color: transparent; box-shadow: inset 0 0 0 0.5px rgba(30, 30, 28, 0.04); }
 .sq-grid.out { grid-template-columns: repeat(auto-fill, 9px); gap: 2px; } .sq-grid.out i { width: 7px; height: 7px; box-shadow: none; border: 1px dashed #9b978e; background: none; }
 .ac-sec { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; } .ac-sec.top { margin-top: 0; align-items: flex-start; }
@@ -226,3 +226,38 @@ section { display: flex; flex-direction: column; gap: 8px; }
 .ac-row.grey .nm, .ac-row.grey .v, .sp-row.grey .nm { color: var(--ink3); } .ac-row.grey, .sp-row.grey { opacity: 0.75; } .ac-row.grey.off, .sp-row.grey.off { opacity: 0.5; }
 .ac-grey { display: flex; align-items: center; gap: 8px; font-size: 11px; } .ac-grey i { width: 14px; height: 2px; border-radius: 1px; background: #D4D1C7; flex: none; }
 .sp-hs.off { background: transparent; } .sp-hs.off .sp-cap, .sp-hs.off .sp-cap .eyebrow { color: var(--ink3); } .sp-hs.off .sp-cap i { background: var(--line2); }
+
+/* toolbar and card stack on the left: the card sits under the toolbar wherever it wraps to */
+.left-stack { position: absolute; z-index: 5; top: 16px; left: 16px; right: 16px; bottom: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; pointer-events: none; }
+.left-stack > * { pointer-events: auto; }
+.left-stack > .toolbar { position: static; flex: none; }
+.left-stack > .area-card { position: static; flex: 0 1 auto; min-height: 0; max-height: none; }
+
+/* construction switch on: the cards grow a construction and a proposed part. Everything that appears eases in (width, columns), nothing moves down. */
+.area-card { transition: width .32s cubic-bezier(.3, .7, .2, 1); }
+.ac-sec .eyebrow { white-space: nowrap; }
+.ac-row .grow { min-width: 0; } .ac-row .v, .ac-row .p { white-space: nowrap; }
+.ac-row .c, .ac-colhead .c { width: 0; margin-left: -8px; overflow: hidden; opacity: 0; text-align: right; font-size: 11px; white-space: nowrap; align-self: stretch; display: flex; align-items: center; justify-content: flex-end; transition: width .32s cubic-bezier(.3, .7, .2, 1), margin-left .32s cubic-bezier(.3, .7, .2, 1), opacity .25s ease; }
+.con-on .ac-row .c:not(.pr), .prop-on .ac-row .c.pr, .con-on .ac-colhead .c:not(.pr), .prop-on .ac-colhead .c.pr { width: 52px; margin-left: 0; opacity: 1; }
+.area-card:not(.sp) { --extra: 0px; } .area-card:not(.sp).con-on, .area-card:not(.sp).prop-on { --extra: 60px; } .area-card:not(.sp).con-on.prop-on { --extra: 120px; }
+.area-card:not(.sp):not(.embedded) { width: calc(264px + var(--extra)); }
+.dot-grid i.ring { background: none; border: 1.2px solid #8a867d; box-sizing: border-box; animation: pop .35s ease both; }
+@keyframes pop { from { opacity: 0; transform: scale(.4); } }
+.ac-key b.ring { width: 7px; height: 7px; background: none; border: 1.2px solid #8a867d; box-sizing: border-box; } .ac-key .full { flex-basis: 100%; }
+.area-card.sp { --extra: 0px; } .area-card.sp.con-on, .area-card.sp.prop-on { --extra: 84px; } .area-card.sp.con-on.prop-on { --extra: 170px; }
+.area-card.sp:not(.embedded) { width: calc(264px + var(--extra)); }
+.sp-colhead, .sp-total { display: flex; justify-content: flex-end; font-size: 11px; color: var(--ink3); padding-bottom: 2px; }
+.sp-colhead span:first-child { min-width: 70px; text-align: right; }
+.bt { width: 0; overflow: hidden; opacity: 0; text-align: right; white-space: nowrap; transition: width .32s cubic-bezier(.3, .7, .2, 1), opacity .25s ease; }
+.con-on .bt:not(.pr), .prop-on .bt.pr { width: 86px; opacity: 1; }
+.sp-total { margin-top: 2px; padding-top: 7px; border-top: 1px solid var(--line); color: var(--ink); font-size: 12px; }
+.sp-total b:first-child { margin-right: auto; } .sp-total b:nth-child(2) { min-width: 70px; text-align: right; }
+.sp-row .v { text-align: right; white-space: nowrap; min-width: 70px; }
+.sp-row { align-items: center; }
+.sp-row .cv { width: 0; margin: -4px 0 -4px -9px; opacity: 0; overflow: hidden; align-self: stretch; display: flex; align-items: center; justify-content: flex-end; border-left: 1px dashed var(--line); font-size: 11px; white-space: nowrap; transition: width .32s cubic-bezier(.3, .7, .2, 1), margin-left .32s cubic-bezier(.3, .7, .2, 1), opacity .25s ease; }
+.con-on .sp-row .cv:not(.pr), .prop-on .sp-row .cv.pr { width: 86px; margin-left: 0; opacity: 1; }
+.sp-row .cv-in { display: inline-flex; align-items: center; gap: 5px; padding-right: 4px; }
+
+.ac-colhead { display: flex; align-items: flex-end; gap: 8px; margin-top: -3px; font-size: 11px; color: var(--ink3); white-space: nowrap; }
+.ac-colhead .ih { flex: 1; text-align: right; margin-right: 36px; }
+.ac-colhead .c { font-size: 11px; }

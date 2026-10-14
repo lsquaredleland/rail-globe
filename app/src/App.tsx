@@ -220,7 +220,6 @@ export default function App() {
         highlightSlug={hlLine != null || hlName != null ? hlSlug : null} selectedLine={hlLine} selectedTrackName={hlName} hoverHighlight={touch || selected || listHoverLine != null || listHoverName != null ? null : hoverHighlight} focusSlug={selected?.kind === 'line' ? selected.slug : selTrackName != null ? (selTrackSlug ?? region.slug) : null} selectedStation={selPt} touch={touch}
         onHover={onHover} onClick={onClick} onMoveEnd={(v) => { view.current = v; setViewNow(v); sync() }} />
 
-      {!compact && <Toolbar c={controls} />}
       {compact && (
         <>
           <div className="phone-top">
@@ -233,10 +232,11 @@ export default function App() {
         </>
       )}
 
-      {!compact && mode !== 'operator' && (mode === 'speed'
-        ? <SpeedCard area={cardArea} units={units} {...speedProps} />
-        : <TypeCard area={cardArea} units={units} hidden={hidden} freight={freight} construction={construction} hsrOnly={hsrOnly}
-            onToggleType={legendProps.onToggleType} onShowAll={legendProps.onShowAll} onHideAll={legendProps.onHideAll} onToggleFreight={legendProps.onToggleFreight} onToggleConstruction={() => setConstruction((v) => !v)} />)}
+      {/* toolbar and card share one column, so the card moves down when the toolbar grows (wraps) */}
+      {!compact && <div className="left-stack"><Toolbar c={controls} />{mode !== 'operator' && (mode === 'speed'
+        ? <SpeedCard area={cardArea} units={units} construction={construction} proposed={proposed} {...speedProps} />
+        : <TypeCard area={cardArea} units={units} hidden={hidden} freight={freight} construction={construction} proposed={proposed} hsrOnly={hsrOnly}
+            onToggleType={legendProps.onToggleType} onShowAll={legendProps.onShowAll} onHideAll={legendProps.onHideAll} onToggleFreight={legendProps.onToggleFreight} />)}</div>}
       {/* the earlier legend sits on the right while the cards are tried out; speed mode has none (its card is the legend) */}
       {!compact && !selected && mode !== 'speed' && <Legend mode={mode} hsrOnly={hsrOnly} open={legendOpen} setOpen={setLegendOpen} freight={freight} index={idx} {...legendProps} />}
       {!compact && (
@@ -289,7 +289,7 @@ export default function App() {
             <button type="button" className="btn wide" onClick={controls.openLines}>{Icon.list}Line list<span className="muted grow-r">{idx ? Object.keys(idx).length : ''}</span></button>
             <h3 className="eyebrow">Legend</h3>
             {mode === 'speed'
-              ? <SpeedCard area={cardArea} units={units} embedded {...speedProps} />
+              ? <SpeedCard area={cardArea} units={units} construction={construction} proposed={proposed} embedded {...speedProps} />
               : <Legend mode={mode} hsrOnly={hsrOnly} open setOpen={() => {}} freight={freight} index={idx} compact {...legendProps} />}
             <h3 className="eyebrow">More</h3>
             <div className="row between"><span>Units</span><Segmented<'km' | 'mi'> label="Units" value={units} onChange={setUnits} options={[{ value: 'km', label: 'km' }, { value: 'mi', label: 'mi' }]} /></div>

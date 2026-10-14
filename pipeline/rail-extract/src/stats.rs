@@ -85,6 +85,12 @@ struct Area {
     km: BTreeMap<(String, bool), f64>,
     /// open passenger route km by speed band (lower bound of the app's speed bands, -1: no usable maxspeed)
     speed: BTreeMap<i64, f64>,
+    /// the same for passenger track under construction (not in the open totals)
+    speed_con: BTreeMap<i64, f64>,
+    /// the same for proposed passenger track
+    speed_prop: BTreeMap<i64, f64>,
+    /// proposed route km by type
+    km_prop: BTreeMap<String, f64>,
     lines: BTreeMap<String, BTreeSet<String>>,
     st: BTreeMap<&'static str, i64>,
 }
@@ -160,7 +166,7 @@ fn shape(mp: &MultiPolygon<f64>) -> Value {
 pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &Path) -> String {
     let new = |slug: &str, name: String, local: Option<String>, kind: &'static str, poly: Option<MultiPolygon<f64>>, bbox: [f64; 4], min_metro: i64| Area {
         slug: slug.to_string(), name, local, kind, pip: poly.as_ref().map(|p| Pip::new(p, bbox)), poly, bbox, min_metro,
-        km: BTreeMap::new(), speed: BTreeMap::new(), lines: BTreeMap::new(), st: BTreeMap::new(),
+        km: BTreeMap::new(), speed: BTreeMap::new(), speed_con: BTreeMap::new(), speed_prop: BTreeMap::new(), km_prop: BTreeMap::new(), lines: BTreeMap::new(), st: BTreeMap::new(),
     };
     let mut areas: Vec<Area> = Vec::new();
     let own = outline(slug, dirs);
@@ -207,20 +213,22 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
 
     // ways by (type, under construction); lines per area from each way's middle vertex
     let mut groups: BTreeMap<(String, bool), Vec<Vec<(f64, f64)>>> = BTreeMap::new();
-    let mut speed_groups: BTreeMap<i64, Vec<Vec<(f64, f64)>>> = BTreeMap::new();
+    let mut prop_groups: BTreeMap<String, Vec<Vec<(f64, f64)>>> = BTreeMap::new();
+    let mut speed_groups: BTreeMap<(i64, u8), Vec<Vec<(f64, f64)>>> = BTreeMap::new();
     let mut line_hits: Vec<(Vec<usize>, Vec<&str>)> = Vec::new();
     for fe in &inp.feats {
         let p = &fe.p;
         let Some(t) = s(p, "type").filter(|t| TYPES.contains(t)) else { continue };
-        if fe.gtype != "LineString" || s(p, "railway") == Some("proposed") {
+        if fe.gtype != "LineString" {
             continue;
         }
         let con = s(p, "railway") == Some("construction");
+        let prop = s(p, "railway") == Some("proposed");
         let c = tracks_of(fe);
         if c.len() < 2 {
             continue;
         }
-        if !con {
+        if !con && !prop {
             let lids: Vec<&str> = p.get("_routes").and_then(Value::as_array).into_iter().flatten().filter_map(|r| route_line.get(r.as_str().unwrap_or("")).copied()).collect();
             if !lids.is_empty() {
                 let m = c[c.len() / 2];
@@ -229,14 +237,14 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
                 line_hits.push((in_areas, lids));
             }
         }
-        if !con && t != "freight" {
+        if t != "freight" || prop {
             let band = speed_kmh(s(p, "maxspeed")).filter(|k| *k != 0.0).map_or(-1, |k| {
                 let k = k.round_ties_even() as i64;
                 SPEED_BAND_MINS.iter().find(|&&b| k >= b).copied().unwrap_or(0)
             });
-            speed_groups.entry(band).or_default().push(c.clone());
+            speed_groups.entry((band, if prop { 2 } else { con as u8 })).or_default().push(c.clone());
         }
-        groups.entry((t.to_string(), con)).or_default().push(c);
+        if prop { prop_groups.entry(t.to_string()).or_default().push(c); } else { groups.entry((t.to_string(), con)).or_default().push(c); }
     }
     for (ix, lids) in &line_hits {
         for &i in ix {
@@ -259,14 +267,26 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         }
     }
 
-    let speed_results: Vec<(i64, Vec<f64>)> = speed_groups.par_iter().map(|(k, ways)| {
+    let prop_results: Vec<(String, Vec<f64>)> = prop_groups.par_iter().map(|(k, ways)| {
+        let refs: Vec<&Vec<(f64, f64)>> = ways.iter().collect();
+        (k.clone(), group_km(&refs, n_areas, &tree, &pips))
+    }).collect();
+    for (k, km) in prop_results {
+        for (i, v) in km.into_iter().enumerate() {
+            if v > 0.0 {
+                areas[i].km_prop.insert(k.clone(), v);
+            }
+        }
+    }
+
+    let speed_results: Vec<((i64, u8), Vec<f64>)> = speed_groups.par_iter().map(|(k, ways)| {
         let refs: Vec<&Vec<(f64, f64)>> = ways.iter().collect();
         (*k, group_km(&refs, n_areas, &tree, &pips))
     }).collect();
-    for (k, km) in speed_results {
+    for ((k, kind), km) in speed_results {
         for (i, v) in km.into_iter().enumerate() {
             if v > 0.0 {
-                areas[i].speed.insert(k, v);
+                match kind { 2 => areas[i].speed_prop.insert(k, v), 1 => areas[i].speed_con.insert(k, v), _ => areas[i].speed.insert(k, v) };
             }
         }
     }
@@ -304,12 +324,14 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         let mut km = Map::new();
         for t in TYPES {
             let (open, con) = (a.km.get(&(t.to_string(), false)).copied().unwrap_or(0.0), a.km.get(&(t.to_string(), true)).copied().unwrap_or(0.0));
-            if open > 0.0 || con > 0.0 {
-                km.insert(t.into(), json!({ "open": r1(open), "con": r1(con) }));
+            let prop = a.km_prop.get(&t.to_string()).copied().unwrap_or(0.0);
+            if open > 0.0 || con > 0.0 || prop > 0.0 {
+                km.insert(t.into(), json!({ "open": r1(open), "con": r1(con), "prop": r1(prop) }));
             }
         }
         let lines: Map<String, Value> = TYPES.iter().filter_map(|t| a.lines.get(*t).map(|s| (t.to_string(), json!(s.len())))).collect();
-        let speed: Map<String, Value> = a.speed.iter().map(|(b, v)| ((if *b < 0 { "none".to_string() } else { b.to_string() }), json!(r1(*v)))).collect();
+        let band = |m: &BTreeMap<i64, f64>| -> Map<String, Value> { m.iter().map(|(b, v)| ((if *b < 0 { "none".to_string() } else { b.to_string() }), json!(r1(*v)))).collect() };
+        let (speed, speed_con, speed_prop) = (band(&a.speed), band(&a.speed_con), band(&a.speed_prop));
         let st: Map<String, Value> = a.st.iter().map(|(k, v)| (k.to_string(), json!(v))).collect();
         let open: f64 = a.km.iter().filter(|((_, c), _)| !c).map(|(_, v)| v).sum();
         if rows.len() < 6 {
@@ -318,7 +340,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         if let Some(p) = &a.poly {
             shapes.insert(a.slug.clone(), shape(p));
         }
-        rows.push(json!({ "slug": a.slug, "name": a.name, "local": a.local, "kind": a.kind, "bbox": a.bbox, "km": km, "lines": lines, "speed": speed, "stations": st }));
+        rows.push(json!({ "slug": a.slug, "name": a.name, "local": a.local, "kind": a.kind, "bbox": a.bbox, "km": km, "lines": lines, "speed": speed, "speed_con": speed_con, "speed_prop": speed_prop, "stations": st }));
     }
     let dir = out.join(slug);
     fs::create_dir_all(&dir).expect("create output folder");

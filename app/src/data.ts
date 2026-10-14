@@ -87,9 +87,13 @@ export async function loadFeatureTags(slug: string, osmId: string): Promise<Tags
  *  Length is route km, double track counted once (about 10% accurate). */
 export interface StatsArea {
   slug: string; name: string; local: string | null; kind: 'region' | 'area' | 'province' | 'city'; bbox: [number, number, number, number]
-  km: Record<string, { open: number; con: number }>
+  km: Record<string, { open: number; con: number; prop?: number }>
   /** open passenger route km by speed band: the band's lower bound in km/h, or 'none' without a usable maxspeed */
   speed?: Record<string, number>
+  /** the same for passenger track under construction */
+  speed_con?: Record<string, number>
+  /** the same for proposed passenger track (a test scope: Hong Kong) */
+  speed_prop?: Record<string, number>
   lines: Record<string, number>
   stations: Record<string, number>
 }
