@@ -81,7 +81,7 @@ Open, by measured payoff:
 7. **Align tile `minzoom` with style `minzoom`.** Five layers carry data a zoom before they are drawn (list in the research summary). Free bytes; not yet measured.
 8. **Stronger low-zoom simplification (`--low-detail`).** Not measured.
 9. **Corridor merging prototype at z8-11.** Not measured.
-10. **Stop tiles at z13 and overzoom.** The reference stops at z12. Not measured.
+10. **Stop tiles at z13 and overzoom.** The reference stops at z12. Not measured. The user is fine with overzooming (2026-10-13), so this is open to benchmark with the other tile options.
 11. **MapLibre Tiles (MLT).** MapLibre 6 reads MLT; tippecanoe does not write it, so it needs a conversion step.
 12. **Self-host Latin glyphs** (CJK stays on local fonts), so the first labels at a new zoom do not wait on a font download.
 13. **Production hosting.** `r2.dev` has no Cloudflare cache and is rate-limited. Use a custom domain with cache, or chunked tiles read by HTTP Range like the reference.
