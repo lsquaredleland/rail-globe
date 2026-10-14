@@ -7,8 +7,8 @@ import { Icon, Segmented, Toggle, type Lang } from './ui'
 
 export interface Controls {
   /** the area the card shows (what the view is over); the picker names it, falling back to the pilot region */
-  area: StatsArea | null; region: Region; mode: ColorMode; hsrOnly: boolean; setHsrOnly(v: boolean): void; construction: boolean; proposed: boolean; freight: boolean; units: 'km' | 'mi'; lang: Lang; setLang(l: Lang): void; inspect: boolean
-  setRegion(slug: string): void; setMode(m: ColorMode): void; setConstruction(v: boolean): void; setProposed(v: boolean): void; setFreight(v: boolean): void
+  area: StatsArea | null; region: Region; mode: ColorMode; hsrOnly: boolean; setHsrOnly(v: boolean): void; construction: boolean; proposed: boolean; outline: boolean; freight: boolean; units: 'km' | 'mi'; lang: Lang; setLang(l: Lang): void; inspect: boolean
+  setRegion(slug: string): void; setMode(m: ColorMode): void; setConstruction(v: boolean): void; setProposed(v: boolean): void; setOutline(v: boolean): void; setFreight(v: boolean): void
   setUnits(u: 'km' | 'mi'): void; setInspect(v: boolean): void; openLines(): void; copyLink(): void; copied: boolean
 }
 
@@ -68,6 +68,8 @@ export function MoreMenu({ c }: { c: Controls }) {
             <Segmented label="Names" value={c.lang} options={[{ value: 'local', label: 'Local' }, { value: 'en', label: 'English' }]} onChange={c.setLang} />
           </div>
           <div className="sep" />
+          <Toggle on={c.proposed} onChange={c.setProposed}><span className="col"><span>Proposed track</span><span className="muted sm">Hong Kong only for now</span></span></Toggle>
+          <Toggle on={c.outline} onChange={c.setOutline}><span className="col"><span>Outline area in view</span><span className="muted sm">A faint line round the area on the card</span></span></Toggle>
           <Toggle on={c.inspect} onChange={(v) => { c.setInspect(v); setOpen(false) }}><span className="col"><span>Inspect OSM tags</span><span className="muted sm">For mappers: tooltips show raw tags</span></span></Toggle>
           <div className="sep" />
           <button type="button" role="menuitem" className="item" onClick={c.copyLink}>{c.copied ? Icon.check : Icon.link}{c.copied ? 'Link copied' : 'Copy link to this view'}</button>
@@ -90,7 +92,6 @@ export function Toolbar({ c }: { c: Controls }) {
       <Segmented label="Colour lines by" value={c.mode} onChange={c.setMode} options={[{ value: 'type', label: 'Rail type' }, { value: 'operator', label: 'Operator colours' }, { value: 'speed', label: 'Speed' }]} />
       <Toggle on={c.hsrOnly} onChange={c.setHsrOnly}>HSR only</Toggle>
       <Toggle on={c.construction} onChange={c.setConstruction}>Construction</Toggle>
-      <Toggle on={c.proposed} onChange={c.setProposed}>Proposed</Toggle>
       <i className="vsep" />
       <button type="button" className="btn" onClick={c.openLines}>{Icon.list}Lines</button>
       <MoreMenu c={c} />

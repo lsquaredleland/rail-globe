@@ -107,6 +107,17 @@ export function loadStats(slug: string): Promise<StatsArea[]> {
   return p
 }
 
+/** The outline of a pilot region (its boundary file), for the "outline the area in view" switch */
+const boundaryCache = new Map<string, Promise<GeoJSON.Geometry | null>>()
+export function loadBoundary(slug: string): Promise<GeoJSON.Geometry | null> {
+  let p = boundaryCache.get(slug)
+  if (!p) {
+    p = fetch(boundaryUrl(slug)).then((r) => (r.ok ? r.json() : null)).then((j: GeoJSON.Feature | null) => j?.geometry ?? null).catch(() => null)
+    boundaryCache.set(slug, p)
+  }
+  return p
+}
+
 /** Simplified outlines of a region's areas (polygons of rings of [lon, lat]), for finding the area under the view centre */
 export type Shapes = Record<string, number[][][][]>
 const shapesCache = new Map<string, Promise<Shapes>>()

@@ -41,15 +41,22 @@ function Squares({ parts, unit }: { parts: { color: string; v: number; off?: boo
   return <div className="sq-grid" aria-hidden="true">{cells.map((g, i) => <i key={i} style={{ background: g }} />)}</div>
 }
 
-/** Dashed outlined squares at the same scale; with `parts` each square takes the colour of the part under its middle. */
-function Outlined({ n, unit, max = 100, parts }: { n: number; unit: number; max?: number; parts?: { color: string; v: number }[] }) {
-  const count = Math.min(max, Math.max(1, Math.ceil(n / unit - 1e-9)))
-  const colourAt = (x: number) => { let from = 0; for (const p of parts ?? []) { from += p.v; if (x < from) return p.color } return parts?.[parts.length - 1]?.color }
-  return (
-    <div className="sq-grid out" aria-hidden="true">
-      {Array.from({ length: count }, (_, i) => <i key={i} style={parts ? { borderColor: colourAt((i + 0.5) * unit) } : undefined} />)}
-    </div>
-  )
+/** Dashed outlined squares at the same scale, each in the colour of the part under its middle. */
+function Outlined({ n, unit, parts }: { n: number; unit: number; parts: { color: string; v: number }[] }) {
+  const count = Math.min(120, Math.max(1, Math.ceil(n / unit - 1e-9)))
+  const colourAt = (x: number) => { let from = 0; for (const p of parts) { from += p.v; if (x < from) return p.color } return parts[parts.length - 1]?.color }
+  return <div className="sq-grid out" aria-hidden="true">{Array.from({ length: count }, (_, i) => <i key={i} style={{ borderColor: colourAt((i + 0.5) * unit) }} />)}</div>
+}
+
+/** A block that slides open and closed (grid rows 0fr -> 1fr) instead of popping in; it also takes back the card's flex gap when shut. */
+function Collapse({ open, children }: { open: boolean; children: React.ReactNode }) {
+  return <div className={`collapse${open ? ' open' : ''}`} aria-hidden={!open}><div>{children}</div></div>
+}
+
+/** Freight at the same scale as the grid above: plain outlined squares, one per unit, outside the total. */
+function FreightSquares({ n, unit, color }: { n: number; unit: number; color: string }) {
+  const count = Math.min(100, Math.max(1, Math.ceil(n / unit - 1e-9)))
+  return <div className="sq-grid frt" aria-hidden="true">{Array.from({ length: count }, (_, i) => <i key={i} style={{ borderColor: color }} />)}</div>
 }
 
 function Dots({ parts, unit }: { parts: { color: string; v: number; ring?: boolean }[]; unit: number }) {
@@ -96,6 +103,9 @@ export function TypeCard({ area: a, units, hidden, freight, construction, propos
   const unit = niceUnit(total, 250)
   const st = a.stations
   const metro = st.metro ?? 0, tram = st.light_rail ?? 0, main = Math.max(0, (st.open ?? 0) - metro - tram)
+  const conTypes = TYPE_ORDER.filter((t) => conOf(t) > 0)
+  const con = conTypes.reduce((s, t) => s + conOf(t), 0)
+  const shade = (t: string) => (hidden.includes(t) ? '#CFCBC3' : hsrOnly && t !== 'high_speed' ? INACTIVE : TYPE_COLOR[t as RailType])
   const stCon = showCon ? (st.construction ?? 0) : 0
   const sUnit = niceUnit(st.open ?? 0, 120)
   return (
@@ -106,6 +116,15 @@ export function TypeCard({ area: a, units, hidden, freight, construction, propos
         <span className="ac-scale"><i />= {unitLabel(unit, units)}</span>
       </div>
       <Squares unit={unit} parts={types.map((t) => ({ color: hsrOnly && t !== 'high_speed' ? INACTIVE : TYPE_COLOR[t], v: open(t), off: hidden.includes(t) }))} />
+      {freightKm > 0 && <FreightSquares n={freightKm} unit={unit} color={hsrOnly ? INACTIVE : freight ? TYPE_COLOR.freight : '#CFCBC3'} />}
+      {hasCon && (
+        <Collapse open={showCon}>
+          <div className="ac-con">
+            <div className="ac-sec"><span className="eyebrow">Under construction</span><span><strong className="ac-conkm">+{num(con, units)} {units}</strong> <span className="muted sm">not in the total</span></span></div>
+            <Outlined n={con} unit={unit} parts={conTypes.map((t) => ({ color: shade(t), v: conOf(t) }))} />
+          </div>
+        </Collapse>
+      )}
       <div className="ac-sec"><span className="eyebrow">On the map</span>
         <Tools allOn={hidden.length === 0} allOff={TYPE_ORDER.every((t) => hidden.includes(t))} onAll={onShowAll} onNone={onHideAll} /></div>
       <div className="ac-colhead"><span className="ih">In service</span>{hasCon && <span className="c">Construction</span>}{hasProp && <span className="c pr">Proposed</span>}</div>
@@ -124,19 +143,17 @@ export function TypeCard({ area: a, units, hidden, freight, construction, propos
             </button>
           )
         })}
+        {freightKm > 0 && (
+          <button type="button" className={`ac-row frt${freight ? '' : ' off'}${hsrOnly ? ' grey' : ''}`} aria-pressed={freight} title={freight ? 'Hide freight' : 'Show freight'} onClick={onToggleFreight}>
+            <i className="sw" style={{ background: 'transparent', borderColor: hsrOnly ? INACTIVE : freight ? TYPE_COLOR.freight : '#B8B4AB' }} />
+            <span className="grow"><span className="nm">Freight</span>{!freight && <span className="muted sm"> hidden</span>}<span className="muted sm"> · not in the total</span></span>
+            <span className="v muted">{num(freightKm, units)}</span><span className="p muted">–</span>
+            {hasCon && <span className="c muted"><span>–</span></span>}
+            {hasProp && <span className="c pr muted"><span>–</span></span>}
+          </button>
+        )}
       </div>
       {hsrOnly && <div className="ac-grey muted"><i />HSR only is on: other types are greyed on the map</div>}
-      {freightKm > 0 && (
-        <div className="ac-not">
-          <div className="ac-sec"><span className="eyebrow">Not in the total</span><span className="muted sm">same scale, outlined</span></div>
-          {freightKm > 0 && (
-            <button type="button" className={`ac-line${freight ? '' : ' off'}`} aria-pressed={freight} onClick={onToggleFreight} title={freight ? 'Hide freight' : 'Show freight'}>
-              <span className="txt"><span className="nm">Freight</span><span>{num(freightKm, units)} {units}</span><span className="muted sm">{freight ? 'on the map' : 'hidden'}</span></span>
-              <Outlined n={freightKm} unit={unit} />
-            </button>
-          )}
-        </div>
-      )}
       {st.open != null && st.open > 0 && (
         <div className="ac-st">
           <div className="ac-total"><span><strong>{n0(st.open)} stations</strong>{stCon > 0 && <span className="muted"> · +{n0(stCon)} under construction</span>}</span><span className="ac-scale small"><b />= {n0(sUnit)} {sUnit === 1 ? 'station' : 'stations'}</span></div>

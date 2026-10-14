@@ -186,6 +186,18 @@ export function addRailSource(map: MLMap, source: string) {
       const layout = spec.layout as Record<string, unknown>
       add({ ...spec, id, layout: { 'line-sort-key': hsLast(typeKey), ...layout } })
       return
+/** The outline of the area in view (the "Outline area in view" switch): a faint line with a soft inner shade, under the rail. Fed by `setOutline`. */
+export function addOutline(map: MLMap) {
+  map.addSource('area-outline', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+  map.addLayer({ id: 'area-outline-shade', type: 'line', source: 'area-outline', layout: { 'line-join': 'round' },
+    paint: { 'line-color': '#1E1E1C', 'line-width': 12, 'line-blur': 10, 'line-offset': 5, 'line-opacity': 0.05 } })
+  map.addLayer({ id: 'area-outline', type: 'line', source: 'area-outline', layout: { 'line-join': 'round' },
+    paint: { 'line-color': '#1E1E1C', 'line-width': 1.3, 'line-opacity': 0.32 } })
+}
+export function setOutline(map: MLMap, geometry: GeoJSON.Geometry | null) {
+  ;(map.getSource('area-outline') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: geometry ? [{ type: 'Feature', properties: {}, geometry }] : [] })
+}
+
     }
     add({ ...spec, id, filter: f ? ['all', ['!=', get(typeKey), 'high_speed'], f] : ['!=', get(typeKey), 'high_speed'] } as unknown as LayerSpecification)
     top.push({ ...spec, id: `${id}-hs`, filter: f ? ['all', ['==', get(typeKey), 'high_speed'], f] : ['==', get(typeKey), 'high_speed'] } as unknown as LayerSpecification)

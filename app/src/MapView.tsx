@@ -3,7 +3,7 @@ import * as maplibregl from 'maplibre-gl'   // MapLibre 6 is ESM-only: no defaul
 import type { GeoJSONSource, Map as MLMap, MapGeoJSONFeature } from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { addAirportIcon, addBoundary, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayer, prefetchHighlights, setFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
+import { addAirportIcon, addBoundary, addOutline, setOutline, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayer, prefetchHighlights, setFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
 import { loadParts, regionOf, REGIONS, TILES } from './regions'
 
 export type Hit =
@@ -33,6 +33,7 @@ interface Props {
   hoverHighlight: ((hit: Hit | null) => { slug: string; line: number | null; name: string | null } | null) | null
   focusSlug: string | null   // a line or railway is selected (clicked): the region whose lines stay, all others fade
   selectedStation: [number, number] | null
+  outline: GeoJSON.Geometry | null   // the area in view, outlined faintly (null: switch off)
   touch: boolean
   onHover(hit: Hit | null, point: { x: number; y: number }): void
   onClick(hit: Hit | null, point: { x: number; y: number }): void
@@ -88,6 +89,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       await loadParts()   // the joined files' bounds: needed to find a feature's region
       if (mapRef.current !== map) return   // removed while waiting
       for (const r of REGIONS) addBoundary(map, r.slug)
+      addOutline(map)
       addRailSource(map, TILES)   // one source: the pilot regions' tiles joined; regions inside China are drawn from China's part
       map.addSource('selection', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
       map.addLayer({ id: 'selection', type: 'circle', source: 'selection',
@@ -98,6 +100,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       highlightLine(map, p.current.highlightSlug, p.current.selectedLine, p.current.selectedTrackName)
       setFocus(map, p.current.focusSlug)
       updateSelection(map, p.current.selectedStation)
+      setOutline(map, p.current.outline)
     })
 
     const hitAt = (pt: { x: number; y: number }): Hit | null => {
@@ -179,6 +182,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) highlightLine(m, props.highlightSlug, props.selectedLine, props.selectedTrackName) }, [props.highlightSlug, props.selectedLine, props.selectedTrackName])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) setFocus(m, props.focusSlug) }, [props.focusSlug])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) updateSelection(m, props.selectedStation) }, [props.selectedStation])
+  useEffect(() => { const m = mapRef.current; if (m && loaded.current) setOutline(m, props.outline) }, [props.outline])
   useEffect(() => {
     const m = mapRef.current
     if (!m || !scale.current) return

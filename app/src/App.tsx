@@ -3,7 +3,7 @@ import { MapView, type Hit, type MapHandle, type View } from './MapView'
 import { SPEED_BANDS, SPEED_NONE, type ColorMode, type MapState } from './mapStyle'
 import { regionBySlug } from './regions'
 import { TYPE_ORDER } from './palette'
-import { loadLineIndex, loadNamedLines, loadRailways, loadStation, railwayOf, type LineIndex, type NamedLine, type Railways } from './data'
+import { loadBoundary, loadLineIndex, loadNamedLines, loadRailways, loadStation, railwayOf, type LineIndex, type NamedLine, type Railways } from './data'
 import { readHash, writeHash } from './urlState'
 import { Toolbar, RegionPicker, type Controls } from './components/Toolbar'
 import { Legend } from './components/Legend'
@@ -44,6 +44,7 @@ export default function App() {
   const [hidden, setHidden] = useState<string[]>(init.hidden)
   const [hiddenSpeed, setHiddenSpeed] = useState<number[]>(() => (init.hidden.includes('high_speed') ? [...new Set([...init.hiddenSpeed, 400, 350, 300, 250])] : init.hiddenSpeed))
   const [inspect, setInspect] = useState(init.inspect)
+  const [outline, setOutline] = useState(init.outline)
   const [legendOpen, setLegendOpen] = useState(() => !matchMedia('(max-width: 719px)').matches)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [selected, setSelected] = useState<Selected>(null)
@@ -76,7 +77,17 @@ export default function App() {
 
   // the card follows the view; so does the pilot region in the picker (no fly: the map is already where the user put it)
   const stats = useStats()
+  const [boundaryGeo, setBoundaryGeo] = useState<{ slug: string; geo: GeoJSON.Geometry | null } | null>(null)
   const cardArea = useMemo(() => areaForView([...stats.regions.filter((r) => !regionBySlug(r.slug).noCard), ...stats.areas], stats.shapes, viewNow, window.innerWidth), [stats, viewNow])
+  // the outline of the area on the card: its simplified shape, else (a pilot region) its boundary file
+  const shape = cardArea ? stats.shapes[cardArea.slug] : undefined
+  const needBoundary = outline && cardArea && !shape ? cardArea.slug : null
+  useEffect(() => { if (needBoundary) loadBoundary(needBoundary).then((geo) => setBoundaryGeo({ slug: needBoundary, geo })) }, [needBoundary])
+  const outlineGeo = useMemo<GeoJSON.Geometry | null>(() => {
+    if (!outline || !cardArea) return null
+    if (shape) return { type: 'MultiPolygon', coordinates: shape }
+    return boundaryGeo?.slug === cardArea.slug ? boundaryGeo.geo : null
+  }, [outline, cardArea, shape, boundaryGeo])
   useEffect(() => {
     const r = areaForView(stats.regions, stats.shapes, viewNow, window.innerWidth)
     // depends on the view only: picking a region in the menu must not be undone by the (not yet moved) old view
@@ -84,7 +95,7 @@ export default function App() {
   }, [stats, viewNow])
 
   const mapState = useMemo<MapState>(() => ({ mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang }), [mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang])
-  const sync = useCallback(() => writeHash({ region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, view: view.current }), [region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect])
+  const sync = useCallback(() => writeHash({ region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, outline, view: view.current }), [region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, outline])
   useEffect(sync, [sync])
 
   const setRegion = (slug: string) => {
@@ -175,7 +186,7 @@ export default function App() {
   }
 
   const controls: Controls = {
-    area: cardArea, region, mode, hsrOnly, setHsrOnly, construction, proposed, setProposed, freight, units, inspect, setInspect, lang, setLang, setRegion, setMode, setConstruction, setFreight, setUnits, copied, copyLink,
+    area: cardArea, region, mode, hsrOnly, setHsrOnly, construction, proposed, setProposed, outline, setOutline, freight, units, inspect, setInspect, lang, setLang, setRegion, setMode, setConstruction, setFreight, setUnits, copied, copyLink,
     openLines: () => { openList(); setSheetOpen(false) },
   }
 
@@ -217,7 +228,7 @@ export default function App() {
     <LangContext.Provider value={lang}>
     <div className={`app${compact ? ' compact' : ''}`} ref={wrap}>
       <MapView ref={map} state={mapState} units={units} initial={init.view ?? { center: region.center, zoom: compact ? region.zoomPhone : region.zoom }}
-        highlightSlug={hlLine != null || hlName != null ? hlSlug : null} selectedLine={hlLine} selectedTrackName={hlName} hoverHighlight={touch || selected || listHoverLine != null || listHoverName != null ? null : hoverHighlight} focusSlug={selected?.kind === 'line' ? selected.slug : selTrackName != null ? (selTrackSlug ?? region.slug) : null} selectedStation={selPt} touch={touch}
+        highlightSlug={hlLine != null || hlName != null ? hlSlug : null} selectedLine={hlLine} selectedTrackName={hlName} hoverHighlight={touch || selected || listHoverLine != null || listHoverName != null ? null : hoverHighlight} focusSlug={selected?.kind === 'line' ? selected.slug : selTrackName != null ? (selTrackSlug ?? region.slug) : null} selectedStation={selPt} outline={outlineGeo} touch={touch}
         onHover={onHover} onClick={onClick} onMoveEnd={(v) => { view.current = v; setViewNow(v); sync() }} />
 
       {compact && (
@@ -237,8 +248,8 @@ export default function App() {
         ? <SpeedCard area={cardArea} units={units} construction={construction} proposed={proposed} {...speedProps} />
         : <TypeCard area={cardArea} units={units} hidden={hidden} freight={freight} construction={construction} proposed={proposed} hsrOnly={hsrOnly}
             onToggleType={legendProps.onToggleType} onShowAll={legendProps.onShowAll} onHideAll={legendProps.onHideAll} onToggleFreight={legendProps.onToggleFreight} />)}</div>}
-      {/* the earlier legend sits on the right while the cards are tried out; speed mode has none (its card is the legend) */}
-      {!compact && !selected && mode !== 'speed' && <Legend mode={mode} hsrOnly={hsrOnly} open={legendOpen} setOpen={setLegendOpen} freight={freight} index={idx} {...legendProps} />}
+      {/* the card on the left is the legend for type and speed; only the operator colours list lines, on the right */}
+      {!compact && !selected && mode === 'operator' && <Legend mode={mode} hsrOnly={hsrOnly} open={legendOpen} setOpen={setLegendOpen} freight={freight} index={idx} {...legendProps} />}
       {!compact && (
         <div className="zoom" role="group" aria-label="Zoom">
           <button type="button" aria-label="Zoom in" onClick={() => map.current?.zoomBy(1)}>{Icon.plus}</button>
@@ -286,6 +297,7 @@ export default function App() {
             <Toggle on={construction} onChange={setConstruction}>Under construction</Toggle>
             <Toggle on={proposed} onChange={setProposed}>Proposed (Hong Kong)</Toggle>
             <Toggle on={freight} onChange={setFreight}>Freight and industrial</Toggle>
+            <Toggle on={outline} onChange={setOutline}>Outline area in view</Toggle>
             <button type="button" className="btn wide" onClick={controls.openLines}>{Icon.list}Line list<span className="muted grow-r">{idx ? Object.keys(idx).length : ''}</span></button>
             <h3 className="eyebrow">Legend</h3>
             {mode === 'speed'
