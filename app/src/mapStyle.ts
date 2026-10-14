@@ -443,12 +443,12 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     map.setFilter(L(slug, 'casing'), ['all', ['==', get('type'), 'high_speed'], ['!', ['has', 'con']], ...noSpeed] as Expr)
     // city dots: a city shows while one of its systems (metro, tram) is not hidden; "HSR only" has no metro or tram to show
     const cityKinds: Expr[] = [...(s.hidden.includes('metro') ? [] : [['>', get('m'), 0]]), ...(s.hidden.includes('light_rail') ? [] : [['>', get('l'), 0]]), ...(s.hidden.includes('monorail') ? [] : [['>', get('r'), 0]])] as Expr[]
-    map.setFilter(L(slug, 'cities'), cityKinds.length ? (['any', ...cityKinds] as Expr) : (['==', 1, 0] as Expr))
+    map.setFilter(L(slug, 'cities'), cityKinds.length ? (['any', ...cityKinds] as Expr) : (['==', get('n'), -1] as Expr))
     map.setLayoutProperty(L(slug, 'cities'), 'visibility', vis(!greyOut))
-    // a station disappears when every rail type that serves it is hidden (stations with no known type stay)
+    // a station disappears when every rail type that serves it is hidden (stations with no known type stay, unless every type is hidden)
     const ty: Expr = ['coalesce', get('ty'), ''] as Expr
     const served: Expr[] = hiddenT
-      ? [['any', ['==', ty, ''], ...TYPE_ORDER.filter((t) => !s.hidden.includes(t)).map((t) => ['in', `,${t},`, ty])] as unknown as Expr]
+      ? [['any', ...(TYPE_ORDER.every((t) => s.hidden.includes(t)) ? [] : [['==', ty, '']]), ...TYPE_ORDER.filter((t) => !s.hidden.includes(t)).map((t) => ['in', `,${t},`, ty])] as unknown as Expr]
       : []
     // greyed-out mode: only stations that high-speed rail serves stay on the map
     if (greyOut) served.push(activeStation(ty))

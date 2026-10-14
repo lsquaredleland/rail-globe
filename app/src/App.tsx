@@ -35,7 +35,7 @@ export default function App() {
   const touch = useMedia('(pointer: coarse)')
   const [region, setRegionState] = useState(init.region)
   const [mode, setMode] = useState(init.mode)
-  const [hsrOnly, setHsrOnly] = useState(init.hsrOnly)
+  const [hsrOnly, setHsrOnlyState] = useState(init.hsrOnly)
   const [construction, setConstruction] = useState(init.construction)
   const [proposed, setProposed] = useState(init.proposed)
   const [freight, setFreight] = useState(init.freight)
@@ -161,13 +161,22 @@ export default function App() {
   const HS_BANDS = SPEED_BANDS.filter((b) => b.min >= 250).map((b) => b.min)
   const allSpeed = [...SPEED_BANDS.map((b) => b.min), SPEED_NONE]
   const withHs = (sp: number[], off: boolean) => (off ? [...new Set([...sp, ...HS_BANDS])] : sp.filter((m) => !HS_BANDS.includes(m)))
+  // HSR only needs high-speed track to show: turning it on brings high-speed (type and speed bands) back
+  const setHsrOnly = (on: boolean) => {
+    setHsrOnlyState(on)
+    if (on) { setHidden((h) => h.filter((x) => x !== 'high_speed')); setHiddenSpeed((sp) => withHs(sp, false)) }
+  }
   const toggleType = (t: string) => {
     const off = !hidden.includes(t)
     setHidden((h) => (off ? [...h, t] : h.filter((x) => x !== t)))
-    if (t === 'high_speed') setHiddenSpeed((sp) => withHs(sp, off))
+    // after None every speed band is hidden too, and track must pass both cards: turning a type on from there shows all speeds
+    if (!off && allSpeed.every((m) => hiddenSpeed.includes(m))) setHiddenSpeed([])
+    else if (t === 'high_speed') setHiddenSpeed((sp) => withHs(sp, off))
   }
   const toggleBand = (m: number) => {
     const sp = hiddenSpeed.includes(m) ? hiddenSpeed.filter((x) => x !== m) : [...hiddenSpeed, m]
+    // after None every type is hidden too: turning a band on from there shows all types, of that band
+    if (!sp.includes(m) && TYPE_ORDER.every((t) => hidden.includes(t))) setHidden([])
     setHiddenSpeed(sp)
     if (HS_BANDS.includes(m)) {
       const allHsOff = HS_BANDS.every((b) => sp.includes(b))
