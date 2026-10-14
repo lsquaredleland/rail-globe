@@ -301,6 +301,166 @@ fn own_tag_type<T: Get + ?Sized>(p: &T, cfg: &Cfg) -> (String, &'static str) {
     ("regional".into(), "default")
 }
 
+const PAX_NEAR_M: f64 = 200.0; // a passenger station this close to a track (to the line between its points, not just its points) serves it
+const SHORT_SPUR_KM: f64 = 3.0;
+const MAX_FREIGHT_BRANCH_KM: f64 = 15.0; // a longer branch with no station is as likely a passenger line whose stations are not mapped (or not near)
+const JUNCTION_CLEAR_M: f64 = 800.0; // a station this close to where the railway joins another track belongs to that track
+
+/// Unrouted main-line and branch track that no passenger train can use, found from what is (not) beside it. Returns the track indices to
+/// type as Freight, with the reason. A railway (its ways with the same name and ref; unnamed ways joined end to end) is freight when
+/// (1) it is a branch (it has a dead end) that no passenger station serves, or (2) it is a short spur (under SHORT_SPUR_KM) with a dead end that has no passenger station
+/// beside it. A station serves the railway of the track nearest to it (within PAX_NEAR_M), so a branch beside a main line does not get the
+/// main line's stations. Only ways that would otherwise
+/// be Intercity or Regional from their own tags, with no passenger route and no passenger traffic tag, are looked at.
+fn freight_by_evidence(tracks: &[TrackIn], cand: &[bool], pax: &[(i32, i32)]) -> rustc_hash::FxHashMap<usize, &'static str> {
+    use rustc_hash::FxHashMap;
+    let deg = |p: (i32, i32)| (p.1 as f64 / 1e7, p.0 as f64 / 1e7); // (lon, lat)
+    // metres on a plane around `lat0`
+    let xy = |p: (f64, f64), lat0: f64| ((p.0) * 111_320.0 * lat0.to_radians().cos(), p.1 * 110_540.0);
+    let cell = |p: (f64, f64)| ((p.1 / 0.01).floor() as i32, (p.0 / 0.01).floor() as i32);
+    let stations: Vec<(f64, f64)> = pax.iter().filter(|p| p.0 != i32::MIN).map(|&p| deg(p)).collect();
+    let mut grid: FxHashMap<(i32, i32), Vec<usize>> = FxHashMap::default();
+    for (i, &p) in stations.iter().enumerate() {
+        grid.entry(cell(p)).or_default().push(i);
+    }
+    let dist_m = |a: (f64, f64), b: (f64, f64)| {
+        let l0 = (a.1 + b.1) / 2.0;
+        let (ax, ay) = xy(a, l0);
+        let (bx, by) = xy(b, l0);
+        ((ax - bx).powi(2) + (ay - by).powi(2)).sqrt()
+    };
+    let seg_dist_m = |p: (f64, f64), a: (f64, f64), b: (f64, f64)| {
+        let (px, py) = xy(p, p.1);
+        let (ax, ay) = xy(a, p.1);
+        let (bx, by) = xy(b, p.1);
+        let (dx, dy) = (bx - ax, by - ay);
+        let len2 = dx * dx + dy * dy;
+        let t = if len2 == 0.0 { 0.0 } else { (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0) };
+        ((px - (ax + t * dx)).powi(2) + (py - (ay + t * dy)).powi(2)).sqrt()
+    };
+    // Each station belongs to the track nearest to it (not a service track: yards and sidings crowd the stations), within PAX_NEAR_M: a
+    // branch that runs beside a main line does not get the main line's stations.
+    let mut owner: Vec<Option<(f64, usize)>> = vec![None; stations.len()];
+    for (ti, t) in tracks.iter().enumerate() {
+        if t.props.g("railway") != Some("rail") || t.props.g("service").map_or(false, |v| SERVICE_TRACK.contains(&v)) {
+            continue;
+        }
+        let pts: Vec<(f64, f64)> = t.ll.iter().filter(|p| p.0 != i32::MIN).map(|&p| deg(p)).collect();
+        for w in pts.windows(2) {
+            let n = ((dist_m(w[0], w[1]) / 400.0).ceil() as usize).max(1);
+            let mut seen: Vec<(i32, i32)> = Vec::new();
+            for k in 0..=n {
+                let f = k as f64 / n as f64;
+                let c = cell((w[0].0 + (w[1].0 - w[0].0) * f, w[0].1 + (w[1].1 - w[0].1) * f));
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        let key = (c.0 + dy, c.1 + dx);
+                        if seen.contains(&key) {
+                            continue;
+                        }
+                        seen.push(key);
+                        for &si in grid.get(&key).into_iter().flatten() {
+                            let d = seg_dist_m(stations[si], w[0], w[1]);
+                            if d <= PAX_NEAR_M && owner[si].map_or(true, |(bd, _)| d < bd) {
+                                owner[si] = Some((d, ti));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut owned: FxHashMap<usize, Vec<usize>> = FxHashMap::default(); // track -> the stations that belong to it
+    for (si, o) in owner.iter().enumerate() {
+        if let Some((_, ti)) = o {
+            owned.entry(*ti).or_default().push(si);
+        }
+    }
+    // how many ways end at each point, over all track: an end no other way touches is a dead end
+    let mut ends: FxHashMap<(i32, i32), u32> = FxHashMap::default();
+    for t in tracks {
+        if let (Some(&a), Some(&b)) = (t.ll.first(), t.ll.last()) {
+            *ends.entry(a).or_default() += 1;
+            *ends.entry(b).or_default() += 1;
+        }
+    }
+    // unnamed ways without a ref are joined end to end into one railway
+    let mut parent: Vec<usize> = (0..tracks.len()).collect();
+    fn find(p: &mut [usize], mut i: usize) -> usize {
+        while p[i] != i {
+            p[i] = p[p[i]];
+            i = p[i];
+        }
+        i
+    }
+    let anon = |t: &TrackIn| t.props.g("name").map_or(true, str::is_empty) && t.props.g("ref").map_or(true, str::is_empty);
+    let mut at: FxHashMap<(i32, i32), usize> = FxHashMap::default();
+    for (i, t) in tracks.iter().enumerate() {
+        if !cand[i] || !anon(t) {
+            continue;
+        }
+        for e in [t.ll.first(), t.ll.last()].into_iter().flatten() {
+            match at.get(e) {
+                Some(&j) => {
+                    let (a, b) = (find(&mut parent, i), find(&mut parent, j));
+                    if a != b {
+                        parent[a.max(b)] = a.min(b);
+                    }
+                }
+                None => {
+                    at.insert(*e, i);
+                }
+            }
+        }
+    }
+    let mut groups: FxHashMap<String, Vec<usize>> = FxHashMap::default();
+    for (i, t) in tracks.iter().enumerate() {
+        if !cand[i] {
+            continue;
+        }
+        let key = if anon(t) { format!("a:{}", find(&mut parent, i)) } else { format!("n:{}|{}", t.props.g("name").unwrap_or(""), t.props.g("ref").unwrap_or("")) };
+        groups.entry(key).or_default().push(i);
+    }
+    let len_km = |ll: &[(i32, i32)]| -> f64 {
+        let pts: Vec<(f64, f64)> = ll.iter().filter(|p| p.0 != i32::MIN).map(|&p| deg(p)).collect();
+        crate::tiles::haversine_len(&pts)
+    };
+    let mut out = FxHashMap::default();
+    for members in groups.values() {
+        // the ends of the railway as a whole: a dead end (a terminus), or a junction with another track (a station there belongs to the line
+        // it joins: a freight branch starts in a passenger station's yard)
+        let mut own_ends: FxHashMap<(i32, i32), u32> = FxHashMap::default();
+        for &i in members {
+            for e in [tracks[i].ll.first(), tracks[i].ll.last()].into_iter().flatten() {
+                *own_ends.entry(*e).or_default() += 1;
+            }
+        }
+        let chain_ends: Vec<((i32, i32), bool)> = own_ends.iter().filter(|(e, n)| e.0 != i32::MIN && **n == 1).map(|(e, _)| (*e, ends.get(e).copied().unwrap_or(0) > 1)).collect();
+        let junctions: Vec<(f64, f64)> = chain_ends.iter().filter(|c| c.1).map(|c| deg(c.0)).collect();
+        let group_stations: Vec<usize> = members.iter().flat_map(|i| owned.get(i).into_iter().flatten().copied()).collect();
+        let served = group_stations.iter().any(|&si| junctions.iter().all(|&j| dist_m(stations[si], j) > JUNCTION_CLEAR_M));
+        let dead_ends: Vec<(f64, f64)> = chain_ends.iter().filter(|c| !c.1).map(|c| deg(c.0)).collect();
+        // Only a branch is judged: it has a free end (a dead end). A through piece with no station of its own, joined to track at both ends,
+        // is most likely a stretch of a passenger line whose stations the neighbouring ways own.
+        let reason = if dead_ends.is_empty() {
+            None
+        } else if !served && members.iter().map(|&i| len_km(&tracks[i].ll)).sum::<f64>() < MAX_FREIGHT_BRANCH_KM {
+            Some("no-station")
+        } else {
+            // a short spur whose dead end has no station of its own
+            let km: f64 = members.iter().map(|&i| len_km(&tracks[i].ll)).sum();
+            let end_served = |d: (f64, f64)| group_stations.iter().any(|&si| dist_m(stations[si], d) <= PAX_NEAR_M * 3.0);
+            (km < SHORT_SPUR_KM && dead_ends.iter().any(|&d| !end_served(d))).then_some("short-spur")
+        };
+        if let Some(r) = reason {
+            for &i in members {
+                out.insert(i, r);
+            }
+        }
+    }
+    out
+}
+
 /// a kept relation, as the side table has it
 pub struct RelRow {
     pub id: String,
@@ -316,6 +476,7 @@ pub struct TrackIn<'a> {
     pub props: FeatProps<'a>,
     pub routes: Vec<String>,
     pub first: (i32, i32), // first point (lat, lon), for the proposed-area test
+    pub ll: Vec<(i32, i32)>, // every point (lat, lon, 1e-7 degrees; lat = i32::MIN when the node is missing), for the passenger-station test
 }
 
 pub struct Out {
@@ -360,7 +521,7 @@ fn bump(v: &mut Vec<(String, i64)>, k: &str) {
     }
 }
 
-pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[TrackIn], hs_routes: &FxHashSet<String>) -> Out {
+pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[TrackIn], hs_routes: &FxHashSet<String>, pax: &[(i32, i32)]) -> Out {
     let routes: Vec<&RelRow> = rows.iter().filter(|r| r.route).collect();
     let route_pos: rustc_hash::FxHashMap<&str, usize> = routes.iter().enumerate().map(|(i, r)| (r.id.as_str(), i)).collect();
     let masters: rustc_hash::FxHashMap<&str, &RelRow> = rows.iter().filter(|r| r.master).map(|r| (r.id.as_str(), r)).collect();
@@ -460,7 +621,39 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
     let mut typed = Vec::with_capacity(feats.len() + tracks.len() * 64);
     let mut at = 0;
     let (mut counts, mut sources): (Vec<(String, i64)>, std::collections::BTreeMap<(String, String), i64>) = (Vec::new(), Default::default());
+    // A named railway that is freight nearly everywhere (OSM tags `railway:traffic_mode=freight` on most of its ways, not all) is freight
+    // all the way: its untagged, unrouted main-line ways would otherwise show as Intercity fragments of a hidden line (Haoji railway).
+    let mut by_name: std::collections::HashMap<String, (u32, u32)> = std::collections::HashMap::new(); // name -> (freight ways, ways) with no passenger route
     for tr in tracks {
+        let p = &tr.props;
+        if p.g("railway") != Some("rail") || tr.routes.iter().any(|r| route_line_type(r).is_some()) {
+            continue;
+        }
+        let Some(name) = p.g("name").filter(|n| !n.is_empty()) else { continue };
+        let e = by_name.entry(name.to_string()).or_default();
+        e.1 += 1;
+        if own_tag_type(p, cfg).0 == "freight" {
+            e.0 += 1;
+        }
+    }
+    // candidates for the evidence test: rail with no passenger route that its own tags make Intercity or Regional, and nothing saying passengers
+    let cand: Vec<bool> = tracks
+        .iter()
+        .map(|tr| {
+            let p = &tr.props;
+            p.g("railway") == Some("rail")
+                && tr.ll.len() >= 2
+                && !tr.routes.iter().any(|r| route_line_type(r).is_some())
+                && p.g("service").map_or(true, |v| !SERVICE_TRACK.contains(&v))
+                && !matches!(p.g("railway:traffic_mode"), Some("passenger" | "mixed"))
+                && p.g("usage") != Some("tourism")
+                && !p.g("name").map_or(false, |n| n.contains("联络线") || n.contains("直通线") || n.contains("环线"))   // connectors and loops link passenger lines
+                && matches!(own_tag_type(p, cfg), (ref t, "tags" | "default") if t == "intercity" || t == "regional")
+        })
+        .collect();
+    let by_evidence = freight_by_evidence(tracks, &cand, pax);
+    let mostly_freight = |name: Option<&str>| name.and_then(|n| by_name.get(n)).map_or(false, |&(f, n)| f >= 5 && f as f64 >= 0.9 * n as f64);
+    for (ti, tr) in tracks.iter().enumerate() {
         let p = &tr.props;
         let rw = p.g("railway").unwrap_or("");
         if !TRACK_RW.contains(&rw) {
@@ -485,6 +678,8 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
             own = Some(o.clone());
             match best {
                 Some(b) => (b, "route"),
+                None if rw == "rail" && matches!(o.as_str(), "intercity" | "regional") && mostly_freight(p.g("name")) => ("freight".into(), "name"),
+                None if by_evidence.contains_key(&ti) => ("freight".into(), by_evidence[&ti]),
                 None => (o, src),
             }
         };

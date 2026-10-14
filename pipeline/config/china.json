@@ -1,5 +1,5 @@
 {
-  "_comment": "All of China (mainland + Hong Kong + Macao). Rules merged from chengdu, greater-bay-area and cn-beijing; the major-station city list is still partial (docs/06-open-questions.md).",
+  "_comment": "All of China (mainland + Hong Kong + Macao). Rules merged from chengdu, greater-bay-area and cn-beijing; the major-station city list is still partial (docs/06-open-questions.md). track_type_overrides: lines that are freight-only but have no freight tag and passenger stations beside them (抚乐线 / Fujiang, 东吴支线).",
   "china": true,
   "proposed_region": "cn/hk.json",
   "commuter_networks": [],
@@ -34,5 +34,13 @@
       "cn-kowloon",
       "cn-new-territories"
     ]
-  }
+  },
+  "track_type_overrides": [
+    {
+      "match": {
+        "name_re": "^(抚乐线|东吴支线)$"
+      },
+      "type": "freight"
+    }
+  ]
 }

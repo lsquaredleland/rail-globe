@@ -605,6 +605,13 @@ pub fn run(slug: &str, inp: &Input) -> Out {
                     major = Some("hsr_infrastructure");
                 }
             }
+            // a train station with no passenger track near it (only freight, yard or no mapped track) is not a major station, whatever its
+            // name says (Zhuhai West): it stays on the map at the smallest size
+            let no_passenger_track = x.modes.contains("train") && near.is_empty();
+            if no_passenger_track {
+                major = None;
+                tier = 3;
+            }
             if major.is_some() {
                 tier = 1;
             }

@@ -119,6 +119,14 @@ fn feature(t: &List, k: u8, id: i64, geom: &[u8], label: String, ctx: &Ctx) -> F
     Feat { line: o, label, stop_area, props_end }
 }
 
+/// A station node or area with something that says passengers use it: `public_transport=station`, `train=yes`, a wikidata item, or a
+/// station number. A bare `railway=station` is often a freight yard or a siding stop (Chinese freight lines), so it does not make track passenger.
+fn passenger_marked(t: &List) -> bool {
+    is(t, b"public_transport", b"station") || is(t, b"train", b"yes") || [&b"wikidata"[..], b"uic_ref", b"railway:ref", b"ref"].iter().any(|k| t.get(k).is_some())
+}
+
+const STRAY_M: f64 = 100.0; // an unconnected piece of track shorter than this is dropped
+
 fn point_geom(lat: i32, lon: i32) -> Vec<u8> {
     let mut g = b"{\"type\":\"Point\",\"coordinates\":".to_vec();
     pt(&mut g, lat, lon);
@@ -465,9 +473,10 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
     let mut feats: Vec<u8> = Vec::new();
     let mut stops: Vec<u8> = Vec::new();
     let mut stations: Vec<(String, Option<String>, bool)> = Vec::new();
+    let mut pax_stations: Vec<(i32, i32)> = Vec::new(); // (lat, lon) of passenger stations, nodes and areas
 
     enum NodeRes {
-        Feat(Feat, Option<(String, Option<String>, bool)>),
+        Feat(Feat, Option<(String, Option<String>, bool)>, Option<(i32, i32)>),
         Stop(Vec<u8>, Option<String>),
         Skip,
     }
@@ -478,7 +487,7 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
             let t = List(c.node_tags(i as usize));
             match rules::node_kind(&t) {
                 Some(NodeKind::Construction) => {
-                    NodeRes::Feat(feature(&t, b'n', n.id, &point_geom(n.lat, n.lon), "station:construction".into(), &ctx), None)
+                    NodeRes::Feat(feature(&t, b'n', n.id, &point_geom(n.lat, n.lon), "station:construction".into(), &ctx), None, None)
                 }
                 Some(NodeKind::Stop) => {
                     let mut o = b"{\"osm_id\":\"node/".to_vec();
@@ -512,7 +521,10 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
                     let f = feature(&t, b'n', n.id, &point_geom(n.lat, n.lon), label, &ctx);
                     let has_area = ctx.member_area.contains_key(&(b'n', n.id))
                         && (is(&t, b"railway", b"station") || is(&t, b"railway", b"halt") || is(&t, b"public_transport", b"station"));
-                    NodeRes::Feat(f, Some((format!("node/{}", n.id), t.get(b"name").map(txt), has_area)))
+                    // a passenger station for the freight test of classify: not one tagged freight only
+                    let pax = (is(&t, b"railway", b"station") || is(&t, b"railway", b"halt") || is(&t, b"public_transport", b"station"))
+                        && !is(&t, b"railway:traffic_mode", b"freight") && !is(&t, b"station", b"freight") && passenger_marked(&t);
+                    NodeRes::Feat(f, Some((format!("node/{}", n.id), t.get(b"name").map(txt), has_area)), pax.then_some((n.lat, n.lon)))
                 }
                 None => NodeRes::Skip,
             }
@@ -520,7 +532,8 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
         .collect();
     for r in node_res {
         match r {
-            NodeRes::Feat(f, st) => {
+            NodeRes::Feat(f, st, pos) => {
+                pax_stations.extend(pos);
                 feats.extend_from_slice(&f.line);
                 *counts.entry(f.label).or_default() += 1;
                 if let Some(a) = f.stop_area {
@@ -544,8 +557,28 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
     let way_res: Vec<WayRes> = ext.par_iter().zip(ways.par_iter()).map(|(&i, w)| way_feature(wi[i as usize].id, w, &ctx)).collect();
     let mut tracks: Vec<classify::TrackIn> = Vec::new();
     let mut hs_routes: FxHashSet<String> = FxHashSet::default(); // routes on track tagged highspeed=yes
+    // how many track ways end at each point: a way that no other track touches at either end, and is tiny, is a stray piece
+    let mut track_ends: FxHashMap<(i32, i32), u32> = FxHashMap::default();
+    for (k, r) in way_res.iter().enumerate() {
+        if let WayRes::Feat(_, true) = r {
+            for e in [ways[k].ll.first(), ways[k].ll.last()].into_iter().flatten() {
+                *track_ends.entry(*e).or_default() += 1;
+            }
+        }
+    }
     for (k, r) in way_res.into_iter().enumerate() {
         match r {
+            WayRes::Feat(_, true) if cfg.is_some() && ctx.way_routes.get(&wi[ext[k] as usize].id).map_or(true, |s| s.is_empty()) && {
+                let ll = &ways[k].ll;
+                let alone = ll.len() >= 2 && track_ends.get(&ll[0]).copied() == Some(1) && track_ends.get(&ll[ll.len() - 1]).copied() == Some(1);
+                alone && ll.iter().all(|p| p.0 != i32::MIN) && ll.windows(2).map(|w| {
+                    let dy = (w[0].0 - w[1].0) as f64 * 1e-7 * 111_200.0;
+                    let dx = (w[0].1 - w[1].1) as f64 * 1e-7 * 111_200.0 * ((w[0].0 as f64 * 1e-7).to_radians()).cos();
+                    (dx * dx + dy * dy).sqrt()
+                }).sum::<f64>() < STRAY_M
+            } => {
+                *counts.entry("dropped:stray_track".into()).or_default() += 1; // under STRAY_M long, touching no other track, on no route
+            }
             WayRes::Feat(f, is_track) => {
                 let id = wi[ext[k] as usize].id;
                 let routes: Vec<String> = ctx.way_routes.get(&id).map(|s| s.iter().cloned().collect()).unwrap_or_default();
@@ -553,12 +586,21 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
                 if is(&tl, b"highspeed", b"yes") {
                     hs_routes.extend(routes.iter().cloned());
                 }
+                if !is_track && (is(&tl, b"railway", b"station") || is(&tl, b"railway", b"halt") || is(&tl, b"public_transport", b"station")) && !is(&tl, b"railway:traffic_mode", b"freight") && passenger_marked(&tl) {
+                    // a station mapped as an area or a line: a point in its middle
+                    if let Some(&q) = ways[k].ll.get(ways[k].ll.len() / 2) {
+                        if q.0 != i32::MIN {
+                            pax_stations.push(q);
+                        }
+                    }
+                }
                 if is_track && cfg.is_some() {
                     tracks.push(classify::TrackIn {
                         pos: feats.len() + f.props_end,
                         props: classify::FeatProps { tags: tl, osm_id: format!("way/{id}") },
                         routes,
                         first: ways[k].ll[0],
+                        ll: ways[k].ll.clone(),
                     });
                 }
                 feats.extend_from_slice(&f.line);
@@ -746,7 +788,7 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
                     rel_members: r.rel_members.clone(),
                 })
                 .collect();
-            let out = classify::classify(&reg.slug, cfg, &rel_rows, &feats, &tracks, &hs_routes);
+            let out = classify::classify(&reg.slug, cfg, &rel_rows, &feats, &tracks, &hs_routes, &pax_stations);
             wr("features.typed.geojsonl", &out.typed);
             wr("lines.json", &out.lines);
             wr("classify_report.json", &out.report);

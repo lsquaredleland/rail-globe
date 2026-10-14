@@ -77,34 +77,3 @@ export function regionOf(f: { geometry: GeoJSON.Geometry }, fallback?: [number, 
 /** China (a region or an area in it): high-speed starts at 250 km/h there, at 200 km/h everywhere else (UIC) */
 export const isChina = (slug: string) => slug === 'china' || slug === 'greater-bay-area' || slug === 'chengdu' || slug.startsWith('cn-')
 export const hsMinKmh = (slug: string) => (isChina(slug) ? 250 : 200)
-
-// ---- where the map has rail: the regions' outlines, simplified, for the place labels (setPlaceRail)
-function simplifyRing(ring: number[][], tol: number): number[][] {
-  if (ring.length < 5) return ring
-  const keep = new Uint8Array(ring.length)
-  keep[0] = keep[ring.length - 1] = 1
-  const stack: [number, number][] = [[0, ring.length - 1]]
-  while (stack.length) {
-    const [a, b] = stack.pop()!
-    let max = 0, at = -1
-    const [ax, ay] = ring[a], [bx, by] = ring[b]
-    const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy || 1e-12
-    for (let i = a + 1; i < b; i++) {
-      const t = Math.max(0, Math.min(1, ((ring[i][0] - ax) * dx + (ring[i][1] - ay) * dy) / len2))
-      const d = Math.hypot(ring[i][0] - (ax + t * dx), ring[i][1] - (ay + t * dy))
-      if (d > max) { max = d; at = i }
-    }
-    if (max > tol && at > 0) { keep[at] = 1; stack.push([a, at], [at, b]) }
-  }
-  return ring.filter((_, i) => keep[i])
-}
-/** One MultiPolygon of the outlines of every region that has its own tiles, outer rings only, simplified to about 2 km. */
-export async function loadRailArea(): Promise<GeoJSON.MultiPolygon> {
-  const gs = await Promise.all(REGIONS.filter((r) => !r.tiles).map((r) => fetch(`${DATA_BASE}${r.slug}.boundary.geojson`).then((x) => (x.ok ? x.json() : null)).then((j: GeoJSON.Feature | null) => j?.geometry ?? null).catch(() => null)))
-  const polys: GeoJSON.Position[][][] = []
-  for (const g of gs) {
-    const outers = !g ? [] : g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map((q) => q[0]) : []
-    for (const o of outers) { const r = simplifyRing(o, 0.02); if (r.length >= 4) polys.push([r]) }
-  }
-  return { type: 'MultiPolygon', coordinates: polys }
-}
