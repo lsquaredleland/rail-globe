@@ -12,7 +12,7 @@ use geo::{Geometry, LineString, Point, Simplify};
 use regex::Regex;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::{json, Map, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -21,6 +21,11 @@ use std::process::{Child, Command};
 const TYPE_ORDER: [&str; 8] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "other"];
 // Zoomed out (tile zooms 0..OVERVIEW_MAXZOOM) the track layer holds a merged overview instead of every piece (docs/00-overview.md)
 const OVERVIEW_MAXZOOM: i64 = 8;
+// Construction and proposed track is also written merged end to end, per (type, proposed, speed band), as the draw-only layer `con_draw`
+// (no ids, no tags): MapLibre restarts a dash pattern at every feature and one OSM way is often shorter than a dash. The per-way features
+// stay in `track` for hover, click and highlight. The app draws the dashes from CON_DASH_MINZOOM = OVERVIEW_MAXZOOM + 1 (the first zoom whose
+// tiles hold per-way track); the layer is written from OVERVIEW_MAXZOOM, one tile zoom earlier, so it is loaded while those tiles arrive.
+const CON_DRAW_MINZOOM: i64 = OVERVIEW_MAXZOOM;
 const SKETCH_MINZOOM: i64 = 4; // the metro sketch (type only) is drawn from here to the zoom before the metro overview starts
 const CITY_LINK_KM: f64 = 3.0; // track samples this close (directly or through others) are one city dot
 const CITY_ABSORB_KM: f64 = 15.0; // a small group this close to a much bigger one (see CITY_ABSORB_RATIO) is part of that city
@@ -354,6 +359,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
     // ------------------------------------------------------------ track + strands
     let (mut track, mut strands, mut areas, mut buildings, mut plats) = (String::new(), String::new(), String::new(), String::new(), String::new());
     let mut overview: Vec<(String, Map<String, Value>, &str, i64, i64)> = Vec::new(); // (sort key, props, geometry, minzoom, maxzoom)
+    let mut con_groups: BTreeMap<(String, bool, i64), Vec<Vec<(f64, f64)>>> = BTreeMap::new(); // (type, proposed, speed band or -1) -> ways
     let mut line_ways: FxHashMap<i64, Vec<String>> = FxHashMap::default();
     let mut name_ways: Vec<(String, Vec<String>, String)> = Vec::new(); // (name, ids, type), first-seen order
     let mut name_ix: FxHashMap<String, usize> = FxHashMap::default();
@@ -467,6 +473,10 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
             }
             feat(&mut track, &props, &fe.graw, Some(mz.max(OVERVIEW_MAXZOOM + 1)), None);
             n_track += 1;
+            if con && c.len() >= 2 {
+                let band = props.get("kmh").and_then(Value::as_i64).map_or(-1, |k| SPEED_BAND_MINS.iter().find(|&&b| k >= b).copied().unwrap_or(0));
+                con_groups.entry((t.to_string(), prop, band)).or_default().push(c.clone());
+            }
             way_geom.insert(osm_id.to_string(), c);
             for l in &lids {
                 if !con {
@@ -712,6 +722,24 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
         feat(&mut cx_rows, &m, &pyjson::to_string(&c["geometry"], COMPACT), Some(minz), None);
     }
 
+    // ------------------------------------------------------------ merged construction geometry for drawing (con_draw)
+    let mut con_draw = String::new();
+    for ((t, prop, band), ways) in con_groups {
+        let mut props = Map::new();
+        props.insert("type".into(), json!(t));
+        if prop {
+            props.insert("prop".into(), json!(1));
+        }
+        if band >= 0 {
+            props.insert("kmh".into(), json!(band));
+        }
+        for line in linemerge(ways) {
+            let coords: Vec<Value> = line.iter().map(|&(x, y)| json!([x, y])).collect();
+            feat(&mut con_draw, &props, &pyjson::to_string(&json!({"type": "LineString", "coordinates": coords}), COMPACT),
+                Some(track_minzoom(&t).max(CON_DRAW_MINZOOM)), None);
+        }
+    }
+
     // ------------------------------------------------------------ city dots: where metro and tram systems are, visible from far out
     let cities_text = city_dots(&city_track);
 
@@ -721,7 +749,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
     for (_, props, geom, mz, xz) in &overview {
         feat(&mut ov_text, props, geom, Some(*mz), Some(*xz));
     }
-    let layers: [(&str, &String); 11] = [("track", &ov_text), ("track", &track), ("lines", &strands), ("areas", &areas), ("buildings", &buildings),
+    let layers: [(&str, &String); 12] = [("track", &ov_text), ("track", &track), ("con_draw", &con_draw), ("lines", &strands), ("areas", &areas), ("buildings", &buildings),
         ("platforms", &plats), ("stations", &st_rows), ("complexes", &cx_rows), ("airports", &airports), ("airport_pts", &airport_pts), ("cities", &cities_text)];
     let mut args: Vec<String> = Vec::new();
     for (k, (name, text)) in layers.iter().enumerate() {
@@ -731,8 +759,9 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
         args.push(format!("{name}:{}", file.display()));
     }
     let pm = out.join(format!("{slug}.pmtiles"));
-    // --coalesce merges consecutive features with equal attributes (only overview pieces and identical neighbouring strands
-    // have them); --preserve-input-order keeps every layer in the order written here
+    // --coalesce merges consecutive features with equal attributes (overview pieces, identical neighbouring strands, and the
+    // con_draw lines of one group, which are written consecutively: tippecanoe joins them into multi-lines per tile, harmless for
+    // drawing); --preserve-input-order keeps every layer in the order written here
     let child = if tiles {
         Some(Command::new("tippecanoe")
             .args(["-o", &pm.to_string_lossy(), "-f", "-Z0", "-z14", "--no-tile-size-limit", "--no-feature-limit", "--drop-rate=0", "--simplification=2",

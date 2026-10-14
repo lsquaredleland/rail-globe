@@ -52,3 +52,7 @@ export function regionOf(f: { geometry: GeoJSON.Geometry }, fallback?: [number, 
   const pt = ok ? (c as [number, number]) : fallback
   return pt ? partAt(pt) : parts[0].slug
 }
+
+/** China (a region or an area in it): high-speed starts at 250 km/h there, at 200 km/h everywhere else (UIC) */
+export const isChina = (slug: string) => slug === 'china' || slug === 'greater-bay-area' || slug === 'chengdu' || slug.startsWith('cn-')
+export const hsMinKmh = (slug: string) => (isChina(slug) ? 250 : 200)

@@ -22,6 +22,7 @@ A static web map of passenger rail built from OpenStreetMap, made for comparing 
 - `docs/00-overview.md` (Decisions) wins over every other doc if they disagree. Flag the conflict instead of guessing.
 - Anything not covered by the docs: check `docs/06-open-questions.md`; if it is not there, ask before deciding.
 - Do not add GTFS, live data, or any server component. v1 is fully static.
+- After any change that can alter the data, run the data checker and report the result before saying it is done: see "Automatic data check" in `docs/05-pilot-plan.md` (answer lists, major stations, random city spot checks, aggregates, diff against the last build).
 - Develop on the three pilot extracts (SF Bay Area, Chengdu, Paris). Never run a world build unless asked.
 
 ## Stack (summary)
@@ -35,5 +36,5 @@ A static web map of passenger rail built from OpenStreetMap, made for comparing 
 - Keep the OSM id on every feature (`osm_id`, e.g. `way/123`). Ids must survive monthly rebuilds.
 - Station rank and zoom come from physical size only. Never from line counts.
 - Infrastructure is built first and never depends on the service layer.
-- Abandoned, disused and proposed track is not in the data. Construction is kept (drawn solid at reduced opacity).
+- Abandoned, disused and proposed track is not in the data. Construction is kept (faded solid base with dashes from z9).
 - OSM data is ODbL: attribution on the map; side files are offered under ODbL.

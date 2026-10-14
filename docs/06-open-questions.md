@@ -63,6 +63,21 @@ Not tried, in the order I would try them:
 - MapLibre WebGPU or off-main-thread rendering: not shipped, only on the roadmap
 - Test on the machine where 500 ms was seen: the headless runs never reproduced it, and the fixes above came from reading MapLibre and profiling clicks
 
+## Faster HSR only toggle: research areas (user, 2026-10-13; nothing done yet)
+
+Toggling "HSR only" is slow, most at low zoom (z0 to 8) where the merged overview holds the most pieces per tile. Working theory, not yet measured: the switch changes data-driven paint (colour, width and opacity through a per-feature `case` on the type, in `applyState`), and MapLibre re-processes every loaded tile for that, so the cost grows with the pieces in view. Filter changes do the same (see the Construction switch, fixed 2026-10-13 by splitting layers so it only flips visibility). Areas to research, in the order to try:
+
+1. **Constants, not per-feature expressions.** Track already has a high-speed twin layer (`-hs`; the base layer excludes high-speed). With HSR only on, give the base layer constant grey paint (or just toggle its visibility and draw a grey copy) and leave the twin alone. No `case` on the type, so no tile re-processing.
+2. **No filter changes on a toggle.** Every switch that can be a layer's visibility should be one (the same split as construction / proposed). List the switches that still change filters: hidden types, speed bands, freight, HSR only.
+3. **High-speed in its own tile layer.** Greying then becomes a layer property, not an expression. Costs tile size; test on China at z5.
+4. **Feature state.** Flag the pieces with `feature-state` instead of re-evaluating paint: no tile reload, but it is per feature, so it may be slow with 125 k pieces.
+5. **Smaller low-zoom tiles.** Drop the attributes the toggle does not need from the overview (`kmh`, `oc`, `ln` are only needed for some modes), or lower the overview's piece count further.
+6. **Skip work.** Turn off paint transitions for this switch; pass `{ validate: false }` to `setPaintProperty` / `setFilter`; apply all changes of one click in one frame.
+7. **Perceived speed.** Show the change at once with a light CSS or canvas veil while the map catches up.
+8. **Measure first.** Use `app/bench/zoom-pan.mjs --trace` or a CDP trace on a toggle at z4 to z6 (China, Germany): how much is worker re-parse, how much main-thread paint, how much GPU. Put the result here before choosing.
+
+Success test: the toggle at z5 in China and Germany finishes in under 100 ms on the 6x throttled bench.
+
 ## Smooth rendering and zoom: to do
 
 Listed 2026-10-13, updated the same day after the fast-zoom profile. Numbers: `reference/research-summary.md` ("Fast zoom: profile and comparison"). How to measure: `app/bench/README.md`. The profile shows warm zooming is limited by the main thread (symbol placement, painting), not by tiles.

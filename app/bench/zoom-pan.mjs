@@ -24,7 +24,7 @@ const RUNS = num('runs', 3, 1)
 const THROTTLE = num('throttle', 6, 1)
 const WARMUP = num('warmup', 1, 0)
 const LABEL = arg('label', 'run')
-const QUERY = arg('query', '')   // extra URL query for local runs, e.g. conx=px,ov (dev switches in the app)
+const QUERY = arg('query', '')   // extra URL query for local runs, recorded in the result's env.query
 const SCENARIO = arg('scenario', 'default')
 const EVAL = arg('eval', '')
 const TRACE = arg('trace', '')

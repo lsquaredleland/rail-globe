@@ -4,7 +4,7 @@ import { INACTIVE, SPEED_BANDS, SPEED_NONE, SPEED_UNKNOWN } from '../mapStyle'
 import { TYPE_COLOR, TYPE_LABEL, TYPE_ORDER, TYPE_WIDTH, type RailType } from '../palette'
 
 type Units = 'km' | 'mi'
-export const AREA_KIND: Record<string, string> = { province: 'Province', city: 'City', region: 'Pilot region', area: 'Area' }
+export const AREA_KIND: Record<string, string> = { province: 'Province', city: 'City', region: 'Region', area: 'Area' }
 
 const MI = 0.621371
 const conv = (v: number, u: Units) => (u === 'km' ? v : v * MI)
@@ -177,11 +177,12 @@ const bandName = (i: number) => (i === 0 ? `${SPEED_BANDS[0].min}+ km/h` : SPEED
 const BAND_TYPE: RailType[] = ['high_speed', 'high_speed', 'high_speed', 'high_speed', 'intercity', 'regional', 'regional', 'metro', 'light_rail']
 
 /** Track speed of the area under the view: km per band, each band a switch for the map. */
-export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, construction, proposed, embedded, onToggle, onShowAll, onHideAll }: {
-  area: StatsArea | null; units: Units; hiddenSpeed: number[]; hsrOnly: boolean; construction: boolean; proposed: boolean; embedded?: boolean
+export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, china, construction, proposed, embedded, onToggle, onShowAll, onHideAll }: {
+  area: StatsArea | null; units: Units; hiddenSpeed: number[]; hsrOnly: boolean; china: boolean; construction: boolean; proposed: boolean; embedded?: boolean
   onToggle(m: number): void; onShowAll(): void; onHideAll(): void
 }) {
   if (!a && !embedded) return null
+  const hsMin = china ? 250 : 200   // high-speed starts here: China's line, else the UIC line
   const km = (m: number) => a?.speed?.[m === SPEED_NONE ? 'none' : String(m)] ?? 0
   const all = [...SPEED_BANDS.map((b) => b.min), SPEED_NONE]
   const conKm = (m: number) => a?.speed_con?.[m === SPEED_NONE ? 'none' : String(m)] ?? 0
@@ -195,9 +196,9 @@ export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, construction, 
     const band = SPEED_BANDS[i]
     const off = hiddenSpeed.includes(m)
     const none = m === SPEED_NONE
-    const hs = !none && m >= 250
+    const hs = !none && m >= hsMin
     const w = none ? 1.6 : TYPE_WIDTH[BAND_TYPE[i]][1]
-    const grey = hsrOnly && (none || m < 250)
+    const grey = hsrOnly && (none || m < hsMin)
     const v = km(m)
     return (
       <button key={m} type="button" className={`sp-row${off ? ' off' : ''}${hs ? ' hs' : ''}${grey ? ' grey' : ''}`} aria-pressed={!off} title={off ? `Show ${none ? 'speed not mapped' : bandName(i)}` : `Hide ${none ? 'speed not mapped' : bandName(i)}`} onClick={() => onToggle(m)}>
@@ -205,7 +206,7 @@ export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, construction, 
           <line x1="3" y1="6" x2="41" y2="6" stroke={grey ? INACTIVE : none ? SPEED_UNKNOWN : band.color} strokeWidth={grey ? Math.min(w, 1.6) : w} strokeLinecap={none ? 'butt' : 'round'} strokeDasharray={none ? '4 3' : undefined} />
         </svg>
         <span className="grow"><span className="nm">{none ? 'Not mapped' : bandName(i)}</span>
-          {m === 200 && <span className="sub">high-speed elsewhere, intercity here</span>}</span>
+          {m === 200 && <span className="sub">{china ? 'high-speed elsewhere, intercity here' : 'high-speed here (UIC)'}</span>}</span>
         <span className="v muted">{v > 0 ? `${num(v, units)} ${units}` : 'none'}</span>
         {hasCon && (
           <span className="cv muted"><span className="cv-in">
@@ -230,18 +231,18 @@ export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, construction, 
         <Tools allOn={hidN === 0} allOff={hidN === all.length} onAll={onShowAll} onNone={onHideAll} />
       </div>
       <div className="sp-colhead"><span>In service</span><span className="bt">Construction</span><span className="bt pr">Proposed</span></div>
-      <div className={`sp-hs${SPEED_BANDS.slice(0, 4).every((b) => hiddenSpeed.includes(b.min)) ? ' off' : ''}`}>
+      <div className={`sp-hs${SPEED_BANDS.filter((b) => b.min >= hsMin).every((b) => hiddenSpeed.includes(b.min)) ? ' off' : ''}`}>
         <div className="sp-cap"><span className="eyebrow">High-speed on this map</span><i /></div>
         {SPEED_BANDS.slice(0, 4).map((b, i) => row(b.min, i))}
+        {!china && <><div className="sp-line china"><b>250 · China line</b><i /></div>{row(200, 4)}</>}
       </div>
-      <div className="sp-line china"><b>250 · China line</b><i /></div>
-      {row(200, 4)}
+      {china && <><div className="sp-line china"><b>250 · China line</b><i /></div>{row(200, 4)}</>}
       <div className="sp-line uic"><b>200 · UIC line</b><i /></div>
       {SPEED_BANDS.slice(5).map((b, i) => <Fragment key={b.min}>{row(b.min, i + 5)}</Fragment>)}
       {row(SPEED_NONE, 0)}
       <div className="sp-total"><b>Total</b><b>{num(totalOpen, units)} {units}</b><b className="bt">{hasCon ? `+${num(totalCon, units)} ${units}` : ''}</b><b className="bt pr">{hasProp ? `+${num(totalProp, units)} ${units}` : ''}</b></div>
       {hsrOnly && <div className="ac-grey muted"><i />Not high-speed (greyed)</div>}
-      <div className="muted sm ac-foot">Colour from the maxspeed tag. High-speed here follows China's 250 km/h line. Passenger route in service, double track counted once.</div>
+      <div className="muted sm ac-foot">Colour from the maxspeed tag. {china ? "High-speed here follows China's 250 km/h line." : 'High-speed here is 200 km/h and up (UIC); China uses 250.'} Passenger route in service, double track counted once.</div>
     </aside>
   )
 }

@@ -9,7 +9,7 @@ A static site. An offline build turns OSM into one PMTiles file plus small JSON 
 | Source | OSM planet, read once into a world rail cache (Rust, `pipeline/rail-extract`) | About 1 minute per planet |
 | Filter and export | Rust: each region cut from the cache by its outline (countries and provinces / states from the planet's admin boundaries, or hand-made) | Exactly as `03-data-spec.md` says; under a second per region, all of China included |
 | Processing | Python + shapely | PostGIS at build time only if corridor work needs it (phase 5) |
-| Tiles | tippecanoe → PMTiles | One run: merged track overview (z0–7, `--coalesce`) and full detail (z8–14) in the same layers |
+| Tiles | tippecanoe → PMTiles | One run: merged track overview (z0–8, `--coalesce`) and full detail (z9–14) in the same layers |
 | Hosting | Cloudflare R2 for tiles, a static host for the app | `r2.dev` for the pilot; custom domain at public launch |
 | Map | MapLibre GL JS | |
 | Basemap | OpenFreeMap, restyled minimal | See `01-features.md` |
@@ -62,8 +62,9 @@ The app reads one tile source, `pilot` (`pilot.pmtiles`). Per-region PMTiles fil
 
 | Layer | Geometry | Zooms | Key attributes |
 | --- | --- | --- | --- |
-| `track` (overview) | Merged lines, in the `track` layer (see `00-overview.md`, 2026-10-12) | z0–7 | type, con, prop, oc, kmh band, ln; nk (railway number) on track with no mapped line |
-| `track` | Lines | z8–14 | id, type, usage, electrified, voltage, frequency, maxspeed, gauge, tracks, tunnel, bridge, construction, line ids |
+| `track` (overview) | Merged lines, in the `track` layer (see `00-overview.md`, 2026-10-12) | z0–8 | type, con, prop, oc, kmh band, ln; nk (railway number) on track with no mapped line |
+| `track` | Lines | z9–14 | id, type, usage, electrified, voltage, frequency, maxspeed, gauge, tracks, tunnel, bridge, construction, line ids |
+| `con_draw` | Construction and proposed track merged end to end, per type, proposed flag and speed band. Draw-only (the dashes): no id, no tags | z8–14 in tiles (drawn from z9) | type, prop, kmh band |
 | `lines` | One feature per line | z9–14 | line id, type, colour, ref, name |
 | `areas` | Station grounds, yards | z12–14 | id, kind |
 | `buildings` | Station buildings | z13–14 | id |
@@ -85,7 +86,7 @@ Side files: `lines/<id>.json` (with the line's highlight data: its track pieces'
 | 12 | Station grounds and yard outlines; all stations |
 | 13–14 | Yard track, sidings, spurs, crossovers, station buildings; platforms at 14 |
 
-Construction track is shown from the same zoom as its rail type (an under-construction high-speed line shows from z0), not later. It is drawn as a solid line at reduced opacity from the overview below z8 and from the per-way `track` features above, so hover, click and highlight use the same features that are drawn.
+Construction track is shown from the same zoom as its rail type (an under-construction high-speed line shows from z0), not later. It is drawn as a faded solid line (45%; proposed 28%) at every zoom, from the overview through z8 and from the per-way `track` features above, with dashes in full colour on top from z9, drawn from `con_draw` (merged lines, so a dash pattern runs along a stretch within a tile). Hover, click and highlight use the per-way `track` features (`hit-con`, `hit-prop`), not `con_draw`. The base keeps the track continuous where a dash pattern restarts (tile edges, features) or stretches (MapLibre scales a pattern with the map between whole zooms).
 
 Tiles include each class one zoom earlier than the style shows it, so zoom rules can be tuned in the style without rebuilding. Budget: under 600 KB per view on a mid-range phone.
 

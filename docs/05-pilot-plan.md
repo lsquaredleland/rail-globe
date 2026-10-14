@@ -30,3 +30,20 @@ France is the natural step up from Paris for phase 5: dense, well mapped, with a
 ## Before phase 2
 
 The China high-speed vs intercity rule is decided (see `00-overview.md`). Phase 2 should confirm it on Chengdu; a second Chinese region is only needed before the China-wide build. See `06-open-questions.md`.
+
+## Automatic data check (Claude runs this, unasked)
+
+After any change that can alter the data (a new region, a rule in `classify.rs` or `stations.rs`, a config, a rebuild of tiles or side files), Claude runs a checker before reporting the work as done, and reports what failed. It does not wait to be asked, and a region is not "done" until it passes.
+
+What the checker covers, per region touched:
+
+1. **Answer lists.** `pipeline/check.py` runs the hand-made lists in `pipeline/answers/<slug>.json` (major stations and their tier, lines that must exist, rail types of named lines). A region without a list gets one drafted from its biggest stations (`top.py`) and the user's knowledge of the place, then checked.
+2. **Major stations.** The top 20 stations by size must be real, correctly named, in the right tier and (for the big terminals) tier 1; none may be missing, split in two, or an airport or yard wrongly ranked. Compare against a known list (Wikipedia busiest stations of the country).
+3. **Random city spot checks.** Pick at least 5 cities at random (a mix of big, mid and small, and at least one with only a tram, one with a metro, one with none), and for each check: it has a dot only if it has metro, tram or monorail; it has one dot, not two; its metro/tram length and station count are within about 25% of a reference (Wikipedia, operator pages, or OSM itself with a second query); its main station is on the map under the right name.
+4. **Aggregates.** Region totals (route km by type, stations, lines) against published figures: network length per country or city, count of high-speed km (UIC 200 km/h outside China, 250 km/h in China), metro systems and their km. Flag anything off by more than 25%, or a type that is zero where it should not be (no metro in a city that has one, no high-speed in France).
+5. **Rules that are easy to get wrong.** High-speed threshold by country; S-Bahn is not a city dot; tram is told from light rail by its `railway` tag; no abandoned, disused or proposed track in the data; every feature keeps its `osm_id`.
+6. **Diff against the previous build.** Counts per type and per region compared with the last build (`qa.json`); a change above 10% must be explained or fixed.
+
+How to report: a short table of what was checked, what passed, what failed (with the number and the reference), and what was not checked. A failure caused by OSM tagging (for example Stuttgart's U-Bahn tagged `light_rail`) is fixed with a per-region rule in `config/<slug>.json` and added to the answer list so it stays fixed.
+
+Status: `check.py` covers items 1 and part of 2 today; items 3 to 6 are to be built into a single `pipeline/verify.py` (random city sampler, reference table, build diff) in phase 5, and run from then on after every build.

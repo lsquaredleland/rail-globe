@@ -4,7 +4,7 @@ A static web map of passenger rail built from OpenStreetMap, made for comparing 
 
 - Rail types (high-speed, intercity, regional, metro, light rail / tram, monorail, funicular, other, freight), plus colour by operator or by speed
 - Stations ranked by physical size, never by line counts; station and yard outlines show the footprint of the railway
-- Track under construction (faded), optional proposed track, and an "HSR only" switch
+- Track under construction (faded solid base with dashes from z9), optional proposed track, and an "HSR only" switch
 - Region cards with route-km totals per province and city
 - No server, no GTFS, no live data: the app and its tiles are static files
 

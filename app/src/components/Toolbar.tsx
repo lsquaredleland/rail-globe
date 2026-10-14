@@ -35,7 +35,7 @@ export function RegionPicker({ c, block }: { c: Controls; block?: boolean }) {
       </button>
       {open && (
         <div role="listbox" aria-label="Region" className="pop">
-          <span className="eyebrow pad">Pilot regions</span>
+          <span className="eyebrow pad">Regions</span>
           {REGIONS.map((r) => (
             <div key={r.slug} role="option" aria-selected={r.slug === c.region.slug} tabIndex={0} className={`opt${r.slug === c.region.slug ? ' sel' : ''}`}
               onClick={() => { c.setRegion(r.slug); setOpen(false) }}
@@ -69,7 +69,7 @@ export function MoreMenu({ c }: { c: Controls }) {
           </div>
           <div className="sep" />
           <Toggle on={c.proposed} onChange={c.setProposed}><span className="col"><span>Proposed track</span><span className="muted sm">Hong Kong only for now</span></span></Toggle>
-          <Toggle on={c.outline} onChange={c.setOutline}><span className="col"><span>Outline area in view</span><span className="muted sm">A faint line round the area on the card</span></span></Toggle>
+          <Toggle on={c.outline} onChange={c.setOutline}><span className="col"><span>Outline area in view</span><span className="muted sm">A line round the area that fills half the screen; gone when zoomed out</span></span></Toggle>
           <Toggle on={c.inspect} onChange={(v) => { c.setInspect(v); setOpen(false) }}><span className="col"><span>Inspect OSM tags</span><span className="muted sm">For mappers: tooltips show raw tags</span></span></Toggle>
           <div className="sep" />
           <button type="button" role="menuitem" className="item" onClick={c.copyLink}>{c.copied ? Icon.check : Icon.link}{c.copied ? 'Link copied' : 'Copy link to this view'}</button>

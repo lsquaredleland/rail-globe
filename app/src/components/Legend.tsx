@@ -12,13 +12,13 @@ function Pill({ color, w, label, off, grey, onClick }: { color: string; w: numbe
   )
 }
 
-function Row({ color, w, dash, label, note, dim, off, grey, onClick }: {
-  color: string; w: number; dash?: boolean; label: string; note?: string; dim?: boolean; off?: boolean; grey?: boolean; onClick?: () => void
+function Row({ color, w, label, note, dim, off, grey, onClick }: {
+  color: string; w: number; label: string; note?: string; dim?: boolean; off?: boolean; grey?: boolean; onClick?: () => void
 }) {
   const inner = (
     <>
       <svg width="30" height="10" viewBox="0 0 30 10" aria-hidden="true">
-        <line x1="2" y1="5" x2="28" y2="5" stroke={grey ? INACTIVE : color} strokeWidth={grey ? Math.min(w, 1.6) : w} strokeLinecap={dash ? 'butt' : 'round'} strokeDasharray={dash ? `${w * 2} ${w * 1.5}` : undefined} />
+        <line x1="2" y1="5" x2="28" y2="5" stroke={grey ? INACTIVE : color} strokeWidth={grey ? Math.min(w, 1.6) : w} strokeLinecap="round" />
       </svg>
       <span className="grow" style={{ textDecoration: off ? 'line-through' : undefined }}>{label}</span>{note && <span className="muted sm">{note}</span>}
     </>

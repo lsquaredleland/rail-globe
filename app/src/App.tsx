@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapView, type Hit, type MapHandle, type View } from './MapView'
 import { SPEED_BANDS, SPEED_NONE, type ColorMode, type MapState } from './mapStyle'
-import { regionBySlug } from './regions'
+import { regionBySlug, isChina, hsMinKmh } from './regions'
 import { TYPE_ORDER } from './palette'
 import { loadBoundary, loadLineIndex, loadNamedLines, loadRailways, loadStation, railwayOf, type LineIndex, type NamedLine, type Railways } from './data'
 import { readHash, writeHash } from './urlState'
@@ -11,7 +11,7 @@ import { TooltipBody } from './components/Tooltip'
 import { LinePanel, LinesList, StationPanel } from './components/Panels'
 import { Icon, LangContext, Segmented, Toggle, type Lang } from './components/ui'
 import { SpeedCard, TypeCard } from './components/AreaCard'
-import { areaForView, useStats } from './stats'
+import { areaForView, useStats, areasAt } from './stats'
 import { InspectPanel, InspectTooltipBody } from './components/Inspect'
 
 type Selected = { kind: 'station'; slug: string; id: string } | { kind: 'line'; slug: string; id: number } | { kind: 'lines' } | { kind: 'inspect'; hit: Hit } | null
@@ -78,16 +78,23 @@ export default function App() {
   // the card follows the view; so does the pilot region in the picker (no fly: the map is already where the user put it)
   const stats = useStats()
   const [boundaryGeo, setBoundaryGeo] = useState<{ slug: string; geo: GeoJSON.Geometry | null } | null>(null)
-  const cardArea = useMemo(() => areaForView([...stats.regions.filter((r) => !regionBySlug(r.slug).noCard), ...stats.areas], stats.shapes, viewNow, window.innerWidth), [stats, viewNow])
-  // the outline of the area on the card: its simplified shape, else (a pilot region) its boundary file
-  const shape = cardArea ? stats.shapes[cardArea.slug] : undefined
-  const needBoundary = outline && cardArea && !shape ? cardArea.slug : null
+  // the card is always there (unless collapsed): the area that fills half the screen, else the biggest area under the view centre,
+  // else the picked region's own totals
+  const allAreas = useMemo(() => [...stats.regions.filter((r) => !regionBySlug(r.slug).noCard), ...stats.areas], [stats])
+  // the area that fills half the screen: it gets the outline, which goes away when zoomed out further
+  const viewArea = useMemo(() => areaForView(allAreas, stats.shapes, viewNow, window.innerWidth), [allAreas, stats, viewNow])
+  const cardArea = useMemo(
+    () => viewArea ?? areasAt(allAreas, stats.shapes, viewNow.center[0], viewNow.center[1]).pop() ?? stats.regions.find((r) => r.slug === region.slug) ?? null,
+    [viewArea, allAreas, stats, viewNow, region.slug])
+  // the outline of the area in view: its simplified shape, else (a pilot region) its boundary file
+  const shape = viewArea ? stats.shapes[viewArea.slug] : undefined
+  const needBoundary = outline && viewArea && !shape ? viewArea.slug : null
   useEffect(() => { if (needBoundary) loadBoundary(needBoundary).then((geo) => setBoundaryGeo({ slug: needBoundary, geo })) }, [needBoundary])
   const outlineGeo = useMemo<GeoJSON.Geometry | null>(() => {
-    if (!outline || !cardArea) return null
+    if (!outline || !viewArea) return null
     if (shape) return { type: 'MultiPolygon', coordinates: shape }
-    return boundaryGeo?.slug === cardArea.slug ? boundaryGeo.geo : null
-  }, [outline, cardArea, shape, boundaryGeo])
+    return boundaryGeo?.slug === viewArea.slug ? boundaryGeo.geo : null
+  }, [outline, viewArea, shape, boundaryGeo])
   useEffect(() => {
     const r = areaForView(stats.regions, stats.shapes, viewNow, window.innerWidth)
     // depends on the view only: picking a region in the menu must not be undone by the (not yet moved) old view
@@ -157,8 +164,9 @@ export default function App() {
   }, [touch, ensureIndex, inspect])
 
   // One state behind every switch: the type cards and the speed card hide the same track. High-speed is both a type and the four
-  // bands from 250 km/h up, so hiding it in one card hides it in the other.
-  const HS_BANDS = SPEED_BANDS.filter((b) => b.min >= 250).map((b) => b.min)
+  // bands from 250 km/h up (200 outside China), so hiding it in one card hides it in the other.
+  const areaSlug = cardArea?.slug ?? region.slug
+  const HS_BANDS = SPEED_BANDS.filter((b) => b.min >= hsMinKmh(areaSlug)).map((b) => b.min)   // 250 in China, 200 elsewhere
   const allSpeed = [...SPEED_BANDS.map((b) => b.min), SPEED_NONE]
   const withHs = (sp: number[], off: boolean) => (off ? [...new Set([...sp, ...HS_BANDS])] : sp.filter((m) => !HS_BANDS.includes(m)))
   // HSR only needs high-speed track to show: turning it on brings high-speed (type and speed bands) back
@@ -186,7 +194,7 @@ export default function App() {
   const showAll = () => { setHidden([]); setHiddenSpeed([]) }
   const hideAll = () => { setHidden([...TYPE_ORDER]); setHiddenSpeed(allSpeed) }
   const legendProps = { hidden, onShowAll: showAll, onHideAll: hideAll, onToggleFreight: () => setFreight((v) => !v), onToggleType: toggleType }
-  const speedProps = { hiddenSpeed, hsrOnly, onShowAll: showAll, onHideAll: hideAll, onToggle: toggleBand }
+  const speedProps = { hiddenSpeed, hsrOnly, china: isChina(areaSlug), onShowAll: showAll, onHideAll: hideAll, onToggle: toggleBand }
 
   const copyLink = () => {
     navigator.clipboard?.writeText(location.href).catch(() => {})
