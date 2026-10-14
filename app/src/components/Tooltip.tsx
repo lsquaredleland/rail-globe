@@ -31,7 +31,7 @@ export function TooltipBody({ hit, index, railways, touch, onMore, units = 'km' 
     return (
       <>
         <Names local={String(p.n ?? '')} en={String(p.ne ?? '')} />
-        <div className={`pill tier${p.tier}`}>{Number(p.con) === 1 ? 'Station under construction' : tierLabel(Number(p.tier), Number(p.hsr) === 1)}</div>
+        <div className={`pill tier${p.tier}`}>{Number(p.con) === 1 ? 'Station under construction' : Number(p.fr) === 1 ? 'Freight or yard station' : tierLabel(Number(p.tier), Number(p.hsr) === 1)}</div>
         {p.ap && <Row k="Airport" v={String(p.ap)} />}
         <Row k="Platforms" v={pc > 0 ? String(pc) : UNKNOWN} />
         <div className="tt-row"><span className="k">Lines in OSM</span>

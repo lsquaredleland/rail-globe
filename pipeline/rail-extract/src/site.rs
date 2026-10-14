@@ -112,11 +112,13 @@ pub fn build(slug: &str, paths: &Paths, tiles_on: bool) -> Vec<String> {
     write_lines(&dir.join("complexes.geojsonl"), &st.complexes);
     lap(&mut log, &mut t, format!("under construction: {con}"));
 
+    let prep = tiles::run(slug, &inp, &mut st.stations, &mut st.complexes, &st.route_order, &dir, &paths.out, &paths.regions, tiles_on);
+    lap(&mut log, &mut t, "tile input and side files written".to_string());
+    // after the tiles: they turn stations that are only being built into construction stations, which the card counts that way
+    write_lines(&dir.join("stations.geojsonl"), &st.stations);
+    write_lines(&dir.join("complexes.geojsonl"), &st.complexes);
     let summary = stats::run(slug, &inp, &st.stations, &paths.regions, &paths.out);
     lap(&mut log, &mut t, format!("region statistics: {summary}"));
-
-    let prep = tiles::run(slug, &inp, &st.stations, &st.complexes, &st.route_order, &dir, &paths.out, &paths.regions, tiles_on);
-    lap(&mut log, &mut t, "tile input and side files written".to_string());
     if let Some(mut child) = prep.tippecanoe {
         let ok = child.wait().map_or(false, |s| s.success());
         assert!(ok, "tippecanoe failed for {slug}");

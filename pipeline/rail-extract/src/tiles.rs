@@ -22,10 +22,10 @@ const TYPE_ORDER: [&str; 8] = ["high_speed", "intercity", "regional", "metro", "
 // Zoomed out (tile zooms 0..OVERVIEW_MAXZOOM) the track layer holds a merged overview instead of every piece (docs/00-overview.md)
 const OVERVIEW_MAXZOOM: i64 = 8;
 // Construction and proposed track is also written merged end to end, per (type, proposed, speed band), as the draw-only layer `con_draw`
-// (no ids, no tags): MapLibre restarts a dash pattern at every feature and one OSM way is often shorter than a dash. The per-way features
-// stay in `track` for hover, click and highlight. The app draws the dashes from CON_DASH_MINZOOM = OVERVIEW_MAXZOOM + 1 (the first zoom whose
-// tiles hold per-way track); the layer is written from OVERVIEW_MAXZOOM, one tile zoom earlier, so it is loaded while those tiles arrive.
-const CON_DRAW_MINZOOM: i64 = OVERVIEW_MAXZOOM;
+// (no ids, no tags): the app's dashes. MapLibre restarts a dash pattern at every feature and one OSM way is often shorter than a dash. The
+// per-way features stay in `track` for hover, click and highlight. Yard track is left out. A type's layer starts at its own track_minzoom, but
+// not before CON_DRAW_MINZOOM; the app draws from one zoom later (app/src/mapStyle.ts CON_DASH_MINZOOM), so the tiles are loaded in time.
+const CON_DRAW_MINZOOM: i64 = 3;
 const SKETCH_MINZOOM: i64 = 4; // the metro sketch (type only) is drawn from here to the zoom before the metro overview starts
 const CITY_LINK_KM: f64 = 3.0; // track samples this close (directly or through others) are one city dot
 const CITY_ABSORB_KM: f64 = 15.0; // a small group this close to a much bigger one (see CITY_ABSORB_RATIO) is part of that city
@@ -338,7 +338,7 @@ fn city_dots(samples: &[(f64, f64, f64, u8)]) -> String {
 
 /// Writes tippecanoe's input and starts it (unless `tiles` is false), then writes the side files. `stations` and `complexes`
 /// are the station model's features, construction stations appended.
-pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], route_order: &Map<String, Value>, data: &Path, out: &Path,
+pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Value], route_order: &Map<String, Value>, data: &Path, out: &Path,
     regions_dirs: &[std::path::PathBuf], tiles: bool) -> Prepared {
     let tmp = data.join("tiles_tmp");
     let side = out.join(slug);
@@ -370,6 +370,8 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
     let mut railways: Vec<(String, Option<String>, String, f64)> = Vec::new();
     let mut nk_of: FxHashMap<String, usize> = FxHashMap::default();
     let mut pax: Vec<(geomx::G, String)> = Vec::new(); // passenger track for station types
+    let mut frt: Vec<(geomx::G, String)> = Vec::new(); // freight and yard track, to tell a freight station from one with no track at all
+    let mut con_pax: Vec<(geomx::G, String)> = Vec::new(); // under-construction track (not proposed), to tell a station that is only being built
     let mut city_track: Vec<(f64, f64, f64, u8)> = Vec::new(); // (lon, lat, km, 0 metro / 1 tram / 2 monorail) samples for the city dots
     let (mut n_track, mut n_strands, mut n_areas, mut n_bld, mut n_plats) = (0, 0, 0, 0, 0);
     let tracks_div = |p: &Map<String, Value>| {
@@ -473,7 +475,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
             }
             feat(&mut track, &props, &fe.graw, Some(mz.max(OVERVIEW_MAXZOOM + 1)), None);
             n_track += 1;
-            if con && c.len() >= 2 {
+            if con && t != "yard" && c.len() >= 2 {
                 let band = props.get("kmh").and_then(Value::as_i64).map_or(-1, |k| SPEED_BAND_MINS.iter().find(|&&b| k >= b).copied().unwrap_or(0));
                 con_groups.entry((t.to_string(), prop, band)).or_default().push(c.clone());
             }
@@ -532,9 +534,14 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
                     n_strands += 1;
                 }
             }
-            if rank(t) < 9 && !con {
+            if !con && matches!(t, "freight" | "yard") {
                 if let Some(g) = geomx::from_geojson(&fe.g, geomx::id) {
-                    pax.push((g, t.to_string()));
+                    frt.push((g, t.to_string()));
+                }
+            }
+            if rank(t) < 9 && (!con || s(p, "railway") == Some("construction")) {
+                if let Some(g) = geomx::from_geojson(&fe.g, geomx::id) {
+                    if con { con_pax.push((g, t.to_string())) } else { pax.push((g, t.to_string())) }
                 }
             }
         } else if fe.gtype == "Polygon" || fe.gtype == "MultiPolygon" {
@@ -642,6 +649,8 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
     // ------------------------------------------------------------ stations / complexes
     // rail types serving each station (its lines, and passenger track beside it), so hiding a type can hide its stations
     let pax_tree = Index::new(pax.iter().map(|(g, _)| geomx::bbox(g)));
+    let frt_tree = Index::new(frt.iter().map(|(g, _)| geomx::bbox(g)));
+    let con_tree = Index::new(con_pax.iter().map(|(g, _)| geomx::bbox(g)));
     const NEAR: f64 = 0.0007; // about 70 m
     let mode_types = |m: &str| -> &'static [&'static str] {
         match m {
@@ -657,7 +666,38 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
     let mut cx_types: FxHashMap<String, BTreeSet<String>> = FxHashMap::default();
     let (mut st_rows, mut cx_rows) = (String::new(), String::new());
     let mut airport_cache: Vec<Option<String>> = Vec::with_capacity(stations.len());
-    for stv in stations {
+    // A station mapped as open but with no service, no open passenger track beside it and construction track beside it is still being
+    // built (OSM often tags the station before the line opens): it becomes a construction station here, so the map, the card and the
+    // side files agree. A complex whose stations are all being built is one too.
+    let mut cx_open: FxHashMap<String, bool> = FxHashMap::default(); // complex -> has a station that is open
+    let mut demoted = 0;
+    for stv in stations.iter_mut() {
+        let p = &stv["properties"];
+        let mut open = true;
+        if p["construction"].as_bool() != Some(true) && p["line_counts"].as_object().map_or(true, |o| o.is_empty()) {
+            let allowed: FxHashSet<&str> = p["modes"].as_array().into_iter().flatten().filter_map(Value::as_str).flat_map(|m| mode_types(m).iter().copied()).collect();
+            let pg = Geometry::Point(station_pt(stv));
+            let near = |tree: &Index, rows: &[(geomx::G, String)]| -> BTreeSet<String> {
+                tree.near(&pg, NEAR).into_iter().filter(|&i| allowed.contains(rows[i].1.as_str()) && geomx::dist(&rows[i].0, &pg) <= NEAR).map(|i| rows[i].1.clone()).collect()
+            };
+            let con_ty = if near(&pax_tree, &pax).is_empty() { near(&con_tree, &con_pax) } else { BTreeSet::new() };
+            if !con_ty.is_empty() {
+                let pm = stv["properties"].as_object_mut().unwrap();
+                pm.insert("construction".into(), json!(true));
+                pm.insert("rail_types".into(), json!(con_ty));
+                demoted += 1;
+            }
+        }
+        open &= stv["properties"]["construction"].as_bool() != Some(true);
+        *cx_open.entry(stv["properties"]["complex"].as_str().unwrap_or("").to_string()).or_insert(false) |= open;
+    }
+    for c in complexes.iter_mut() {
+        if cx_open.get(c["properties"]["id"].as_str().unwrap_or("")) == Some(&false) {
+            c["properties"]["construction"] = json!(true);
+        }
+    }
+    eprintln!("{slug}: {demoted} stations with only construction track beside them shown as under construction");
+    for stv in stations.iter() {
         let p = &stv["properties"];
         let ty: BTreeSet<String> = if p["construction"].as_bool() == Some(true) {
             p["rail_types"].as_array().into_iter().flatten().filter_map(Value::as_str).map(String::from).collect()
@@ -698,12 +738,18 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
         }
         if p["construction"].as_bool() == Some(true) {
             m.insert("con".into(), json!(1));
+        } else if ty.is_empty() && lct.is_empty() {
+            // no service and no passenger track beside it: with freight or yard track beside it, a freight station (the tooltip says so)
+            let pg = Geometry::Point(station_pt(stv));
+            if frt_tree.near(&pg, NEAR).into_iter().any(|i| geomx::dist(&frt[i].0, &pg) <= NEAR) {
+                m.insert("fr".into(), json!(1));
+            }
         }
         airport_cache.push(ap);
         let minz = match tier { 1 => 5, 2 => 7, _ => 9 };
         feat(&mut st_rows, &m, &pyjson::to_string(&stv["geometry"], COMPACT), Some(minz), None);
     }
-    for c in complexes {
+    for c in complexes.iter() {
         let p = &c["properties"];
         let tier = p["tier"].as_i64().unwrap_or(3);
         let ty = cx_types.get(p["id"].as_str().unwrap_or("")).filter(|t| !t.is_empty());
@@ -815,7 +861,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
     let st_by_id: FxHashMap<&str, &Value> = stations.iter().map(|x| (x["properties"]["id"].as_str().unwrap_or(""), &x["properties"])).collect();
     let cx_name_of: FxHashMap<&str, &Value> = complexes.iter().map(|c| (c["properties"]["id"].as_str().unwrap_or(""), &c["properties"]["name"])).collect();
     let mut cx_members: FxHashMap<&str, Vec<&Value>> = FxHashMap::default();
-    for x in stations {
+    for x in stations.iter() {
         cx_members.entry(x["properties"]["complex"].as_str().unwrap_or("")).or_default().push(&x["properties"]);
     }
     let model_keys = ["score", "tier", "major", "terminus", "dead_ends", "mainline_platforms", "platform_count", "mainline_track_ways", "land_ha", "building_ha", "grouping", "hsr"];

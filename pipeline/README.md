@@ -17,7 +17,7 @@ rail-extract/target/release/rail-extract build sf-bay-area paris china
 #   per region, in parallel: station model (stations, complexes, size tiers), stations under construction, tile input,
 #   tippecanoe and side files into ../app/public/data (was stations.py, con_stations.py, build_tiles.py; ported 2026-10-13)
 #   China: 11.9 s before tippecanoe (station model 6.4 s), tippecanoe 28.5 s
-#   construction and proposed track is also written merged end to end as the draw-only layer `con_draw` (tiles.rs): the app's dashes. Upload tiles before deploying the app: it has no fallback, so old tiles show the faded base without dashes
+#   construction and proposed track is also written merged end to end as the draw-only layer `con_draw` (tiles.rs, z3 and up, no yard track): the app's dashes. Upload tiles before deploying the app: it has no fallback, so old tiles show no construction
 #   whenever tiles are built and any of sf-bay-area, paris, china is among the regions, `tile-join -pk` merges the per-region PMTiles already in ../app/public/data
 #   into pilot.pmtiles (19 s, 161.3 MB, same bytes per view), so a partial rebuild (e.g. only paris) refreshes the join; a missing region file is warned about and the join skipped.
 #   It also writes pilot.parts.json (each file's slug and bounds, read from its PMTiles header) and fails if two bounds overlap. Both are written to a temporary file and renamed.
