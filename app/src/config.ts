@@ -7,3 +7,8 @@ export const STATION_ZOOM: Record<1 | 2 | 3, { dot: number; label: number }> = {
   2: { dot: 8, label: 9 },
   3: { dot: 10, label: 11 },
 }
+
+/** Where the pipeline's output (tiles and side files) is served from: VITE_DATA_BASE (the R2 public URL) in a deployed build,
+ *  else the app's own data/ folder (dev server, local preview). Always ends in a slash. */
+const envBase = import.meta.env.VITE_DATA_BASE as string | undefined
+export const DATA_BASE = envBase ? envBase.replace(/\/?$/, '/') : new URL('data/', document.baseURI).href

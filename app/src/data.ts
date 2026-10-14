@@ -1,6 +1,5 @@
 import type { RailType } from './palette'
-
-const base = new URL('data/', document.baseURI).href
+import { DATA_BASE as base } from './config'
 
 export interface LineIndexEntry { n: string | null; ne?: string | null; r: string | null; c: string | null; t: RailType; o: string | null; f: string | null; to: string | null; km: number }
 export type LineIndex = Record<string, LineIndexEntry>

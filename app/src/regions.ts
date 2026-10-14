@@ -1,3 +1,5 @@
+import { DATA_BASE } from './config'
+
 export interface Region {
   slug: string
   name: string
@@ -32,7 +34,7 @@ let parts: Part[] = []
  *  rail-extract). Await once at startup before `partAt` / `regionOf`. They do not overlap. Tiles carry no region field, so a
  *  feature's region (its side files: tags, lines, stations, highlights) is found from where it lies. */
 export async function loadParts() {
-  const r = await fetch(new URL(`data/${TILES}.parts.json`, document.baseURI).href)
+  const r = await fetch(`${DATA_BASE}${TILES}.parts.json`)
   if (!r.ok) throw new Error(`${TILES}.parts.json: ${r.status}`)
   parts = await r.json()
 }
