@@ -108,6 +108,16 @@ Tile options the user wants benchmarked (items 7, 8, 11, plus 9 and the drop-ids
 
 Tried, no measurable gain (2026-10-13): `maxTileCacheSize` 200/500 (MapLibre 6.12 can only lower it; `maxTileCacheZoomLevels` is the raising knob), `cancelPendingTileRequestsWhileZooming` off plus `maxTileCacheZoomLevels` 8 (18 to 14.5, small), `renderWorldCopies: false`. `crossSourceCollisions: false` was tried and not kept: it made basemap labels overlap station labels.
 
+## Must fix: Europe low-zoom tile weight (user, 2026-10-13)
+
+Adding France, Switzerland and Italy (with Germany) made the zoomed-out views heavy: laptop views at z5 and z6 across Europe are 590 to 1,030 KB (France z5 936 KB, Lyon z6 1,026 KB, Switzerland z6 993 KB, Germany z6 600 KB), over the 600 KB budget, because the four countries' z0 to z8 overview tiles share the same tile addresses and `tile-join` merges them into one big tile. Every region added in the same part of the world makes it worse (Paris z5 went from 60 KB to 906 KB). Not acceptable for release; the zoom-smoothness target (fast zoom must beat trains.theojaffee.net) applies. To do, before more countries are added:
+
+- Merge the overview harder at z5 to z8 (corridor merging, fewer attributes, drop `ln` / `oc` / `kmh` at the lowest zooms) and measure with `TILES=pilot python3 pipeline/measure_views.py`.
+- Thin by importance at low zoom (main lines only at z5 and z6) and check that nothing needed for a click is lost.
+- Cap the work per tile: a per-tile feature or byte limit for the overview.
+- Re-test the whole of Europe together after each change; the budget is per view, not per country.
+- Success test: no laptop or phone view over 600 KB for the worst Europe views (France z5, Lyon z6, Zurich z6), and the zoom/pan bench not worse than before the countries were added.
+
 ## To do later
 
 - **Move off tippecanoe** (user, 2026-10-13). Long-term goal; weigh tippecanoe-only settings against it.

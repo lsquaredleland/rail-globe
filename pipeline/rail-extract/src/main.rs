@@ -84,7 +84,7 @@ fn build_regions(root: &Path, slugs: &[String], tiles: bool, data: Option<&Strin
 }
 
 /// the tiled pilot sources the app draws from one file (app/src/regions.ts, TILES); the app learns each one's bounds from pilot.parts.json
-const PILOT_SOURCES: [&str; 4] = ["sf-bay-area", "paris", "china", "de"];
+const PILOT_SOURCES: [&str; 6] = ["sf-bay-area", "china", "de", "fr", "ch", "it"];
 
 /// data bounds [west, south, east, north] from a PMTiles v3 header (127 bytes; min lon, min lat, max lon, max lat are i32 in 1e-7 degrees at 102, 106, 110, 114)
 fn pmtiles_bounds(file: &Path) -> std::io::Result<[f64; 4]> {
@@ -100,8 +100,7 @@ fn pmtiles_bounds(file: &Path) -> std::io::Result<[f64; 4]> {
 
 /// tile-join the pilot sources into pilot.pmtiles: one tile source (about 52 style layers instead of 155), and write pilot.parts.json
 /// (each source's slug and bounds, so the app can tell which side files a feature belongs to). Joins the per-region files already in
-/// `out`, so a partial rebuild refreshes the join; a missing file is warned about and skipped. The bounds must not overlap (OSM ids
-/// are unique across the sources only then). -pk: no tile size limit; layers and attributes are all kept. Both outputs are written
+/// `out`, so a partial rebuild refreshes the join; a missing file is warned about and skipped. -pk: no tile size limit; layers and attributes are all kept. Both outputs are written
 /// to a temporary file and renamed on success.
 fn join_pilot(out: &Path) {
     let t = Instant::now();
@@ -116,12 +115,8 @@ fn join_pilot(out: &Path) {
     if parts.len() < PILOT_SOURCES.len() {
         return;
     }
-    for (i, a) in parts.iter().enumerate() {
-        for b in &parts[i + 1..] {
-            let (p, q) = (a.1, b.1);
-            assert!(p[2] <= q[0] || q[2] <= p[0] || p[3] <= q[1] || q[3] <= p[1], "pilot join: bounds of {} and {} overlap ({:?} / {:?})", a.0, b.0, p, q);
-        }
-    }
+    // bounds may overlap (neighbouring countries): the outlines are cut apart, so a feature is in one file, except the few ways that
+    // cross a border (a handful per pair), which are drawn twice, identically; the app tells the files apart by outline (regions.ts partAt)
     // tile-join picks the format from the extension, so the temporary name keeps .pmtiles last
     let tmp = out.join("pilot.tmp.pmtiles");
     let status = std::process::Command::new("tile-join")

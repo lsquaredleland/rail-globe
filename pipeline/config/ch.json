@@ -1,0 +1,23 @@
+{
+  "_comment": "All of Switzerland (data/regions/ch.geojson). High-speed by maxspeed (200 km/h and up outside China) and the cross-border networks.",
+  "stat_name": "Switzerland",
+  "stat_local": "Schweiz",
+  "china": false,
+  "commuter_networks": [
+    "S-Bahn"
+  ],
+  "high_speed_networks_re": [
+    "^TGV",
+    "^ICE",
+    "^Eurostar",
+    "^Frecciarossa"
+  ],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "CH",
+    "levels": [
+      "4"
+    ]
+  }
+}

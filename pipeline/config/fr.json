@@ -1,0 +1,49 @@
+{
+  "_comment": "All of metropolitan France (data/regions/fr.geojson). Rules from the Paris config; Paris and Île-de-France draw from these tiles.",
+  "stat_name": "France",
+  "stat_local": "France",
+  "china": false,
+  "commuter_networks": [
+    "RER",
+    "Transilien"
+  ],
+  "high_speed_networks_re": [
+    "^TGV",
+    "^Eurostar",
+    "^Thalys",
+    "^Ouigo$",
+    "^Ouigo ",
+    "^ICE"
+  ],
+  "type_overrides": [
+    {
+      "match": {
+        "network_re": "^Ouigo Train Classique"
+      },
+      "type": "intercity"
+    }
+  ],
+  "main_terminals": [
+    "Gare du Nord",
+    "Gare de Lyon",
+    "Gare de l'Est",
+    "Gare Montparnasse",
+    "Gare Saint-Lazare",
+    "Gare d'Austerlitz",
+    "Gare de Bercy",
+    "Marne-la-Vallée - Chessy"
+  ],
+  "stat_auto": {
+    "country": "FR",
+    "levels": [
+      "4"
+    ],
+    "exclude": [
+      "fr-french-guiana",
+      "fr-guadeloupe",
+      "fr-martinique",
+      "fr-mayotte",
+      "fr-reunion"
+    ]
+  }
+}

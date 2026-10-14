@@ -22,6 +22,13 @@ VIEWS = {  # name -> (tile source, lon, lat); Chengdu and the Greater Bay Area a
     "Ruhr": ("de", 7.2, 51.45),
     "Berlin": ("de", 13.40, 52.52),
     "Frankfurt": ("de", 8.66, 50.11),
+    "France": ("fr", 2.6, 46.6),
+    "Lyon": ("fr", 4.85, 45.76),
+    "Switzerland": ("ch", 8.2, 46.8),
+    "Zurich": ("ch", 8.54, 47.38),
+    "Italy": ("it", 12.5, 42.4),
+    "Milan": ("it", 9.19, 45.46),
+    "Rome": ("it", 12.5, 41.9),
 }
 SCREENS = {"laptop 1440x900": (1440, 900), "phone 390x844": (390, 844)}
 ZOOMS = [4, 5, 6, 8, 9.5, 10.6, 12, 13, 14]

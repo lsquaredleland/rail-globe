@@ -47,6 +47,18 @@ With the Python steps it was 106 s. Rust, without tippecanoe, per region:
 Germany (`de`, whole country, added 2026-10-13): cut 7.4 s (335,680 features), build 47.4 s (station model 3.5 s, tile input 9.2 s, tippecanoe 32.5 s -> 92.8 MB), side files 139 MB (app/public/data/de).
 `tile-join` of all four sources: 20 to 28 s, pilot.pmtiles 163 MB -> 256 MB. Joining lifts Paris's z4 and z5 view from 13 and 60 KB to 146 and 501 KB, because Germany's low-zoom tiles share those tiles.
 
+France, Switzerland, Italy (`fr`, `ch`, `it`, whole countries, added 2026-10-13; Paris now draws from France's tiles and is built with `--no-tiles`). Cut of the three together 1.3 s (cache already read). Build per country, in parallel (total 71 s with the join):
+
+| Step | France | Switzerland | Italy |
+| --- | --- | --- | --- |
+| read | 0.56 s | 0.55 s | 0.55 s |
+| station model | 1.51 s | 0.45 s | 0.69 s |
+| tile input and side files | 3.17 s | 1.08 s | 1.74 s |
+| tippecanoe | 21.3 s (60.3 MB) | 7.2 s (14.9 MB) | 9.3 s (30.4 MB) |
+| total | 27.0 s | 9.5 s | 12.6 s |
+
+`tile-join` of the six sources: 43.9 s, `pilot.pmtiles` 256 MB to 349 MB. Country bounding boxes overlap, so the join no longer checks bounds; about 8 to 40 border-crossing ways per country pair are in both files. The app tells the files apart by outline (`partAt` in `regions.ts`, from each part's boundary file). Heavy views: z5 and z6 laptop views across Europe are now 590 to 1,030 KB (France, Switzerland and Germany tiles share them).
+
 Older per-step Python timings, before classify moved into the cut:
 
 | Region | classify | stations | con_stations | build_tiles |
