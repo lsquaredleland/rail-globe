@@ -38,9 +38,10 @@
   "track_type_overrides": [
     {
       "match": {
-        "name_re": "^(抚乐线|东吴支线)$"
+        "name_re": "^(抚乐线|东吴支线|来合铁路)$"
       },
       "type": "freight"
     }
-  ]
+  ],
+  "passenger_stations_file": "cn-passenger-stations.txt"
 }

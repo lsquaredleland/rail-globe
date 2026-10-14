@@ -73,12 +73,9 @@ export function TooltipBody({ hit, index, railways, touch, onMore, units = 'km' 
   const trackName = p.n ? String(p.n) : railway?.[0] ?? ''
   const trackNameEn = p.ne ? String(p.ne) : railway?.[1] ?? null
   const isYard = p.type === 'yard'
-  // the line's name leads; with no mapped line the track's own name (e.g. 成渝铁路) does; the rail type is the fallback
-  const title = isYard ? (trackName || 'Yard track') : (names[0] ?? (trackName || railTypeLabel(String(p.type))))
-  const en = isYard || !names.length ? trackNameEn : shortNameEn(index?.[ids[0]])
-  const line = names.length ? index?.[ids[0]] : undefined
-  const [tMain, tOther] = namePair(lang, title, en)
-  const rest = names.slice(1)
+  // the railway's own name leads (京沪线, Stettiner Bahn); the services that run on it are listed below; with no railway name the rail type leads
+  const title = isYard ? (trackName || 'Yard track') : (trackName || railTypeLabel(String(p.type)))
+  const [tMain, tOther] = namePair(lang, title, trackNameEn)
   const sub = isYard
     ? `Yard and service track${SERVICE_LABEL[String(p.sv)] ? ` · ${SERVICE_LABEL[String(p.sv)]}` : ''}`
     : `${railTypeLabel(String(p.type), p.usage as string | undefined)}${p.prop ? ' · proposed' : p.con ? ' · under construction' : ''}`
@@ -86,13 +83,9 @@ export function TooltipBody({ hit, index, railways, touch, onMore, units = 'km' 
     <>
       <div className="tt-names"><div className="tt-title lg">{tMain}</div>{tOther && <div className="tt-sub">{tOther}</div>}</div>
       <div className="tt-sub2">{sub}</div>
-      {rest.length > 0 && <div className="tt-row"><span className="k">Also</span><span className="v">{rest.slice(0, 3).join(', ') + (rest.length > 3 ? ` +${rest.length - 3}` : '')}</span></div>}
-      {line?.o && <Row k="Operator" v={line.o} />}
-      {line?.f && line?.to && <Row k="Route" v={`${line.f} → ${line.to}`} />}
-      {line && line.km > 0 && <Row k="Length" v={km(line.km, units)} />}
-      {!line && !isYard && railway && railway[3] > 0 && <Row k="Railway length" v={km(railway[3], units)} />}
-      {!isYard && names.length === 0 && <div className="tt-row"><span className="k">Lines</span><span className="v dim">none mapped in OSM</span></div>}
-      {names.length > 0 && trackName && trackName !== title && <div className="tt-row"><span className="k">Track name</span><span className="v">{trackName}</span></div>}
+      {!isYard && railway && railway[3] > 0 && <Row k="Railway length" v={km(railway[3], units)} />}
+      {names.length > 0 && <Row k={names.length === 1 ? 'Service' : `Services (${names.length})`} v={names.slice(0, 5).join(', ') + (names.length > 5 ? ` +${names.length - 5}` : '')} />}
+      {!isYard && names.length === 0 && <div className="tt-row"><span className="k">Services</span><span className="v dim">none mapped in OSM</span></div>}
       {/* zoomed out, track comes from the merged overview, which has no per-piece tags */}
       {p.id != null && <Row k="Electrified" v={electrification(p.el as string, p.v as string, p.fq as string)} />}
       {/* the exact tag from z9; zoomed out only the speed band is in the tiles */}

@@ -18,5 +18,6 @@
     }
   ],
   "main_station_re": "^北京(东|西|南|北|朝阳|丰台)?站?$",
-  "main_terminals": []
+  "main_terminals": [],
+  "passenger_stations_file": "cn-passenger-stations.txt"
 }

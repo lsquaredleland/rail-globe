@@ -119,10 +119,15 @@ fn feature(t: &List, k: u8, id: i64, geom: &[u8], label: String, ctx: &Ctx) -> F
     Feat { line: o, label, stop_area, props_end }
 }
 
-/// A station node or area with something that says passengers use it: `public_transport=station`, `train=yes`, a wikidata item, or a
-/// station number. A bare `railway=station` is often a freight yard or a siding stop (Chinese freight lines), so it does not make track passenger.
-fn passenger_marked(t: &List) -> bool {
-    is(t, b"public_transport", b"station") || is(t, b"train", b"yes") || [&b"wikidata"[..], b"uic_ref", b"railway:ref", b"ref"].iter().any(|k| t.get(k).is_some())
+/// Does a station node or area carry passengers? With a passenger list in the region's config (China: the 12306 ticketing list) the list
+/// decides, by name; else tags do: `public_transport=station`, `train=yes` or a UIC code. A bare `railway=station` is often a freight yard
+/// or a siding stop, and the OSM wiki says stations that handle freight only must not carry `public_transport=station`.
+fn passenger_station(t: &List, cfg: Option<&classify::Cfg>) -> bool {
+    let tags = is(t, b"public_transport", b"station") || is(t, b"train", b"yes") || t.get(b"uic_ref").is_some();
+    match cfg {
+        Some(c) => c.passenger_station(t.get(b"name").map(txt).as_deref(), tags),
+        None => tags,
+    }
 }
 
 const STRAY_M: f64 = 100.0; // an unconnected piece of track shorter than this is dropped
@@ -523,7 +528,7 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
                         && (is(&t, b"railway", b"station") || is(&t, b"railway", b"halt") || is(&t, b"public_transport", b"station"));
                     // a passenger station for the freight test of classify: not one tagged freight only
                     let pax = (is(&t, b"railway", b"station") || is(&t, b"railway", b"halt") || is(&t, b"public_transport", b"station"))
-                        && !is(&t, b"railway:traffic_mode", b"freight") && !is(&t, b"station", b"freight") && passenger_marked(&t);
+                        && !is(&t, b"railway:traffic_mode", b"freight") && !is(&t, b"station", b"freight") && passenger_station(&t, cfg);
                     NodeRes::Feat(f, Some((format!("node/{}", n.id), t.get(b"name").map(txt), has_area)), pax.then_some((n.lat, n.lon)))
                 }
                 None => NodeRes::Skip,
@@ -586,7 +591,7 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
                 if is(&tl, b"highspeed", b"yes") {
                     hs_routes.extend(routes.iter().cloned());
                 }
-                if !is_track && (is(&tl, b"railway", b"station") || is(&tl, b"railway", b"halt") || is(&tl, b"public_transport", b"station")) && !is(&tl, b"railway:traffic_mode", b"freight") && passenger_marked(&tl) {
+                if !is_track && (is(&tl, b"railway", b"station") || is(&tl, b"railway", b"halt") || is(&tl, b"public_transport", b"station")) && !is(&tl, b"railway:traffic_mode", b"freight") && passenger_station(&tl, cfg) {
                     // a station mapped as an area or a line: a point in its middle
                     if let Some(&q) = ways[k].ll.get(ways[k].ll.len() / 2) {
                         if q.0 != i32::MIN {

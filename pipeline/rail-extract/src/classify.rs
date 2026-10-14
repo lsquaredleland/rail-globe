@@ -135,9 +135,20 @@ pub struct Cfg {
     hs_networks: Vec<Regex>,
     unrouted_main_type: String,
     proposed: Option<Region>,
+    /// names of the stations that carry passengers (China: the 12306 ticketing list); None: judge a station by its tags
+    passenger_names: Option<std::collections::HashSet<String>>,
 }
 
 impl Cfg {
+    /// Is this station (its name, and whether its tags say passengers) a passenger station? With a passenger list the list decides;
+    /// without one the tags do.
+    pub fn passenger_station(&self, name: Option<&str>, tags_say_passengers: bool) -> bool {
+        match &self.passenger_names {
+            Some(names) => name.map_or(false, |n| names.contains(n.trim().trim_end_matches('站'))),
+            None => tags_say_passengers,
+        }
+    }
+
     pub fn load(path: &Path, regions_dir: &Path) -> Cfg {
         let v: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display())))
             .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
@@ -161,7 +172,12 @@ impl Cfg {
                 .expect("parse proposed_region");
             Region::new(r, crate::region::rings_of(&d[0]["geojson"]))
         });
+        let passenger_names = v.get("passenger_stations_file").and_then(Value::as_str).map(|f| {
+            let p = path.parent().unwrap_or(Path::new(".")).join(f);
+            std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display())).lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
+        });
         Cfg {
+            passenger_names,
             china: v.get("china").map_or(false, truthy),
             type_overrides: overrides("type_overrides"),
             track_type_overrides: overrides("track_type_overrides"),
@@ -299,6 +315,20 @@ fn own_tag_type<T: Get + ?Sized>(p: &T, cfg: &Cfg) -> (String, &'static str) {
         return ("regional".into(), "tags");
     }
     ("regional".into(), "default")
+}
+
+const PASSENGER_NAME_WORDS: [&str; 9] = ["联络线", "直通线", "环线", "高铁", "高速", "客专", "客运专线", "城际", "动车"];
+
+struct Decided {
+    t: String,
+    s: &'static str,
+    own: Option<String>,
+}
+const SNIPPET_KM: f64 = 2.0; // a piece of track shorter than this that differs from all its neighbours takes their type
+
+fn ll_km(ll: &[(i32, i32)]) -> f64 {
+    let pts: Vec<(f64, f64)> = ll.iter().filter(|p| p.0 != i32::MIN).map(|p| (p.1 as f64 / 1e7, p.0 as f64 / 1e7)).collect();
+    crate::tiles::haversine_len(&pts)
 }
 
 const PAX_NEAR_M: f64 = 200.0; // a passenger station this close to a track (to the line between its points, not just its points) serves it
@@ -647,19 +677,22 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
                 && p.g("service").map_or(true, |v| !SERVICE_TRACK.contains(&v))
                 && !matches!(p.g("railway:traffic_mode"), Some("passenger" | "mixed"))
                 && p.g("usage") != Some("tourism")
-                && !p.g("name").map_or(false, |n| n.contains("联络线") || n.contains("直通线") || n.contains("环线"))   // connectors and loops link passenger lines
+                && !p.g("name").map_or(false, |n| PASSENGER_NAME_WORDS.iter().any(|w| n.contains(w)))   // connectors and loops link passenger lines; the others say passengers
                 && matches!(own_tag_type(p, cfg), (ref t, "tags" | "default") if t == "intercity" || t == "regional")
         })
         .collect();
     let by_evidence = freight_by_evidence(tracks, &cand, pax);
     let mostly_freight = |name: Option<&str>| name.and_then(|n| by_name.get(n)).map_or(false, |&(f, n)| f >= 5 && f as f64 >= 0.9 * n as f64);
+    let mut decided: Vec<Option<Decided>> = Vec::with_capacity(tracks.len());
     for (ti, tr) in tracks.iter().enumerate() {
         let p = &tr.props;
         let rw = p.g("railway").unwrap_or("");
         if !TRACK_RW.contains(&rw) {
+            decided.push(None);
             continue;
         }
         if rw == "proposed" && !cfg.proposed.as_ref().map_or(false, |a| a.contains(tr.first.0, tr.first.1)) {
+            decided.push(None);
             continue; // proposed track is only kept inside the region's `proposed_region` (Hong Kong for now)
         }
         let mut own: Option<String> = None;
@@ -683,6 +716,54 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
                 None => (o, src),
             }
         };
+        decided.push(Some(Decided { t, s, own }));
+    }
+    // A short piece of track whose type differs from all the track it joins, when those agree, takes their type: a few metres of
+    // "Regional" in the middle of a freight line is a tagging gap, not a service.
+    let mut at_end: rustc_hash::FxHashMap<(i32, i32), Vec<usize>> = rustc_hash::FxHashMap::default();
+    for (i, tr) in tracks.iter().enumerate() {
+        if decided[i].is_some() && tr.props.g("railway") == Some("rail") {
+            for e in [tr.ll.first(), tr.ll.last()].into_iter().flatten() {
+                at_end.entry(*e).or_default().push(i);
+            }
+        }
+    }
+    let smoothable = |d: &Decided| matches!(d.s, "tags" | "default" | "name" | "no-station" | "short-spur") && matches!(d.t.as_str(), "intercity" | "regional" | "freight");
+    for _ in 0..2 {
+        let mut changes: Vec<(usize, String)> = Vec::new();
+        for (i, tr) in tracks.iter().enumerate() {
+            let Some(d) = decided[i].as_ref().filter(|d| smoothable(d)) else { continue };
+            if tr.props.g("railway") != Some("rail") || tr.ll.len() < 2 || ll_km(&tr.ll) >= SNIPPET_KM {
+                continue;
+            }
+            let mut around: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+            let mut both_ends = true;
+            for e in [tr.ll.first().unwrap(), tr.ll.last().unwrap()] {
+                let n: Vec<&str> = at_end.get(e).into_iter().flatten().filter(|&&j| j != i).filter_map(|&j| decided[j].as_ref().map(|x| x.t.as_str())).collect();
+                both_ends &= !n.is_empty();
+                around.extend(n);
+            }
+            if both_ends && around.len() == 1 {
+                let u = *around.iter().next().unwrap();
+                if u != d.t && matches!(u, "intercity" | "regional" | "freight" | "high_speed") {
+                    changes.push((i, u.to_string()));
+                }
+            }
+        }
+        if changes.is_empty() {
+            break;
+        }
+        for (i, u) in changes {
+            if let Some(d) = decided[i].as_mut() {
+                d.t = u;
+                d.s = "neighbour";
+            }
+        }
+    }
+    for (ti, tr) in tracks.iter().enumerate() {
+        let Some(Decided { t, s, own }) = decided[ti].take() else { continue };
+        let p = &tr.props;
+        let rw = p.g("railway").unwrap_or("");
         typed.extend_from_slice(&feats[at..tr.pos]);
         at = tr.pos;
         if rw == "construction" {

@@ -18,5 +18,6 @@
     }
   ],
   "main_station_re": "^(成都|天府|重庆|西安|北京|上海|广州|深圳)(东|西|南|北|朝阳)?站?$",
-  "main_terminals": []
+  "main_terminals": [],
+  "passenger_stations_file": "cn-passenger-stations.txt"
 }
