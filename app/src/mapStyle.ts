@@ -5,7 +5,7 @@ import { regionOf, TILES } from './regions'
 import { boundaryUrl, loadLineHighlight, loadNameHighlight, pmtilesUrl, type Highlight } from './data'
 
 export type ColorMode = 'type' | 'operator' | 'speed'
-export interface MapState { mode: ColorMode; construction: boolean; proposed: boolean; freight: boolean; hidden: string[]; hsrOnly: boolean; lang: 'local' | 'en' }
+export interface MapState { mode: ColorMode; construction: boolean; proposed: boolean; freight: boolean; hidden: string[]; hiddenSpeed: number[]; hsrOnly: boolean; lang: 'local' | 'en' }
 
 const OFM = 'https://tiles.openfreemap.org/planet'
 export const ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
@@ -37,6 +37,18 @@ export const SPEED_BANDS: { min: number; color: string; label: string }[] = [
   { min: 80, color: '#2F7FA8', label: '80-119' },
   { min: 0, color: '#7A6FA8', label: 'under 80' },
 ]
+/** Speed-band switch value for track with no usable maxspeed */
+export const SPEED_NONE = -1
+/** Filter terms hiding the speed bands in `off` (band lower bounds, SPEED_NONE: no maxspeed); only speed mode has them */
+function notHiddenSpeed(off: number[]): Expr[] {
+  if (off.length === 0) return []
+  const terms = off.map((m) => {
+    if (m === SPEED_NONE) return ['!', ['has', 'kmh']]
+    const i = SPEED_BANDS.findIndex((b) => b.min === m)
+    return i > 0 ? ['all', ['has', 'kmh'], ['>=', get('kmh'), m], ['<', get('kmh'), SPEED_BANDS[i - 1].min]] : ['all', ['has', 'kmh'], ['>=', get('kmh'), m]]
+  })
+  return [['!', ['any', ...terms]] as unknown as Expr]
+}
 /** the band a speed (or an overview band's lower bound) falls in */
 export const speedBand = (kmh: number) => SPEED_BANDS.find((b) => kmh >= b.min) ?? SPEED_BANDS[SPEED_BANDS.length - 1]
 export const SPEED_UNKNOWN = '#BDB9AE'
@@ -405,10 +417,12 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     setPaint('strand-casing', 'line-opacity', greyOut ? (['case', strandActive, 0.28, 0] as Expr) : 0.28)
     const hiddenT = s.hidden.length > 0
     const notHiddenT = (key: string): Expr[] => (hiddenT ? [['!', ['in', get(key), ['literal', s.hidden]]] as Expr] : [])
-    setFilt('track', ['all', ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight'], ...notHiddenT('type')] as Expr)
-    setFilt('construction', ['all', conKinds, ...notHiddenT('type')] as Expr)
-    setFilt('construction-casing', ['all', conKinds, ...notHiddenT('type')] as Expr)
+    const noSpeed = notHiddenSpeed(s.hiddenSpeed)
+    setFilt('track', ['all', ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight'], ...notHiddenT('type'), ...noSpeed] as Expr)
+    setFilt('construction', ['all', conKinds, ...notHiddenT('type'), ...noSpeed] as Expr)
+    setFilt('construction-casing', ['all', conKinds, ...notHiddenT('type'), ...noSpeed] as Expr)
     map.setLayoutProperty(L(slug, 'casing'), 'visibility', vis(!s.hidden.includes('high_speed')))
+    map.setFilter(L(slug, 'casing'), ['all', ['==', get('type'), 'high_speed'], ['!', ['has', 'con']], ...noSpeed] as Expr)
     // city dots: a city shows while one of its systems (metro, tram) is not hidden; "HSR only" has no metro or tram to show
     const cityKinds: Expr[] = [...(s.hidden.includes('metro') ? [] : [['>', get('m'), 0]]), ...(s.hidden.includes('light_rail') ? [] : [['>', get('l'), 0]])] as Expr[]
     map.setFilter(L(slug, 'cities'), cityKinds.length ? (['any', ...cityKinds] as Expr) : (['==', 1, 0] as Expr))
@@ -427,8 +441,9 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     for (const n of ['stcon1', 'stcon2', 'stcon3', 'lblcon1', 'lblcon2', 'lblcon3']) map.setLayoutProperty(L(slug, n), 'visibility', vis(s.construction))
     for (const n of ['strand', 'strand-casing']) setFilt(n, hiddenT ? (['all', ...notHiddenT('t')] as Expr) : null, 't')
     map.setFilter(L(slug, 'lbl-lines'), hiddenT || greyOut ? (['all', ...(greyOut ? [strandActive] : []), ...notHiddenT('t')] as Expr) : null)
-    map.setFilter(L(slug, 'lbl-track'), ['all', ...(greyOut ? [activeTrack] : []), ['has', 'n'], ['!', ['has', 'nl']], ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight'], ...notHiddenT('type')] as Expr)
-    const hide: Expr[] = [...notHiddenT('type')]
+    map.setFilter(L(slug, 'lbl-track'), ['all', ...(greyOut ? [activeTrack] : []), ['has', 'n'], ['!', ['has', 'nl']], ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight'], ...notHiddenT('type'), ...noSpeed] as Expr)
+    // construction track is not sorted into speed bands, so hiding a band leaves it hoverable
+    const hide: Expr[] = [...notHiddenT('type'), ...noSpeed.map((e) => ['any', ['has', 'con'], e] as unknown as Expr)]
     if (!s.freight) hide.push(['!=', get('type'), 'freight'] as Expr)
     if (!s.construction) hide.push(['any', ['!', ['has', 'con']], ['has', 'prop']] as Expr)
     if (!s.proposed) hide.push(['!', ['has', 'prop']] as Expr)

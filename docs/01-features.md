@@ -116,3 +116,10 @@ The physical size of the railway is part of the comparison, so it is drawn, not 
 - Stats are computed at build time into one small JSON file per preset region (`regions/<slug>.json`).
 
 On file size: both maps read the same PMTiles file and fetch only the tiles on screen, so a second map adds requests, not file size. Each preset adds a few KB of stats. Comparing custom drawn areas is parked.
+
+## Area card (experiment, 2026-10-13)
+
+The top-left card follows the view and is tied to the region picker, which names the same area (e.g. Chengdu, not the pilot region it sits in).
+- Rail type and operator modes: route km as a grid of squares (1, 2 or 5 x 10^n km each, 250 at most), one row per type that switches it on the map (All / None), a "not in the total" block for being built and freight, and station dots.
+- Speed mode: a track speed list with km per band; each band switches on or off on the map (`hs` in the URL). It replaces the old speed legend.
+- The earlier Rail types legend now sits bottom right (type and operator modes only) while the cards are tried out. Per-band km comes from `speed` in `stats.json`.

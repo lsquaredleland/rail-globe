@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { REGIONS, type Region } from '../regions'
 import type { ColorMode } from '../mapStyle'
+import type { StatsArea } from '../data'
+import { AREA_KIND } from './AreaCard'
 import { Icon, Segmented, Toggle, type Lang } from './ui'
 
 export interface Controls {
-  region: Region; mode: ColorMode; hsrOnly: boolean; setHsrOnly(v: boolean): void; construction: boolean; proposed: boolean; freight: boolean; units: 'km' | 'mi'; lang: Lang; setLang(l: Lang): void; inspect: boolean
+  /** the area the card shows (what the view is over); the picker names it, falling back to the pilot region */
+  area: StatsArea | null; region: Region; mode: ColorMode; hsrOnly: boolean; setHsrOnly(v: boolean): void; construction: boolean; proposed: boolean; freight: boolean; units: 'km' | 'mi'; lang: Lang; setLang(l: Lang): void; inspect: boolean
   setRegion(slug: string): void; setMode(m: ColorMode): void; setConstruction(v: boolean): void; setProposed(v: boolean): void; setFreight(v: boolean): void
   setUnits(u: 'km' | 'mi'): void; setInspect(v: boolean): void; openLines(): void; copyLink(): void; copied: boolean
 }
@@ -28,7 +31,7 @@ export function RegionPicker({ c, block }: { c: Controls; block?: boolean }) {
   return (
     <div className={`pop-wrap${block ? ' block' : ''}`} ref={ref}>
       <button type="button" className="btn region" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
-        {Icon.map}<strong>{c.region.name}</strong><span className="muted">{c.region.sub}</span>{Icon.chevron(open)}
+        {Icon.map}<strong>{c.area?.name ?? c.region.name}</strong><span className="muted">{c.area ? AREA_KIND[c.area.kind] : c.region.sub}</span>{Icon.chevron(open)}
       </button>
       {open && (
         <div role="listbox" aria-label="Region" className="pop">

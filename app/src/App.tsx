@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapView, type Hit, type MapHandle, type View } from './MapView'
-import type { ColorMode, MapState } from './mapStyle'
+import { SPEED_BANDS, SPEED_NONE, type ColorMode, type MapState } from './mapStyle'
 import { regionBySlug } from './regions'
 import { TYPE_ORDER } from './palette'
 import { loadLineIndex, loadNamedLines, loadRailways, loadStation, railwayOf, type LineIndex, type NamedLine, type Railways } from './data'
@@ -10,7 +10,7 @@ import { Legend } from './components/Legend'
 import { TooltipBody } from './components/Tooltip'
 import { LinePanel, LinesList, StationPanel } from './components/Panels'
 import { Icon, LangContext, Segmented, Toggle, type Lang } from './components/ui'
-import { RegionCard } from './components/RegionCard'
+import { SpeedCard, TypeCard } from './components/AreaCard'
 import { areaForView, useStats } from './stats'
 import { InspectPanel, InspectTooltipBody } from './components/Inspect'
 
@@ -42,6 +42,7 @@ export default function App() {
   const [units, setUnits] = useState(init.units)
   const [lang, setLang] = useState(init.lang)
   const [hidden, setHidden] = useState<string[]>(init.hidden)
+  const [hiddenSpeed, setHiddenSpeed] = useState<number[]>(() => (init.hidden.includes('high_speed') ? [...new Set([...init.hiddenSpeed, 400, 350, 300, 250])] : init.hiddenSpeed))
   const [inspect, setInspect] = useState(init.inspect)
   const [legendOpen, setLegendOpen] = useState(() => !matchMedia('(max-width: 719px)').matches)
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -82,8 +83,8 @@ export default function App() {
     if (r) setRegionState((cur) => (cur.slug === r.slug ? cur : regionBySlug(r.slug)))
   }, [stats, viewNow])
 
-  const mapState = useMemo<MapState>(() => ({ mode, construction, proposed, freight, hidden, hsrOnly, lang }), [mode, construction, proposed, freight, hidden, hsrOnly, lang])
-  const sync = useCallback(() => writeHash({ region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, inspect, view: view.current }), [region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, inspect])
+  const mapState = useMemo<MapState>(() => ({ mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang }), [mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang])
+  const sync = useCallback(() => writeHash({ region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, view: view.current }), [region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect])
   useEffect(sync, [sync])
 
   const setRegion = (slug: string) => {
@@ -144,10 +145,28 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [touch, ensureIndex, inspect])
 
-  const legendProps = {
-    hidden, onShowAll: () => setHidden([]), onHideAll: () => setHidden([...TYPE_ORDER]), onToggleFreight: () => setFreight((v) => !v),
-    onToggleType: (t: string) => setHidden((h) => (h.includes(t) ? h.filter((x) => x !== t) : [...h, t])),
+  // One state behind every switch: the type cards and the speed card hide the same track. High-speed is both a type and the four
+  // bands from 250 km/h up, so hiding it in one card hides it in the other.
+  const HS_BANDS = SPEED_BANDS.filter((b) => b.min >= 250).map((b) => b.min)
+  const allSpeed = [...SPEED_BANDS.map((b) => b.min), SPEED_NONE]
+  const withHs = (sp: number[], off: boolean) => (off ? [...new Set([...sp, ...HS_BANDS])] : sp.filter((m) => !HS_BANDS.includes(m)))
+  const toggleType = (t: string) => {
+    const off = !hidden.includes(t)
+    setHidden((h) => (off ? [...h, t] : h.filter((x) => x !== t)))
+    if (t === 'high_speed') setHiddenSpeed((sp) => withHs(sp, off))
   }
+  const toggleBand = (m: number) => {
+    const sp = hiddenSpeed.includes(m) ? hiddenSpeed.filter((x) => x !== m) : [...hiddenSpeed, m]
+    setHiddenSpeed(sp)
+    if (HS_BANDS.includes(m)) {
+      const allHsOff = HS_BANDS.every((b) => sp.includes(b))
+      setHidden((h) => (allHsOff ? (h.includes('high_speed') ? h : [...h, 'high_speed']) : h.filter((x) => x !== 'high_speed')))
+    }
+  }
+  const showAll = () => { setHidden([]); setHiddenSpeed([]) }
+  const hideAll = () => { setHidden([...TYPE_ORDER]); setHiddenSpeed(allSpeed) }
+  const legendProps = { hidden, onShowAll: showAll, onHideAll: hideAll, onToggleFreight: () => setFreight((v) => !v), onToggleType: toggleType }
+  const speedProps = { hiddenSpeed, hsrOnly, onShowAll: showAll, onHideAll: hideAll, onToggle: toggleBand }
 
   const copyLink = () => {
     navigator.clipboard?.writeText(location.href).catch(() => {})
@@ -156,7 +175,7 @@ export default function App() {
   }
 
   const controls: Controls = {
-    region, mode, hsrOnly, setHsrOnly, construction, proposed, setProposed, freight, units, inspect, setInspect, lang, setLang, setRegion, setMode, setConstruction, setFreight, setUnits, copied, copyLink,
+    area: cardArea, region, mode, hsrOnly, setHsrOnly, construction, proposed, setProposed, freight, units, inspect, setInspect, lang, setLang, setRegion, setMode, setConstruction, setFreight, setUnits, copied, copyLink,
     openLines: () => { openList(); setSheetOpen(false) },
   }
 
@@ -214,8 +233,12 @@ export default function App() {
         </>
       )}
 
-      {!compact && <RegionCard area={cardArea} units={units} />}
-      {!compact && !selected && <Legend mode={mode} hsrOnly={hsrOnly} open={legendOpen} setOpen={setLegendOpen} freight={freight} index={idx} {...legendProps} />}
+      {!compact && mode !== 'operator' && (mode === 'speed'
+        ? <SpeedCard area={cardArea} units={units} {...speedProps} />
+        : <TypeCard area={cardArea} units={units} hidden={hidden} freight={freight} construction={construction} hsrOnly={hsrOnly}
+            onToggleType={legendProps.onToggleType} onShowAll={legendProps.onShowAll} onHideAll={legendProps.onHideAll} onToggleFreight={legendProps.onToggleFreight} onToggleConstruction={() => setConstruction((v) => !v)} />)}
+      {/* the earlier legend sits on the right while the cards are tried out; speed mode has none (its card is the legend) */}
+      {!compact && !selected && mode !== 'speed' && <Legend mode={mode} hsrOnly={hsrOnly} open={legendOpen} setOpen={setLegendOpen} freight={freight} index={idx} {...legendProps} />}
       {!compact && (
         <div className="zoom" role="group" aria-label="Zoom">
           <button type="button" aria-label="Zoom in" onClick={() => map.current?.zoomBy(1)}>{Icon.plus}</button>
@@ -265,7 +288,9 @@ export default function App() {
             <Toggle on={freight} onChange={setFreight}>Freight and industrial</Toggle>
             <button type="button" className="btn wide" onClick={controls.openLines}>{Icon.list}Line list<span className="muted grow-r">{idx ? Object.keys(idx).length : ''}</span></button>
             <h3 className="eyebrow">Legend</h3>
-            <Legend mode={mode} hsrOnly={hsrOnly} open setOpen={() => {}} freight={freight} index={idx} compact {...legendProps} />
+            {mode === 'speed'
+              ? <SpeedCard area={cardArea} units={units} embedded {...speedProps} />
+              : <Legend mode={mode} hsrOnly={hsrOnly} open setOpen={() => {}} freight={freight} index={idx} compact {...legendProps} />}
             <h3 className="eyebrow">More</h3>
             <div className="row between"><span>Units</span><Segmented<'km' | 'mi'> label="Units" value={units} onChange={setUnits} options={[{ value: 'km', label: 'km' }, { value: 'mi', label: 'mi' }]} /></div>
             <div className="row between"><span>Names</span><Segmented<Lang> label="Names" value={lang} onChange={setLang} options={[{ value: 'local', label: 'Local' }, { value: 'en', label: 'English' }]} /></div>

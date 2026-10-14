@@ -89,6 +89,8 @@ export async function loadFeatureTags(slug: string, osmId: string): Promise<Tags
 export interface StatsArea {
   slug: string; name: string; local: string | null; kind: 'region' | 'area' | 'province' | 'city'; bbox: [number, number, number, number]
   km: Record<string, { open: number; con: number }>
+  /** open passenger route km by speed band: the band's lower bound in km/h, or 'none' without a usable maxspeed */
+  speed?: Record<string, number>
   lines: Record<string, number>
   stations: Record<string, number>
 }

@@ -1,11 +1,7 @@
-import { Fragment } from 'react'
 import { TYPE_COLOR, TYPE_LABEL, TYPE_ORDER, TYPE_WIDTH, type RailType } from '../palette'
 import type { LineIndex } from '../data'
-import { INACTIVE, SPEED_BANDS, SPEED_UNKNOWN, type ColorMode } from '../mapStyle'
+import { INACTIVE, type ColorMode } from '../mapStyle'
 import { Icon, LineBadge, PlaneIcon } from './ui'
-
-/** Speed legend samples, fastest band first: each is drawn at the thickness of the rail type that typically runs at that speed. The map itself sets thickness by the track's real type. */
-const SPEED_SAMPLE_TYPE: RailType[] = ['high_speed', 'high_speed', 'high_speed', 'high_speed', 'intercity', 'regional', 'regional', 'metro', 'light_rail']
 
 function Pill({ color, w, label, off, grey, onClick }: { color: string; w: number; label: string; off: boolean; grey?: boolean; onClick: () => void }) {
   return (
@@ -38,14 +34,13 @@ export function Legend({ mode, hsrOnly, open, setOpen, freight, index, compact, 
   hidden: string[]; onToggleType(t: string): void; onShowAll(): void; onHideAll(): void; onToggleFreight(): void
 }) {
   const op = mode === 'operator'
-  const sp = mode === 'speed'
   const allCount = (t: RailType) => Object.values(index ?? {}).filter((e) => e.t === t && e.c).length
   const groups: [RailType, [string, LineIndex[string]][]][] = TYPE_ORDER.map((t) => [
     t, Object.entries(index ?? {}).filter(([, e]) => e.t === t && e.c).sort((a, b) => (a[1].r ?? '').localeCompare(b[1].r ?? '', undefined, { numeric: true })).slice(0, 12)])
   return (
     <div className={`legend${compact ? ' compact' : ''}`}>
       <button type="button" className="lg-head" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="row gap8">{op ? 'Lines in region' : sp ? 'Track speed' : 'Rail types'}
+        <span className="row gap8">{op ? 'Lines in region' : 'Rail types'}
           {!open && !op && (
             <svg width="44" height="10" viewBox="0 0 44 10" aria-hidden="true">
               <line x1="2" y1="5" x2="10" y2="5" stroke={TYPE_COLOR.high_speed} strokeWidth={TYPE_WIDTH.high_speed[1]} strokeLinecap="round" /><line x1="14" y1="5" x2="20" y2="5" stroke={TYPE_COLOR.regional} strokeWidth={TYPE_WIDTH.regional[1]} strokeLinecap="round" />
@@ -54,22 +49,7 @@ export function Legend({ mode, hsrOnly, open, setOpen, freight, index, compact, 
         </span>
         {Icon.chevron(open)}
       </button>
-      {open && sp && (
-        <div className="lg-body">
-          {SPEED_BANDS.map((b, i) => (
-            <Fragment key={b.min}>
-              {/* the two definitions of high-speed rail: a thin rule under the last band of each */}
-              {b.min === 200 && <div className="lg-rule" role="separator"><span><b>250 km/h</b> and up: high-speed rail in China</span></div>}
-              {b.min === 160 && <div className="lg-rule" role="separator"><span><b>200 km/h</b> and up: high-speed rail by the international (UIC) definition</span></div>}
-              <Row color={b.color} w={TYPE_WIDTH[SPEED_SAMPLE_TYPE[i]][1]} label={b.label} grey={hsrOnly && b.min < 250} />
-            </Fragment>
-          ))}
-          <Row color={SPEED_UNKNOWN} w={TYPE_WIDTH.other[1]} label="Speed not mapped" grey={hsrOnly} />
-          {hsrOnly && <Row color={INACTIVE} w={1.6} label="Not high-speed (greyed)" />}
-          <span className="muted sm">Colour from the maxspeed tag. "High-speed" on this map follows China's 250 km/h line; 200-249 km/h track is Intercity.</span>
-        </div>
-      )}
-      {open && !op && !sp && (
+      {open && !op && (
         <div className="lg-body">
           <div className="pill-head">
             <span className="muted sm">{hsrOnly ? 'HSR only is on: other types are greyed' : 'Click a type to hide or show it'}</span>

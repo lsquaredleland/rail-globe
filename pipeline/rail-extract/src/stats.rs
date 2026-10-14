@@ -10,6 +10,7 @@
 //! as the average length of a line crossing a square at that angle (side / (|cos| + |sin|)). Tracks closer than a cell
 //! are one track; separate corridors more than a cell apart are separate. Accurate to roughly 10%.
 
+use crate::classify::speed_kmh;
 use crate::geomx::{self, Index};
 use crate::site::{s, Input};
 use geo::{MultiPolygon, Point, Simplify};
@@ -22,6 +23,8 @@ use std::path::{Path, PathBuf};
 
 /// rail types counted, in the order the card lists them
 const TYPES: [&str; 9] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "other", "freight"];
+/// lower bounds of the speed colour bands of app/src/mapStyle.ts (same list as tiles.rs)
+const SPEED_BAND_MINS: [i64; 9] = [400, 350, 300, 250, 200, 160, 120, 80, 0];
 const CELL_M: f64 = 60.0;
 const M_PER_DEG: f64 = 111_320.0;
 const SHAPE_EPS: f64 = 0.02; // degrees, about 2 km: enough to tell which area the view centre is in
@@ -80,6 +83,8 @@ struct Area {
     bbox: [f64; 4], // w, s, e, n
     min_metro: i64,
     km: BTreeMap<(String, bool), f64>,
+    /// open passenger route km by speed band (lower bound of the app's speed bands, -1: no usable maxspeed)
+    speed: BTreeMap<i64, f64>,
     lines: BTreeMap<String, BTreeSet<String>>,
     st: BTreeMap<&'static str, i64>,
 }
@@ -155,7 +160,7 @@ fn shape(mp: &MultiPolygon<f64>) -> Value {
 pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &Path) -> String {
     let new = |slug: &str, name: String, local: Option<String>, kind: &'static str, poly: Option<MultiPolygon<f64>>, bbox: [f64; 4], min_metro: i64| Area {
         slug: slug.to_string(), name, local, kind, pip: poly.as_ref().map(|p| Pip::new(p, bbox)), poly, bbox, min_metro,
-        km: BTreeMap::new(), lines: BTreeMap::new(), st: BTreeMap::new(),
+        km: BTreeMap::new(), speed: BTreeMap::new(), lines: BTreeMap::new(), st: BTreeMap::new(),
     };
     let mut areas: Vec<Area> = Vec::new();
     let own = outline(slug, dirs);
@@ -202,6 +207,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
 
     // ways by (type, under construction); lines per area from each way's middle vertex
     let mut groups: BTreeMap<(String, bool), Vec<Vec<(f64, f64)>>> = BTreeMap::new();
+    let mut speed_groups: BTreeMap<i64, Vec<Vec<(f64, f64)>>> = BTreeMap::new();
     let mut line_hits: Vec<(Vec<usize>, Vec<&str>)> = Vec::new();
     for fe in &inp.feats {
         let p = &fe.p;
@@ -223,6 +229,13 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
                 line_hits.push((in_areas, lids));
             }
         }
+        if !con && t != "freight" {
+            let band = speed_kmh(s(p, "maxspeed")).filter(|k| *k != 0.0).map_or(-1, |k| {
+                let k = k.round_ties_even() as i64;
+                SPEED_BAND_MINS.iter().find(|&&b| k >= b).copied().unwrap_or(0)
+            });
+            speed_groups.entry(band).or_default().push(c.clone());
+        }
         groups.entry((t.to_string(), con)).or_default().push(c);
     }
     for (ix, lids) in &line_hits {
@@ -242,6 +255,18 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         for (i, v) in km.into_iter().enumerate() {
             if v > 0.0 {
                 areas[i].km.insert(k.clone(), v);
+            }
+        }
+    }
+
+    let speed_results: Vec<(i64, Vec<f64>)> = speed_groups.par_iter().map(|(k, ways)| {
+        let refs: Vec<&Vec<(f64, f64)>> = ways.iter().collect();
+        (*k, group_km(&refs, n_areas, &tree, &pips))
+    }).collect();
+    for (k, km) in speed_results {
+        for (i, v) in km.into_iter().enumerate() {
+            if v > 0.0 {
+                areas[i].speed.insert(k, v);
             }
         }
     }
@@ -284,6 +309,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
             }
         }
         let lines: Map<String, Value> = TYPES.iter().filter_map(|t| a.lines.get(*t).map(|s| (t.to_string(), json!(s.len())))).collect();
+        let speed: Map<String, Value> = a.speed.iter().map(|(b, v)| ((if *b < 0 { "none".to_string() } else { b.to_string() }), json!(r1(*v)))).collect();
         let st: Map<String, Value> = a.st.iter().map(|(k, v)| (k.to_string(), json!(v))).collect();
         let open: f64 = a.km.iter().filter(|((_, c), _)| !c).map(|(_, v)| v).sum();
         if rows.len() < 6 {
@@ -292,7 +318,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         if let Some(p) = &a.poly {
             shapes.insert(a.slug.clone(), shape(p));
         }
-        rows.push(json!({ "slug": a.slug, "name": a.name, "local": a.local, "kind": a.kind, "bbox": a.bbox, "km": km, "lines": lines, "stations": st }));
+        rows.push(json!({ "slug": a.slug, "name": a.name, "local": a.local, "kind": a.kind, "bbox": a.bbox, "km": km, "lines": lines, "speed": speed, "stations": st }));
     }
     let dir = out.join(slug);
     fs::create_dir_all(&dir).expect("create output folder");
