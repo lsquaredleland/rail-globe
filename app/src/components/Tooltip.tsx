@@ -95,7 +95,7 @@ export function TooltipBody({ hit, index, railways, touch, onMore, units = 'km' 
       {names.length > 0 && trackName && trackName !== title && <div className="tt-row"><span className="k">Track name</span><span className="v">{trackName}</span></div>}
       {/* zoomed out, track comes from the merged overview, which has no per-piece tags */}
       {p.id != null && <Row k="Electrified" v={electrification(p.el as string, p.v as string, p.fq as string)} />}
-      {/* the exact tag from z8; zoomed out only the speed band is in the tiles */}
+      {/* the exact tag from z9; zoomed out only the speed band is in the tiles */}
       {p.id != null && !isYard && <Row k="Max speed" v={maxSpeed(p.ms as string)} />}
       {p.id == null && !isYard && p.kmh != null && <Row k="Max speed" v={bandSpeed(Number(p.kmh))} />}
       {p.id != null && <Row k="Gauge" v={gauge(p.g as string)} />}

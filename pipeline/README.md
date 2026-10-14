@@ -43,6 +43,9 @@ With the Python steps it was 106 s. Rust, without tippecanoe, per region:
 | Beijing | 1.09 s | 0.24 s |
 | China | 45.5 s | 11.1 s |
 
+Germany (`de`, whole country, added 2026-10-13): cut 7.4 s (335,680 features), build 47.4 s (station model 3.5 s, tile input 9.2 s, tippecanoe 32.5 s -> 92.8 MB), side files 139 MB (app/public/data/de).
+`tile-join` of all four sources: 20 to 28 s, pilot.pmtiles 163 MB -> 256 MB. Joining lifts Paris's z4 and z5 view from 13 and 60 KB to 146 and 501 KB, because Germany's low-zoom tiles share those tiles.
+
 Older per-step Python timings, before classify moved into the cut:
 
 | Region | classify | stations | con_stations | build_tiles |

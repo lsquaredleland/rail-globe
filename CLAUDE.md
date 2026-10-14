@@ -35,5 +35,5 @@ A static web map of passenger rail built from OpenStreetMap, made for comparing 
 - Keep the OSM id on every feature (`osm_id`, e.g. `way/123`). Ids must survive monthly rebuilds.
 - Station rank and zoom come from physical size only. Never from line counts.
 - Infrastructure is built first and never depends on the service layer.
-- Abandoned, disused and proposed track is not in the data. Construction is kept (drawn dashed).
+- Abandoned, disused and proposed track is not in the data. Construction is kept (drawn solid at reduced opacity).
 - OSM data is ODbL: attribution on the map; side files are offered under ODbL.

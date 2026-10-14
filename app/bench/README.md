@@ -30,6 +30,7 @@
 | `--warmup <n>` | 1 | Unmeasured runs first |
 | `--throttle <x>` | 6 | CPU slowdown on the main thread; 1 = none |
 | `--label <s>` | `run` | Prefix of the result file name |
+| `--query <q>` | none | Extra URL query for local runs, e.g. `foo=1`; recorded in the result's `env.query` |
 | `--chrome <path>` | macOS Chrome | Chrome executable |
 | `--scenario fast` | default scenario | Real wheel bursts instead of the slow moves |
 | `--headed` | off | Real window; refresh rate follows the display |

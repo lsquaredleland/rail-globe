@@ -85,7 +85,7 @@ Side files: `lines/<id>.json` (with the line's highlight data: its track pieces'
 | 12 | Station grounds and yard outlines; all stations |
 | 13–14 | Yard track, sidings, spurs, crossovers, station buildings; platforms at 14 |
 
-Construction track is shown from the same zoom as its rail type (an under-construction high-speed line shows from z0), not later.
+Construction track is shown from the same zoom as its rail type (an under-construction high-speed line shows from z0), not later. It is drawn as a solid line at reduced opacity from the overview below z8 and from the per-way `track` features above, so hover, click and highlight use the same features that are drawn.
 
 Tiles include each class one zoom earlier than the style shows it, so zoom rules can be tuned in the style without rebuilding. Budget: under 600 KB per view on a mid-range phone.
 

@@ -3,7 +3,7 @@ import * as maplibregl from 'maplibre-gl'   // MapLibre 6 is ESM-only: no defaul
 import type { GeoJSONSource, Map as MLMap, MapGeoJSONFeature } from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { addAirportIcon, addBoundary, addOutline, setOutline, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayer, prefetchHighlights, setFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
+import { addAirportIcon, addBoundary, addOutline, setOutline, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayers, prefetchHighlights, setFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
 import { loadParts, regionOf, REGIONS, TILES } from './regions'
 
 export type Hit =
@@ -124,7 +124,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
           .filter((f) => !p.current.state.hsrOnly || f.properties.t === 'high_speed')
         if (ln.length) return { kind: 'line', slug: slugOf(ln[0]), props: toProps(ln[0]), lngLat }
       }
-      const tr = q([hitLayer(TILES)])
+      const tr = q(hitLayers(TILES))
       if (tr.length) {
         // most prominent type wins when tracks overlap
         const order = ['high_speed', 'intercity', 'regional', 'metro', 'light_rail', 'monorail', 'funicular', 'other', 'freight']

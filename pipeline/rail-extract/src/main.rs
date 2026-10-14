@@ -84,7 +84,7 @@ fn build_regions(root: &Path, slugs: &[String], tiles: bool, data: Option<&Strin
 }
 
 /// the tiled pilot sources the app draws from one file (app/src/regions.ts, TILES); the app learns each one's bounds from pilot.parts.json
-const PILOT_SOURCES: [&str; 3] = ["sf-bay-area", "paris", "china"];
+const PILOT_SOURCES: [&str; 4] = ["sf-bay-area", "paris", "china", "de"];
 
 /// data bounds [west, south, east, north] from a PMTiles v3 header (127 bytes; min lon, min lat, max lon, max lat are i32 in 1e-7 degrees at 102, 106, 110, 114)
 fn pmtiles_bounds(file: &Path) -> std::io::Result<[f64; 4]> {

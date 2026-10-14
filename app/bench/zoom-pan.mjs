@@ -24,6 +24,7 @@ const RUNS = num('runs', 3, 1)
 const THROTTLE = num('throttle', 6, 1)
 const WARMUP = num('warmup', 1, 0)
 const LABEL = arg('label', 'run')
+const QUERY = arg('query', '')   // extra URL query for local runs, e.g. conx=px,ov (dev switches in the app)
 const SCENARIO = arg('scenario', 'default')
 const EVAL = arg('eval', '')
 const TRACE = arg('trace', '')
@@ -96,7 +97,7 @@ async function oneRun(browser, ctl) {
     await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }])   // headless must not skip animations
     await page.evaluateOnNewDocument(`window.__long = [];
       new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__long.push([e.startTime, e.duration]) }).observe({ entryTypes: ['longtask'] })`)
-    await page.goto(URL_ + '/?debug', { waitUntil: 'load' })
+    await page.goto(URL_ + '/?debug' + (QUERY ? '&' + QUERY : ''), { waitUntil: 'load' })
     await page.waitForFunction('window.__map && window.__map.loaded()', { timeout: 120000 })
     await page.evaluate(IDLE)
     ctl.push(await control(page))
@@ -202,7 +203,7 @@ async function oneRunFast(browser, ctl, runIdx) {
     }
     track(cdp); await cdp.send('Network.enable')
     page.on('workercreated', async (w) => { try { track(w.client); await w.client.send('Network.enable') } catch {} })
-    await page.goto(EXT ? `${URL_.replace(/\/$/, '')}/#view=${FAST.startZoom}/${VIEWS[0][2]}/${VIEWS[0][1]}` : URL_ + '/?debug', { waitUntil: 'load' })
+    await page.goto(EXT ? `${URL_.replace(/\/$/, '')}/#view=${FAST.startZoom}/${VIEWS[0][2]}/${VIEWS[0][1]}` : URL_ + '/?debug' + (QUERY ? '&' + QUERY : ''), { waitUntil: 'load' })
     await page.waitForFunction('window.__map && window.__map.loaded()', { timeout: 120000 })
     await page.evaluate(IDLE); await page.evaluate(FAST_IDLE)
     const win = await page.evaluate('({ dpr: devicePixelRatio, iw: innerWidth, ih: innerHeight, sw: screen.width, sh: screen.height, vis: document.visibilityState, focus: document.hasFocus(), layers: window.__map.getStyle().layers.length })')
@@ -295,6 +296,7 @@ const t0 = Date.now()
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: !HEADED, ...(HEADED ? { defaultViewport: null } : {}),
   args: ['--enable-gpu-rasterization', '--ignore-gpu-blocklist', ...(HEADED ? ['--window-size=1440,900', '--window-position=0,0'] : [])] })
 const env = {
+  query: QUERY,
   chrome: await browser.version(), commit: git('rev-parse HEAD'), dirty: !!git('status --porcelain'),
   viewport: VIEWPORT, headed: HEADED, ext: EXT, url: URL_, throttle: THROTTLE, runs: RUNS, warmup: WARMUP, vsyncMs: VSYNC, dropMs: DROP_MS, date: new Date().toISOString(),
   loadAvg: loadavg(), loadAvgEnd: null, controlMs: [], refreshHalved: [], controlLimitMs: CONTROL_MS,

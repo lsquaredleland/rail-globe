@@ -1,0 +1,31 @@
+{
+  "_comment": "All of Germany (data/regions/de.geojson, admin level 2). Rules start from the Paris set: no Chinese rules, ICE counts as high-speed. Stuttgart's Stadtbahn (U-lines) is tagged route=light_rail in OSM; it runs as a metro, so the override makes it Metro.",
+  "stat_name": "Germany",
+  "stat_local": "Deutschland",
+  "china": false,
+  "commuter_networks": [
+    "S-Bahn"
+  ],
+  "high_speed_networks_re": [
+    "^ICE",
+    "^TGV",
+    "^Eurostar",
+    "^Thalys"
+  ],
+  "type_overrides": [
+    {
+      "match": {
+        "network_re": "Stuttgart|^VVS",
+        "name_re": "^U\\d+[A-Za-z]?:"
+      },
+      "type": "metro"
+    }
+  ],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "DE",
+    "levels": [
+      "4"
+    ]
+  }
+}

@@ -20,10 +20,12 @@ use std::process::{Child, Command};
 
 const TYPE_ORDER: [&str; 8] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "other"];
 // Zoomed out (tile zooms 0..OVERVIEW_MAXZOOM) the track layer holds a merged overview instead of every piece (docs/00-overview.md)
-const OVERVIEW_MAXZOOM: i64 = 7;
+const OVERVIEW_MAXZOOM: i64 = 8;
 const SKETCH_MINZOOM: i64 = 4; // the metro sketch (type only) is drawn from here to the zoom before the metro overview starts
-const CITY_RADIUS_KM: f64 = 20.0; // stations this close are one city dot
-const CITY_MIN_STATIONS: usize = 3;
+const CITY_LINK_KM: f64 = 3.0; // track samples this close (directly or through others) are one city dot
+const CITY_ABSORB_KM: f64 = 15.0; // a small group this close to a much bigger one (see CITY_ABSORB_RATIO) is part of that city
+const CITY_ABSORB_RATIO: f64 = 5.0;
+const CITY_MIN_KM: f64 = 6.0; // a city dot needs this much metro / tram / monorail track
 const SPEED_BAND_MINS: [i64; 9] = [400, 350, 300, 250, 200, 160, 120, 80, 0]; // the speed colour bands of app/src/mapStyle.ts
 const HL_SIMPLIFY: f64 = 0.001; // degrees, about 100 m: under a pixel at z7
 const NAME_SHARDS: u32 = 256;
@@ -228,71 +230,103 @@ pub struct Prepared {
     pub summary: String,
 }
 
-/// One dot per city with a metro or tram system: open stations of those types, grouped greedily (densest first) within
-/// CITY_RADIUS_KM; groups of fewer than CITY_MIN_STATIONS are dropped. Properties: m / l = metro / light-rail stations, n = all.
-fn city_dots(complexes: &[Value], cx_types: &FxHashMap<String, BTreeSet<String>>) -> String {
-    struct P { x: f64, y: f64, m: bool, l: bool }
-    let mut pts: Vec<P> = Vec::new();
-    for c in complexes {
-        let p = &c["properties"];
-        if p["construction"].as_bool() == Some(true) {
-            continue;
-        }
-        let Some(ty) = cx_types.get(p["id"].as_str().unwrap_or("")) else { continue };
-        let (m, l) = (ty.contains("metro"), ty.contains("light_rail"));
-        let xy = &c["geometry"]["coordinates"];
-        if let (true, Some(x), Some(y)) = (m || l, xy[0].as_f64(), xy[1].as_f64()) {
-            pts.push(P { x, y, m, l });
-        }
-    }
-    let km = |a: &P, b: &P| {
-        let dy = (a.y - b.y) * 111.2;
-        let dx = (a.x - b.x) * 111.2 * ((a.y + b.y) / 2.0).to_radians().cos();
+/// One dot per city with a metro, tram or monorail system, from the track itself: open passenger ways of type metro, `tram` ways and
+/// monorail (not light_rail, which OSM uses for German S-Bahn, and not service track), sampled about every km. Samples within CITY_LINK_KM of
+/// each other, directly or through others, are one city (single linkage), so a city is one dot however far it spreads; groups with
+/// less than CITY_MIN_KM of track are dropped. Properties: m / l / r = metro / tram / monorail km, n = all km.
+fn city_dots(samples: &[(f64, f64, f64, u8)]) -> String {
+    let km = |a: (f64, f64), b: (f64, f64)| {
+        let dy = (a.1 - b.1) * 111.2;
+        let dx = (a.0 - b.0) * 111.2 * ((a.1 + b.1) / 2.0).to_radians().cos();
         (dx * dx + dy * dy).sqrt()
     };
-    // grid of 0.2 degrees: neighbours are in the surrounding 5 x 5 cells
+    // grid of 0.2 degrees: neighbours are in the surrounding 3 x 3 cells
     let cell = |v: f64| (v / 0.2).floor() as i32;
     let mut grid: FxHashMap<(i32, i32), Vec<usize>> = FxHashMap::default();
-    for (i, p) in pts.iter().enumerate() {
-        grid.entry((cell(p.x), cell(p.y))).or_default().push(i);
+    for (i, p) in samples.iter().enumerate() {
+        grid.entry((cell(p.0), cell(p.1))).or_default().push(i);
     }
-    let near = |i: usize| -> Vec<usize> {
-        let (cx, cy) = (cell(pts[i].x), cell(pts[i].y));
-        let mut out = Vec::new();
-        for gx in cx - 2..=cx + 2 {
-            for gy in cy - 2..=cy + 2 {
+    let mut parent: Vec<usize> = (0..samples.len()).collect();
+    fn find(parent: &mut [usize], mut i: usize) -> usize {
+        while parent[i] != i {
+            parent[i] = parent[parent[i]];
+            i = parent[i];
+        }
+        i
+    }
+    for i in 0..samples.len() {
+        let (cx, cy) = (cell(samples[i].0), cell(samples[i].1));
+        for gx in cx - 1..=cx + 1 {
+            for gy in cy - 1..=cy + 1 {
                 for &j in grid.get(&(gx, gy)).into_iter().flatten() {
-                    if km(&pts[i], &pts[j]) <= CITY_RADIUS_KM {
-                        out.push(j);
+                    if j > i && km((samples[i].0, samples[i].1), (samples[j].0, samples[j].1)) <= CITY_LINK_KM {
+                        let (a, b) = (find(&mut parent, i), find(&mut parent, j));
+                        if a != b {
+                            parent[a.max(b)] = a.min(b);
+                        }
                     }
                 }
             }
         }
-        out
-    };
-    let nbrs: Vec<Vec<usize>> = (0..pts.len()).map(near).collect();
-    let mut order: Vec<usize> = (0..pts.len()).collect();
-    order.sort_by_key(|&i| (std::cmp::Reverse(nbrs[i].len()), i));
-    let mut taken = vec![false; pts.len()];
+    }
+    let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+    for i in 0..samples.len() {
+        let r = find(&mut parent, i);
+        groups.entry(r).or_default().push(i);
+    }
+    // a small group near a much bigger one is part of that city (a satellite district or suburb whose track is not linked to the main
+    // network): absorb it, biggest groups first, so a big city is one dot. Equal neighbours (two cities) stay apart.
+    let km_of = |m: &[usize]| m.iter().map(|&j| samples[j].2).sum::<f64>();
+    let mut order: Vec<usize> = groups.keys().copied().collect();
+    order.sort_by(|a, b| km_of(&groups[b]).partial_cmp(&km_of(&groups[a])).unwrap_or(std::cmp::Ordering::Equal).then(a.cmp(b)));
+    let mut owner: Vec<usize> = (0..samples.len()).map(|i| find(&mut parent, i)).collect();
+    let mut total: FxHashMap<usize, f64> = order.iter().map(|&g| (g, km_of(&groups[&g]))).collect();
+    for &g in &order {
+        let mine = total[&g];
+        let mut target = None;
+        'find: for &i in &groups[&g] {
+            let (cx, cy) = (cell(samples[i].0), cell(samples[i].1));
+            for gx in cx - 2..=cx + 2 {
+                for gy in cy - 2..=cy + 2 {
+                    for &j in grid.get(&(gx, gy)).into_iter().flatten() {
+                        let o = owner[j];
+                        if o != g && total[&o] >= CITY_ABSORB_RATIO * mine && km((samples[i].0, samples[i].1), (samples[j].0, samples[j].1)) <= CITY_ABSORB_KM {
+                            target = Some(o);
+                            break 'find;
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(o) = target {
+            for &i in &groups[&g] {
+                owner[i] = o;
+            }
+            *total.get_mut(&o).unwrap() += mine;
+            total.insert(g, 0.0);
+        }
+    }
+    let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+    for i in 0..samples.len() {
+        groups.entry(owner[i]).or_default().push(i);
+    }
     let mut out = String::new();
-    for i in order {
-        if taken[i] {
-            continue;
-        }
-        let members: Vec<usize> = nbrs[i].iter().copied().filter(|&j| !taken[j]).collect();
-        for &j in &members {
-            taken[j] = true;
-        }
-        if members.len() < CITY_MIN_STATIONS {
+    for members in groups.values() {
+        let by = |k: u8| members.iter().filter(|&&j| samples[j].3 == k).map(|&j| samples[j].2).sum::<f64>();
+        let total = by(0) + by(1) + by(2);
+        if total < CITY_MIN_KM {
             continue;
         }
         let n = members.len() as f64;
-        let (x, y) = (members.iter().map(|&j| pts[j].x).sum::<f64>() / n, members.iter().map(|&j| pts[j].y).sum::<f64>() / n);
+        let mid = (members.iter().map(|&j| samples[j].0).sum::<f64>() / n, members.iter().map(|&j| samples[j].1).sum::<f64>() / n);
+        // the dot sits on the sample nearest the middle, so it is never off the network (a city can be long and thin)
+        let at = members.iter().copied().min_by(|&a, &b| km((samples[a].0, samples[a].1), mid).partial_cmp(&km((samples[b].0, samples[b].1), mid)).unwrap_or(std::cmp::Ordering::Equal)).unwrap();
         let mut pr = Map::new();
-        pr.insert("m".into(), json!(members.iter().filter(|&&j| pts[j].m).count()));
-        pr.insert("l".into(), json!(members.iter().filter(|&&j| pts[j].l).count()));
-        pr.insert("n".into(), json!(members.len()));
-        feat(&mut out, &pr, &format!("{{\"type\":\"Point\",\"coordinates\":[{:.5},{:.5}]}}", x, y), Some(2), Some(7));
+        pr.insert("m".into(), json!(by(0).round() as i64));
+        pr.insert("l".into(), json!(by(1).round() as i64));
+        pr.insert("r".into(), json!(by(2).round() as i64));
+        pr.insert("n".into(), json!(total.round() as i64));
+        feat(&mut out, &pr, &format!("{{\"type\":\"Point\",\"coordinates\":[{:.5},{:.5}]}}", samples[at].0, samples[at].1), Some(2), Some(7));
     }
     out
 }
@@ -330,6 +364,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
     let mut railways: Vec<(String, Option<String>, String, f64)> = Vec::new();
     let mut nk_of: FxHashMap<String, usize> = FxHashMap::default();
     let mut pax: Vec<(geomx::G, String)> = Vec::new(); // passenger track for station types
+    let mut city_track: Vec<(f64, f64, f64, u8)> = Vec::new(); // (lon, lat, km, 0 metro / 1 tram / 2 monorail) samples for the city dots
     let (mut n_track, mut n_strands, mut n_areas, mut n_bld, mut n_plats) = (0, 0, 0, 0, 0);
     let tracks_div = |p: &Map<String, Value>| {
         let tr = s(p, "tracks").unwrap_or("");
@@ -350,6 +385,18 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
             }
             let prop = s(p, "railway") == Some("proposed");
             let con = s(p, "railway") == Some("construction") || prop;
+            if !con && s(p, "service").map_or(true, str::is_empty) {
+                if let Some(kind) = match (s(p, "railway"), t) { (_, "metro") => Some(0u8), (Some("tram"), _) => Some(1), (_, "monorail") => Some(2), _ => None } {
+                    let mut acc = 0.0;
+                    for (i, w) in c.windows(2).enumerate() {
+                        acc += haversine_len(w);
+                        if acc >= 1.0 || i + 2 == c.len() {
+                            city_track.push((w[1].0, w[1].1, acc, kind));
+                            acc = 0.0;
+                        }
+                    }
+                }
+            }
             let mut lids: Vec<&str> = p.get("_routes").and_then(Value::as_array).into_iter().flatten()
                 .filter_map(|r| route_line.get(r.as_str().unwrap_or("")).copied()).collect::<BTreeSet<_>>().into_iter().collect();
             lids.sort_by_key(|l| (rank(ls(l, "type").unwrap_or("")), short(l)));
@@ -666,7 +713,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], complexes: &[Value], rou
     }
 
     // ------------------------------------------------------------ city dots: where metro and tram systems are, visible from far out
-    let cities_text = city_dots(complexes, &cx_types);
+    let cities_text = city_dots(&city_track);
 
     // ------------------------------------------------------------ tippecanoe: every layer in one run, the overview coalesced
     overview.sort_by(|a, b| a.0.cmp(&b.0));

@@ -63,6 +63,15 @@ export const INACTIVE = '#D4D1C7'
 const INACTIVE_WIDTH = 0.6
 const typeColor = byType((t) => TYPE_COLOR[t], 'type', TYPE_COLOR.other)
 
+// Under-construction and proposed track: a solid line at reduced opacity, same colour as open track of its type. Dashes were tried and
+// dropped (docs/00-overview.md, 2026-10-13): MapLibre restarts a pattern at every feature and tile edge and stretches it between whole zooms.
+const CON_OPACITY = 0.45
+const PROP_OPACITY = 0.28
+/** [zoom, minimum px, TYPE_WIDTH index] of the construction width ramp; width = max(minimum, type width * 1.2) */
+const CON_STOPS: [number, number, number][] = [[4, 2.6, 0], [10, 1.8, 0], [12, 2.2, 1], [15, 3, 2]]
+const conWidth: Expr = ['interpolate', ['linear'], ['zoom'], ...CON_STOPS.flatMap(([z, min, i]) =>
+  [z, byType((t) => Math.max(min, TYPE_WIDTH[t][i] * 1.2), 'type', min)])] as Expr
+
 /** width that follows z10 / z12 / z15 stops, with an optional multiplier expression */
 function widthExpr(mult?: Expr): Expr {
   const stop = (i: number): Expr => {
@@ -143,6 +152,18 @@ export function addBoundary(map: MLMap, slug: string) {
     paint: { 'line-color': '#B9B5AD', 'line-width': 1.1, 'line-dasharray': [6, 5], 'line-opacity': 0.8 } })
 }
 
+/** The outline of the area in view (the "Outline area in view" switch): a clear line with a soft inner shade, under the rail. Fed by `setOutline`. */
+export function addOutline(map: MLMap) {
+  map.addSource('area-outline', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+  map.addLayer({ id: 'area-outline-shade', type: 'line', source: 'area-outline', layout: { 'line-join': 'round' },
+    paint: { 'line-color': '#1E1E1C', 'line-width': 12, 'line-blur': 10, 'line-offset': 5, 'line-opacity': 0.1 } })
+  map.addLayer({ id: 'area-outline', type: 'line', source: 'area-outline', layout: { 'line-join': 'round' },
+    paint: { 'line-color': '#1E1E1C', 'line-width': 1.8, 'line-opacity': 0.6 } })
+}
+export function setOutline(map: MLMap, geometry: GeoJSON.Geometry | null) {
+  ;(map.getSource('area-outline') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: geometry ? [{ type: 'Feature', properties: {}, geometry }] : [] })
+}
+
 /** All rail layers of the tile source `source` (TILES), stacked in drawing order; ids are `<source>:<name>`. */
 export function addRailSource(map: MLMap, source: string) {
   // a track piece's OSM id ("way/123") is its feature id, so a highlighted line can be flagged with feature state
@@ -186,18 +207,6 @@ export function addRailSource(map: MLMap, source: string) {
       const layout = spec.layout as Record<string, unknown>
       add({ ...spec, id, layout: { 'line-sort-key': hsLast(typeKey), ...layout } })
       return
-/** The outline of the area in view (the "Outline area in view" switch): a faint line with a soft inner shade, under the rail. Fed by `setOutline`. */
-export function addOutline(map: MLMap) {
-  map.addSource('area-outline', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
-  map.addLayer({ id: 'area-outline-shade', type: 'line', source: 'area-outline', layout: { 'line-join': 'round' },
-    paint: { 'line-color': '#1E1E1C', 'line-width': 12, 'line-blur': 10, 'line-offset': 5, 'line-opacity': 0.05 } })
-  map.addLayer({ id: 'area-outline', type: 'line', source: 'area-outline', layout: { 'line-join': 'round' },
-    paint: { 'line-color': '#1E1E1C', 'line-width': 1.3, 'line-opacity': 0.32 } })
-}
-export function setOutline(map: MLMap, geometry: GeoJSON.Geometry | null) {
-  ;(map.getSource('area-outline') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: geometry ? [{ type: 'Feature', properties: {}, geometry }] : [] })
-}
-
     }
     add({ ...spec, id, filter: f ? ['all', ['!=', get(typeKey), 'high_speed'], f] : ['!=', get(typeKey), 'high_speed'] } as unknown as LayerSpecification)
     top.push({ ...spec, id: `${id}-hs`, filter: f ? ['all', ['==', get(typeKey), 'high_speed'], f] : ['==', get(typeKey), 'high_speed'] } as unknown as LayerSpecification)
@@ -221,30 +230,27 @@ export function setOutline(map: MLMap, geometry: GeoJSON.Geometry | null) {
     layout: { ...roundJoin, 'line-sort-key': rank },
     paint: { 'line-color': typeColor, 'line-width': widthExpr(), 'line-opacity': 1 } })
 
-  // under construction: drawn above the track on a white casing so the dashes read, never thinner than 2.6 px zoomed out (1.8 from z10) and with long dashes so simplified overview geometry keeps them
-  const conW = (extra: number): Expr => ['interpolate', ['linear'], ['zoom'],
-    4, ['+', ['max', 2.6, ['*', byType((t) => TYPE_WIDTH[t][0]), 1.2]], extra],
-    10, ['+', ['max', 1.8, ['*', byType((t) => TYPE_WIDTH[t][0]), 1.2]], extra], 12, ['+', ['max', 2.2, ['*', byType((t) => TYPE_WIDTH[t][1]), 1.2]], extra],
-    15, ['+', ['max', 3, ['*', byType((t) => TYPE_WIDTH[t][2]), 1.2]], extra]] as Expr
-  trackLayer('construction-casing', { type: 'line', ...src, 'source-layer': 'track', filter: ['has', 'con'],
-    // an explicit sort key wins over hsLast; `rank` already puts high_speed last
-    layout: { 'line-cap': 'butt', 'line-join': 'round', 'line-sort-key': rank }, paint: { 'line-color': '#FFFFFF', 'line-opacity': 0.85, 'line-width': conW(2) } })
-  trackLayer('construction', { type: 'line', ...src, 'source-layer': 'track', filter: ['has', 'con'],
-    layout: { 'line-cap': 'butt', 'line-join': 'round', 'line-sort-key': rank },
-    paint: { 'line-color': ['match', get('type'), 'other', '#45423C', typeColor], 'line-width': conW(0), 'line-dasharray': [3, 2] } })
+  // under construction and proposed: faded solid line above the open track, at every zoom (from the per-way `track` features: the overview
+  // holds them below z9). An explicit sort key wins over hsLast; `rank` already puts high_speed last.
+  // two layers, so a switch only flips visibility: changing a filter makes MapLibre re-evaluate every track piece in the loaded tiles
+  for (const [name, filter, opacity] of [['construction', ['all', ['has', 'con'], ['!', ['has', 'prop']]], CON_OPACITY], ['proposed', ['has', 'prop'], PROP_OPACITY]] as const) {
+    trackLayer(name, { type: 'line', ...src, 'source-layer': 'track', filter,
+      layout: { 'line-cap': 'butt', 'line-join': 'round', 'line-sort-key': rank },
+      paint: { 'line-color': ['match', get('type'), 'other', '#45423C', typeColor], 'line-width': conWidth, 'line-opacity': opacity } })
+  }
 
   // highlight for the hovered or selected line: the same line drawn wider in its own colour, no outline
   const hlW: Expr = ['interpolate', ['linear'], ['zoom'],
     8, ['+', ['*', byType((t) => TYPE_WIDTH[t][0]), 1.8], 2], 12, ['+', ['*', byType((t) => TYPE_WIDTH[t][1]), 1.8], 2.5],
     15, ['+', ['*', byType((t) => TYPE_WIDTH[t][2]), 1.8], 3]] as Expr
   // The highlight layers come after the casing, so no twin is needed; high-speed sorts last within each.
-  // z8 and closer: the track pieces flagged with feature state by highlightLine (no tile reload, no copying geometry)
-  hlLayer({ id: L(source, 'hl-fs'), type: 'line', ...src, 'source-layer': 'track', minzoom: 8,
+  // z9 and closer: the track pieces flagged with feature state by highlightLine (no tile reload, no copying geometry)
+  hlLayer({ id: L(source, 'hl-fs'), type: 'line', ...src, 'source-layer': 'track', minzoom: 9,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': typeColor, 'line-width': hlW, 'line-opacity': ['case', ['boolean', ['feature-state', 'hl'], false], 1, 0] } })
-  // below z8 the merged overview has no per-piece ids: the line's simplified geometry from its side file
+  // below z9 the merged overview has no per-piece ids: the line's simplified geometry from its side file
   map.addSource(L(source, 'hl'), { type: 'geojson', data: EMPTY })
-  hlLayer({ id: L(source, 'hl'), type: 'line', source: L(source, 'hl'), maxzoom: 8,
+  hlLayer({ id: L(source, 'hl'), type: 'line', source: L(source, 'hl'), maxzoom: 9,
     layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': typeColor, 'line-width': hlW } })
 
   // operator-colour strands (side by side from z12)
@@ -270,9 +276,12 @@ export function setOutline(map: MLMap, geometry: GeoJSON.Geometry | null) {
   late.forEach((l) => add(l))   // the highlight, above the veil
 
   // invisible, wider hit target for track tooltips
-  // at every zoom: below z8 the track tiles hold the merged overview, which keeps the line ids and railway names a click needs
-  add({ id: L(source, 'hit'), type: 'line', ...src, 'source-layer': 'track', filter: ['!=', get('type'), 'yard'],
-    layout: roundJoin, paint: { 'line-color': '#000000', 'line-opacity': 0, 'line-width': 12 } })
+  // at every zoom: below z9 the track tiles hold the merged overview, which keeps the line ids and railway names a click needs
+  // open track, construction and proposed are separate layers so their switches only flip visibility (see the construction layers)
+  for (const [name, kind] of [['hit', ['!', ['has', 'con']]], ['hit-con', ['all', ['has', 'con'], ['!', ['has', 'prop']]]], ['hit-prop', ['has', 'prop']]] as const) {
+    add({ id: L(source, name), type: 'line', ...src, 'source-layer': 'track', filter: ['all', ['!=', get('type'), 'yard'], kind],
+      layout: roundJoin, paint: { 'line-color': '#000000', 'line-opacity': 0, 'line-width': 12 } })
+  }
 
   // line names along the track: one label per line (from its strands), or the track's own name where no line is mapped
   const lblPaint = { 'text-color': '#33312C', 'text-halo-color': FILL.land, 'text-halo-width': 2, 'text-halo-blur': 0.3 }
@@ -305,11 +314,11 @@ export function setOutline(map: MLMap, geometry: GeoJSON.Geometry | null) {
       'symbol-sort-key': 0 },
     paint: { 'text-color': '#4A463D', 'text-halo-color': FILL.land, 'text-halo-width': 1.8 } })
 
-  // cities with a metro or tram system: one dot each, from far out (z2) until the stations themselves show (z8)
-  const dotSize: Expr = ['step', get('n'), 0.85, 10, 1, 30, 1.3] as Expr
+  // cities with a metro, tram or monorail system: one dot each, from far out (z2) until the stations themselves show (z8)
+  const dotSize: Expr = ['step', get('n'), 0.85, 40, 1, 150, 1.3] as Expr
   add({ id: L(source, 'cities'), type: 'circle', ...src, 'source-layer': 'cities', maxzoom: 8,
     paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 2, ['*', 1.8, dotSize], 4, ['*', 2.8, dotSize], 7, ['*', 4.4, dotSize]],
-      'circle-color': ['case', ['>', get('m'), 0], TYPE_COLOR.metro, TYPE_COLOR.light_rail], 'circle-stroke-width': 1.2, 'circle-stroke-color': '#FFFFFF',
+      'circle-color': ['case', ['>', get('m'), 0], TYPE_COLOR.metro, ['>', get('l'), 0], TYPE_COLOR.light_rail, TYPE_COLOR.monorail], 'circle-stroke-width': 1.2, 'circle-stroke-color': '#FFFFFF',
       'circle-opacity': 0.95 },
     layout: { 'circle-sort-key': get('n') } as never })
 
@@ -354,7 +363,7 @@ export function setOutline(map: MLMap, geometry: GeoJSON.Geometry | null) {
 
 export function stationLayers(slug: string) { return ['stcon1', 'stcon2', 'stcon3', 'st1', 'st2', 'st3'].map((n) => L(slug, n)) }
 export const strandLayer = (slug: string) => L(slug, 'strand')
-export const hitLayer = (slug: string) => L(slug, 'hit')
+export const hitLayers = (slug: string) => ['hit', 'hit-con', 'hit-prop'].map((n) => L(slug, n))
 export const yardHitLayer = (slug: string) => L(slug, 'hit-yard')
 /** polygon layers that answer hovers, most specific first */
 export const areaLayers = (slug: string) => ['platforms-fill', 'platforms-line', 'airport-terminal', 'buildings', 'yard-fill', 'ground', 'airport-fill'].map((n) => L(slug, n))
@@ -393,8 +402,7 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
       })
     }
     // proposed track rides on the construction layers (flag `prop`), drawn fainter; each switch shows its own kind
-    setVis('construction', vis(s.construction || s.proposed)); setVis('construction-casing', vis(s.construction || s.proposed))
-    const conKinds: Expr = ['any', ...(s.construction ? [['all', ['has', 'con'], ['!', ['has', 'prop']]]] : []), ...(s.proposed ? [['has', 'prop']] : [])] as unknown as Expr
+    setVis('construction', vis(s.construction)); setVis('proposed', vis(s.proposed))
     setVis('strand', vis(operator)); setVis('strand-casing', vis(operator))
     const has = ['has', 'oc'] as Expr
     const tun: Expr = ['step', ['zoom'], 1, 13, ['case', ['has', 'tun'], 0.45, 1]]
@@ -416,27 +424,25 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
       color = typeColor
       width = widthExpr(thin())
     }
-    setPaint('construction', 'line-opacity', ['case', ['has', 'prop'], 0.5, 1])
-    setPaint('construction-casing', 'line-opacity', ['case', ['has', 'prop'], 0.45, 0.85])
     setPaint('track', 'line-color', grey(color))
     setPaint('track', 'line-width', width)
     setPaint('track', 'line-opacity', opacity)
     setPaint('hl', 'line-color', grey(color))
     setPaint('hl-fs', 'line-color', grey(color))
     // under-construction track follows the same colour rule as open track
-    setPaint('construction', 'line-color', grey(s.mode === 'speed' ? speedColor : (['match', get('type'), 'other', '#45423C', typeColor] as Expr)))
+    for (const n of ['construction', 'proposed']) setPaint(n, 'line-color', grey(s.mode === 'speed' ? speedColor : (['match', get('type'), 'other', '#45423C', typeColor] as Expr)))
     setPaint('strand', 'line-color', grey(['coalesce', get('c'), byType((t) => TYPE_COLOR[t], 't', TYPE_COLOR.other)] as Expr, strandActive))
     setPaint('strand-casing', 'line-opacity', greyOut ? (['case', strandActive, 0.28, 0] as Expr) : 0.28)
     const hiddenT = s.hidden.length > 0
     const notHiddenT = (key: string): Expr[] => (hiddenT ? [['!', ['in', get(key), ['literal', s.hidden]]] as Expr] : [])
     const noSpeed = notHiddenSpeed(s.hiddenSpeed)
     setFilt('track', ['all', ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight'], ...notHiddenT('type'), ...noSpeed] as Expr)
-    setFilt('construction', ['all', conKinds, ...notHiddenT('type'), ...noSpeed] as Expr)
-    setFilt('construction-casing', ['all', conKinds, ...notHiddenT('type'), ...noSpeed] as Expr)
+    setFilt('construction', ['all', ['has', 'con'], ['!', ['has', 'prop']], ...notHiddenT('type'), ...noSpeed] as Expr)
+    setFilt('proposed', ['all', ['has', 'prop'], ...notHiddenT('type'), ...noSpeed] as Expr)
     map.setLayoutProperty(L(slug, 'casing'), 'visibility', vis(!s.hidden.includes('high_speed')))
     map.setFilter(L(slug, 'casing'), ['all', ['==', get('type'), 'high_speed'], ['!', ['has', 'con']], ...noSpeed] as Expr)
     // city dots: a city shows while one of its systems (metro, tram) is not hidden; "HSR only" has no metro or tram to show
-    const cityKinds: Expr[] = [...(s.hidden.includes('metro') ? [] : [['>', get('m'), 0]]), ...(s.hidden.includes('light_rail') ? [] : [['>', get('l'), 0]])] as Expr[]
+    const cityKinds: Expr[] = [...(s.hidden.includes('metro') ? [] : [['>', get('m'), 0]]), ...(s.hidden.includes('light_rail') ? [] : [['>', get('l'), 0]]), ...(s.hidden.includes('monorail') ? [] : [['>', get('r'), 0]])] as Expr[]
     map.setFilter(L(slug, 'cities'), cityKinds.length ? (['any', ...cityKinds] as Expr) : (['==', 1, 0] as Expr))
     map.setLayoutProperty(L(slug, 'cities'), 'visibility', vis(!greyOut))
     // a station disappears when every rail type that serves it is hidden (stations with no known type stay)
@@ -455,12 +461,15 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     map.setFilter(L(slug, 'lbl-lines'), hiddenT || greyOut ? (['all', ...(greyOut ? [strandActive] : []), ...notHiddenT('t')] as Expr) : null)
     map.setFilter(L(slug, 'lbl-track'), ['all', ...(greyOut ? [activeTrack] : []), ['has', 'n'], ['!', ['has', 'nl']], ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight'], ...notHiddenT('type'), ...noSpeed] as Expr)
     // construction track is not sorted into speed bands, so hiding a band leaves it hoverable
-    const hide: Expr[] = [...notHiddenT('type'), ...noSpeed.map((e) => ['any', ['has', 'con'], e] as unknown as Expr)]
+    const hide: Expr[] = [...notHiddenT('type')]
     if (!s.freight) hide.push(['!=', get('type'), 'freight'] as Expr)
-    if (!s.construction) hide.push(['any', ['!', ['has', 'con']], ['has', 'prop']] as Expr)
-    if (!s.proposed) hide.push(['!', ['has', 'prop']] as Expr)
     if (greyOut) hide.push(activeTrack)  // greyed-out track cannot be hovered or selected
-    map.setFilter(L(slug, 'hit'), ['all', ['!=', get('type'), 'yard'], ...hide] as Expr)
+    const hit = (kind: Expr, extra: Expr[]) => ['all', ['!=', get('type'), 'yard'], kind, ...hide, ...extra] as Expr
+    map.setFilter(L(slug, 'hit'), hit(['!', ['has', 'con']] as Expr, noSpeed))
+    map.setFilter(L(slug, 'hit-con'), hit(['all', ['has', 'con'], ['!', ['has', 'prop']]] as Expr, []))
+    map.setFilter(L(slug, 'hit-prop'), hit(['has', 'prop'] as Expr, []))
+    map.setLayoutProperty(L(slug, 'hit-con'), 'visibility', vis(s.construction))
+    map.setLayoutProperty(L(slug, 'hit-prop'), 'visibility', vis(s.proposed))
   }
 }
 
@@ -493,7 +502,7 @@ function apply(map: MLMap, key: string, slug: string | null, h: Highlight | null
 }
 
 /** Highlight a line (or, with no line, a named railway) of region `slug`: flags the line's track pieces with feature state in
- *  the tile source and shows its simplified geometry below z8. No tile is decoded or reloaded. A line whose data is already
+ *  the tile source and shows its simplified geometry below z9. No tile is decoded or reloaded. A line whose data is already
  *  loaded is shown at once; otherwise its data is fetched once the pointer rests. */
 export function highlightLine(map: MLMap, slug: string | null, lineId: number | null, trackName: string | null = null) {
   const key = slug && (lineId != null || trackName != null) ? `${slug}|${lineId ?? ''}|${trackName ?? ''}` : ''
@@ -516,7 +525,7 @@ export function highlightLine(map: MLMap, slug: string | null, lineId: number | 
 const PREFETCH_MAX = 48
 export function prefetchHighlights(map: MLMap) {
   if (map.getZoom() < 6) return
-  const layers = [hitLayer(TILES)].filter((l) => map.getLayer(l))
+  const layers = hitLayers(TILES).filter((l) => map.getLayer(l))
   if (!layers.length) return
   const todo = new Map<string, () => Promise<unknown>>()
   for (const f of map.queryRenderedFeatures({ layers })) {
