@@ -1,11 +1,11 @@
 import type { ExpressionSpecification, GeoJSONSource, LayerSpecification, Map as MLMap, StyleSpecification } from 'maplibre-gl'
 import { STATION_ZOOM } from './config'
-import { FILL, INK, TYPE_COLOR, TYPE_WIDTH, TYPE_ORDER, type RailType } from './palette'
+import { FILL, INK, THEME_COLORS, TYPE_COLOR, TYPE_WIDTH, TYPE_ORDER, type RailType, type Theme } from './palette'
 import { regionOf, TILES } from './regions'
 import { boundaryUrl, loadLineHighlight, loadNameHighlight, pmtilesUrl, type Highlight } from './data'
 
 export type ColorMode = 'type' | 'operator' | 'speed'
-export interface MapState { mode: ColorMode; construction: boolean; proposed: boolean; freight: boolean; hidden: string[]; hiddenSpeed: number[]; hsrOnly: boolean; lang: 'local' | 'en' }
+export interface MapState { mode: ColorMode; construction: boolean; proposed: boolean; freight: boolean; hidden: string[]; hiddenSpeed: number[]; hsrOnly: boolean; lang: 'local' | 'en'; theme: Theme }
 
 const OFM = 'https://tiles.openfreemap.org/planet'
 export const ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
@@ -63,14 +63,50 @@ export const INACTIVE = '#D4D1C7'
 const INACTIVE_WIDTH = 0.6
 const typeColor = byType((t) => TYPE_COLOR[t], 'type', TYPE_COLOR.other)
 
-// Under-construction and proposed track: a solid line at reduced opacity, same colour as open track of its type. Dashes were tried and
-// dropped (docs/00-overview.md, 2026-10-13): MapLibre restarts a pattern at every feature and tile edge and stretches it between whole zooms.
+// Under-construction and proposed track: a faded solid line at every zoom (a continuous base, drawn from the per-way `track` features), with
+// dashes in full colour on top from CON_DASH_MINZOOM (docs/00-overview.md, 2026-10-13). The dashes alone broke: MapLibre restarts a pattern
+// at every feature and tile edge and stretches it between whole zooms, so the base keeps the track continuous where the pattern does not.
 const CON_OPACITY = 0.45
 const PROP_OPACITY = 0.28
+const CON_DASH_OPACITY = 1
+const PROP_DASH_OPACITY = 0.6
+const CON_DASH_PX = 12
+const CON_GAP_PX = 8
+/** First zoom with dashes; below it the faded base alone. Must equal tiles.rs OVERVIEW_MAXZOOM + 1 (the first zoom whose tiles hold per-way
+ *  track); `con_draw` is written from OVERVIEW_MAXZOOM, one tile zoom earlier, so it is loaded when the style needs it. */
+const CON_DASH_MINZOOM = 9
 /** [zoom, minimum px, TYPE_WIDTH index] of the construction width ramp; width = max(minimum, type width * 1.2) */
 const CON_STOPS: [number, number, number][] = [[4, 2.6, 0], [10, 1.8, 0], [12, 2.2, 1], [15, 3, 2]]
-const conWidth: Expr = ['interpolate', ['linear'], ['zoom'], ...CON_STOPS.flatMap(([z, min, i]) =>
-  [z, byType((t) => Math.max(min, TYPE_WIDTH[t][i] * 1.2), 'type', min)])] as Expr
+const conStopWidth = (t: RailType, k: number) => Math.max(CON_STOPS[k][1], TYPE_WIDTH[t][CON_STOPS[k][2]] * 1.2)
+const conWidth = (mult?: Expr): Expr => ['interpolate', ['linear'], ['zoom'], ...CON_STOPS.flatMap((_, k) => {
+  const w = byType((t) => conStopWidth(t, k), 'type', conStopWidth('other', k)) as Expr
+  return [CON_STOPS[k][0], mult ? ['*', w, mult] : w]
+})] as Expr
+/** line width in px of an under-construction line of type `t` at zoom `z` */
+function conWidthAt(t: RailType, z: number): number {
+  if (z <= CON_STOPS[0][0]) return conStopWidth(t, 0)
+  for (let k = 1; k < CON_STOPS.length; k++) {
+    if (z <= CON_STOPS[k][0]) {
+      const f = (z - CON_STOPS[k - 1][0]) / (CON_STOPS[k][0] - CON_STOPS[k - 1][0])
+      return conStopWidth(t, k - 1) + f * (conStopWidth(t, k) - conStopWidth(t, k - 1))
+    }
+  }
+  return conStopWidth(t, CON_STOPS.length - 1)
+}
+/** MapLibre sizes dashes in line widths, using the line width at the WHOLE zoom (its floorwidth), and evaluates a zoom-dependent
+ *  dasharray only at whole zooms. It also stretches the pattern with the map within a zoom (x1 at the whole zoom, x2 just before the
+ *  next: the dashes belong to the tile). So the pattern is sized for the width at the whole zoom and for the stretch at half a zoom
+ *  (the factor 1/sqrt 2): the drawn dash is CON_DASH_PX at mid zoom and between 0.71 and 1.41 times that at the whole zooms and just
+ *  before the next, at every rail type. */
+const conDashPx = (): Expr => {
+  const arr = (t: RailType, z: number) => ['literal', [CON_DASH_PX, CON_GAP_PX].map((px) => px / (conWidthAt(t, z) * Math.SQRT2))] as unknown as string
+  const at = (z: number): Expr => byType((t) => arr(t, z), 'type', arr('other', z))
+  return ['step', ['zoom'], at(0), ...Array.from({ length: 16 }, (_, i) => [i + 1, at(i + 1)]).flat()] as unknown as Expr
+}
+/** under-construction colour: the colour rule of open track (`other` is drawn dark grey) */
+const conColor: Expr = ['match', get('type'), 'other', '#45423C', typeColor]
+// Dev switch: ?nodash (dev or ?debug only) hides the dashes, to benchmark the faded base alone
+const NO_DASH = typeof location !== 'undefined' && (import.meta.env.DEV || location.search.includes('debug')) && location.search.includes('nodash')
 
 /** width that follows z10 / z12 / z15 stops, with an optional multiplier expression */
 function widthExpr(mult?: Expr): Expr {
@@ -88,22 +124,15 @@ const nameExpr = (lang: 'local' | 'en', local: string, en: string): Expr =>
 const L = (slug: string, name: string) => `${slug}:${name}`
 
 export function baseStyle(): StyleSpecification {
-  const sansR = ['Noto Sans Regular']
-  const place = (cls: string[], minzoom: number, size: number[]): LayerSpecification => ({
-    id: `place-${cls.join('-')}`, type: 'symbol', source: 'ofm', 'source-layer': 'place', minzoom,
-    filter: ['in', ['get', 'class'], ['literal', cls]],
-    layout: {
-      'text-field': ['coalesce', ['get', 'name'], ['get', 'name:latin']], 'text-font': sansR,
-      'text-size': ['interpolate', ['linear'], ['zoom'], minzoom, size[0], 14, size[1]], 'text-max-width': 8,
-    },
-    paint: { 'text-color': FILL.place, 'text-halo-color': FILL.land, 'text-halo-width': 1.6 },
-  })
   return {
     version: 8,
     glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
     sources: { ofm: { type: 'vector', url: OFM, attribution: '' } },
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': FILL.land } },
+      { id: 'landcover-wood', type: 'fill', source: 'ofm', 'source-layer': 'landcover', filter: ['in', ['get', 'class'], ['literal', ['wood', 'forest']]], paint: { 'fill-color': FILL.park } },
+      { id: 'landcover-farm', type: 'fill', source: 'ofm', 'source-layer': 'landcover', filter: ['in', ['get', 'class'], ['literal', ['farmland', 'grass']]], paint: { 'fill-color': FILL.land } },
+      { id: 'landuse-urban', type: 'fill', source: 'ofm', 'source-layer': 'landuse', filter: ['in', ['get', 'class'], ['literal', ['residential', 'commercial', 'industrial', 'retail']]], paint: { 'fill-color': FILL.land } },
       { id: 'park', type: 'fill', source: 'ofm', 'source-layer': 'park', paint: { 'fill-color': FILL.park } },
       { id: 'water', type: 'fill', source: 'ofm', 'source-layer': 'water', paint: { 'fill-color': FILL.water } },
       {
@@ -134,13 +163,16 @@ export function baseStyle(): StyleSpecification {
       },
       {
         id: 'admin', type: 'line', source: 'ofm', 'source-layer': 'boundary', minzoom: 3,
-        filter: ['all', ['<=', ['get', 'admin_level'], 4], ['!=', ['get', 'maritime'], 1]],
+        filter: ['all', ['==', ['get', 'admin_level'], 4], ['!=', ['get', 'maritime'], 1]],
         layout: { 'line-join': 'round' },
         paint: { 'line-color': FILL.boundary, 'line-width': 0.8, 'line-dasharray': [6, 5] },
       },
-      place(['city'], 4, [11, 15]),
-      place(['town'], 9, [11, 13]),
-      place(['suburb', 'quarter', 'neighbourhood'], 12, [10.5, 12]),
+      {
+        id: 'admin-country', type: 'line', source: 'ofm', 'source-layer': 'boundary', minzoom: 1,
+        filter: ['all', ['==', ['get', 'admin_level'], 2], ['!=', ['get', 'maritime'], 1]],
+        layout: { 'line-join': 'round' },
+        paint: { 'line-color': FILL.boundary, 'line-width': ['interpolate', ['linear'], ['zoom'], 2, 0.7, 8, 1.5] },
+      },
     ],
   }
 }
@@ -162,6 +194,77 @@ export function addOutline(map: MLMap) {
 }
 export function setOutline(map: MLMap, geometry: GeoJSON.Geometry | null) {
   ;(map.getSource('area-outline') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: geometry ? [{ type: 'Feature', properties: {}, geometry }] : [] })
+}
+
+/** Place names: only countries and cities, and only where the map has rail (`setPlaceRail`). Drawn above the rail so track does not
+ *  cover them; their colours and language come from `applyTheme` and `applyState`. */
+const PLACE_LAYERS = ['place-country', 'place-city-1', 'place-city-2', 'place-city-3']
+const placeText = (lang: 'local' | 'en'): Expr => {
+  const local: Expr = ['coalesce', get('name'), get('name_en'), get('name:latin')] as Expr
+  const en: Expr = ['coalesce', get('name_en'), get('name:latin'), get('name')] as Expr
+  return lang === 'en' ? en : local
+}
+export function addPlaceLabels(map: MLMap) {
+  const t = THEME_COLORS.light
+  const sym = (id: string, filter: Expr, minzoom: number, maxzoom: number, layout: Record<string, unknown>, paint: Record<string, unknown> = {}) =>
+    map.addLayer({ id, type: 'symbol', source: 'ofm', 'source-layer': 'place', minzoom, maxzoom, filter,
+      layout: { 'text-field': placeText('local'), 'text-font': ['Noto Sans Bold'], 'symbol-sort-key': ['get', 'rank'], ...layout },
+      paint: { 'text-color': t.label, 'text-halo-color': t.land, 'text-halo-width': 2, 'text-halo-blur': 0.4, ...paint } } as LayerSpecification)
+  sym('place-country', ['==', get('class'), 'country'] as Expr, 1, 8,
+    { 'text-size': ['interpolate', ['linear'], ['zoom'], 1, 11, 4, 16, 7, 22], 'text-transform': 'uppercase', 'text-letter-spacing': 0.14, 'text-max-width': 8 },
+    { 'text-opacity': ['interpolate', ['linear'], ['zoom'], 6, 1, 8, 0] })
+  // cities by rank (1 is the biggest): the big ones from far out, the rest as the map zooms in; the stations' own labels take over close in
+  const city = (id: string, lo: number, hi: number, minzoom: number, size: number[]) =>
+    sym(id, ['all', ['==', get('class'), 'city'], ['>=', ['coalesce', get('rank'), 99], lo], ['<=', ['coalesce', get('rank'), 99], hi]] as Expr, minzoom, 11,
+      { 'text-size': ['interpolate', ['linear'], ['zoom'], minzoom, size[0], 10, size[1]], 'text-max-width': 7 })
+  city('place-city-1', 0, 3, 2, [12, 19])
+  city('place-city-2', 4, 7, 4, [11, 16])
+  city('place-city-3', 8, 99, 6, [10.5, 14])
+  for (const id of PLACE_LAYERS) placeBase.set(id, map.getFilter(id) as Expr | undefined)
+  setPlaceRail(map, null)
+}
+const placeBase = new Map<string, Expr | undefined>()
+/** Names only where there is rail: inside the (simplified) outlines of the regions that have data; nowhere until they are known. */
+export function setPlaceRail(map: MLMap, area: GeoJSON.MultiPolygon | null) {
+  for (const id of PLACE_LAYERS) {
+    if (!map.getLayer(id)) continue
+    const base = placeBase.get(id)
+    const rail: Expr = area ? (['within', area] as unknown as Expr) : (['==', get('class'), '__none__'] as Expr)
+    map.setFilter(id, (base ? ['all', base, rail] : rail) as Expr)
+  }
+}
+
+const themeOf = new WeakMap<MLMap, Theme>()
+/** Light or dark map colours: the basemap, the station symbols, the labels and the ground under stations. A no-op when the theme is unchanged. */
+export function applyTheme(map: MLMap, theme: Theme, slug: string = TILES) {
+  if (themeOf.get(map) === theme) return
+  themeOf.set(map, theme)
+  const t = THEME_COLORS[theme]
+  const set = (id: string, prop: string, v: unknown) => { if (map.getLayer(id)) map.setPaintProperty(id, prop as never, v as never) }
+  const r = (n: string) => L(slug, n)
+  set('background', 'background-color', t.land)
+  set('landcover-wood', 'fill-color', t.wood); set('landcover-farm', 'fill-color', t.farm); set('landuse-urban', 'fill-color', t.urban)
+  set('park', 'fill-color', t.park)
+  set('water', 'fill-color', t.water); set('water', 'fill-outline-color', t.waterEdge)
+  set('waterway', 'line-color', t.water)
+  set('road-major', 'line-color', t.road); set('road-secondary', 'line-color', t.road)
+  set('admin', 'line-color', t.border4); set('admin-country', 'line-color', t.border)
+  for (const id of PLACE_LAYERS) { set(id, 'text-color', t.label); set(id, 'text-halo-color', t.land) }
+  set(r('veil'), 'background-color', t.land)
+  set(r('airport-fill'), 'fill-color', t.airport); set(r('airport-line'), 'line-color', t.airportLine)
+  set(r('airport-terminal'), 'fill-color', t.terminal); set(r('airport-terminal'), 'fill-outline-color', t.terminalEdge)
+  set(r('ground'), 'fill-color', t.ground); set(r('yard-fill'), 'fill-color', t.yard); set(r('ground-edge'), 'line-color', t.groundEdge)
+  set(r('buildings'), 'fill-color', t.building); set(r('buildings'), 'fill-outline-color', t.buildingEdge)
+  set(r('platforms-fill'), 'fill-color', t.platform); set(r('platforms-line'), 'line-color', t.platform)
+  set(r('casing'), 'line-color', t.casing)
+  const ring = (id: string, w: unknown) => set(r(id), 'circle-stroke-color', w)
+  for (const id of ['st1', 'st2', 'st3']) set(r(id), 'circle-color', t.stationFill)
+  ring('st3', t.st3); ring('st2', t.ink); ring('st1', ['case', ['==', get('hsr'), 1], t.hsr, t.ink])
+  for (const id of ['stcon1', 'stcon2', 'stcon3']) set(r(id), 'circle-color', t.stationFill)
+  for (const id of ['lbl1', 'lbl2', 'lbl3', 'lblcon1', 'lblcon2', 'lblcon3']) { set(r(id), 'text-color', id.startsWith('lbl') && !id.includes('con') ? t.ink : t.ink3); set(r(id), 'text-halo-color', t.land) }
+  for (const id of ['lbl-lines', 'lbl-track']) { set(r(id), 'text-color', t.ink2); set(r(id), 'text-halo-color', t.land) }
+  set(r('cities'), 'circle-stroke-color', t.land)
+  set('area-outline', 'line-color', t.ink); set('area-outline-shade', 'line-color', t.ink)
 }
 
 /** All rail layers of the tile source `source` (TILES), stacked in drawing order; ids are `<source>:<name>`. */
@@ -230,13 +333,19 @@ export function addRailSource(map: MLMap, source: string) {
     layout: { ...roundJoin, 'line-sort-key': rank },
     paint: { 'line-color': typeColor, 'line-width': widthExpr(), 'line-opacity': 1 } })
 
-  // under construction and proposed: faded solid line above the open track, at every zoom (from the per-way `track` features: the overview
-  // holds them below z9). An explicit sort key wins over hsLast; `rank` already puts high_speed last.
-  // two layers, so a switch only flips visibility: changing a filter makes MapLibre re-evaluate every track piece in the loaded tiles
-  for (const [name, filter, opacity] of [['construction', ['all', ['has', 'con'], ['!', ['has', 'prop']]], CON_OPACITY], ['proposed', ['has', 'prop'], PROP_OPACITY]] as const) {
-    trackLayer(name, { type: 'line', ...src, 'source-layer': 'track', filter,
-      layout: { 'line-cap': 'butt', 'line-join': 'round', 'line-sort-key': rank },
-      paint: { 'line-color': ['match', get('type'), 'other', '#45423C', typeColor], 'line-width': conWidth, 'line-opacity': opacity } })
+  // under construction and proposed: a faded solid base above the open track at every zoom (from the per-way `track` features: the overview
+  // holds them below z9), and dashes on top from z9 (from `con_draw`: the same track merged end to end, no ids, see tiles.rs; hover, click and
+  // highlight stay on `track`). An explicit sort key wins over hsLast; `rank` already puts high_speed last.
+  // One layer per kind, so a switch only flips visibility: changing a filter makes MapLibre re-evaluate every track piece in the loaded tiles.
+  const conLayout = { 'line-cap': 'butt', 'line-join': 'round', 'line-sort-key': rank } as const
+  const conKinds = [['construction', CON_OPACITY, CON_DASH_OPACITY], ['proposed', PROP_OPACITY, PROP_DASH_OPACITY]] as const
+  for (const [name, opacity] of conKinds) {
+    trackLayer(name, { type: 'line', ...src, 'source-layer': 'track', filter: name === 'proposed' ? ['has', 'prop'] : ['all', ['has', 'con'], ['!', ['has', 'prop']]],
+      layout: conLayout, paint: { 'line-color': conColor, 'line-width': conWidth(), 'line-opacity': opacity } })
+  }
+  for (const [name, , opacity] of conKinds) {
+    trackLayer(`${name}-dash`, { type: 'line', ...src, 'source-layer': 'con_draw', minzoom: CON_DASH_MINZOOM, filter: name === 'proposed' ? ['has', 'prop'] : ['!', ['has', 'prop']],
+      layout: conLayout, paint: { 'line-color': conColor, 'line-width': conWidth(), 'line-opacity': opacity, 'line-dasharray': conDashPx() } })
   }
 
   // highlight for the hovered or selected line: the same line drawn wider in its own colour, no outline
@@ -387,6 +496,8 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
   {
     map.setLayoutProperty(L(slug, 'freight'), 'visibility', vis(s.freight))
 
+    applyTheme(map, s.theme, slug)
+    for (const id of PLACE_LAYERS) if (map.getLayer(id)) map.setLayoutProperty(id, 'text-field', placeText(s.lang))
     for (const n of ['lbl1', 'lbl2', 'lbl3', 'lblcon1', 'lblcon2', 'lblcon3']) map.setLayoutProperty(L(slug, n), 'text-field', nameExpr(s.lang, 'n', 'ne'))
     map.setLayoutProperty(L(slug, 'lbl-track'), 'text-field', nameExpr(s.lang, 'n', 'ne'))
     map.setLayoutProperty(L(slug, 'lbl-lines'), 'text-field', nameExpr(s.lang, 'lb', 'lbe'))
@@ -401,8 +512,9 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
         map.setFilter(L(slug, x), (f ? ['all', hs, f] : hs) as Expr)
       })
     }
-    // proposed track rides on the construction layers (flag `prop`), drawn fainter; each switch shows its own kind
-    setVis('construction', vis(s.construction)); setVis('proposed', vis(s.proposed))
+    // construction and proposed track are separate layers (flag `prop`), each with its dashes; a switch flips their visibility
+    setVis('construction', vis(s.construction)); setVis('construction-dash', vis(s.construction && !NO_DASH))
+    setVis('proposed', vis(s.proposed)); setVis('proposed-dash', vis(s.proposed && !NO_DASH))
     setVis('strand', vis(operator)); setVis('strand-casing', vis(operator))
     const has = ['has', 'oc'] as Expr
     const tun: Expr = ['step', ['zoom'], 1, 13, ['case', ['has', 'tun'], 0.45, 1]]
@@ -430,7 +542,9 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     setPaint('hl', 'line-color', grey(color))
     setPaint('hl-fs', 'line-color', grey(color))
     // under-construction track follows the same colour rule as open track
-    for (const n of ['construction', 'proposed']) setPaint(n, 'line-color', grey(s.mode === 'speed' ? speedColor : (['match', get('type'), 'other', '#45423C', typeColor] as Expr)))
+    const conCol = grey(s.mode === 'speed' ? speedColor : conColor)
+    const conW = conWidth(greyOut ? (['case', activeTrack, 1, INACTIVE_WIDTH] as Expr) : undefined)
+    for (const n of ['construction', 'proposed', 'construction-dash', 'proposed-dash']) { setPaint(n, 'line-color', conCol); setPaint(n, 'line-width', conW) }
     setPaint('strand', 'line-color', grey(['coalesce', get('c'), byType((t) => TYPE_COLOR[t], 't', TYPE_COLOR.other)] as Expr, strandActive))
     setPaint('strand-casing', 'line-opacity', greyOut ? (['case', strandActive, 0.28, 0] as Expr) : 0.28)
     const hiddenT = s.hidden.length > 0
@@ -439,6 +553,8 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     setFilt('track', ['all', ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight'], ...notHiddenT('type'), ...noSpeed] as Expr)
     setFilt('construction', ['all', ['has', 'con'], ['!', ['has', 'prop']], ...notHiddenT('type'), ...noSpeed] as Expr)
     setFilt('proposed', ['all', ['has', 'prop'], ...notHiddenT('type'), ...noSpeed] as Expr)
+    setFilt('construction-dash', ['all', ['!', ['has', 'prop']], ...notHiddenT('type'), ...noSpeed] as Expr)
+    setFilt('proposed-dash', ['all', ['has', 'prop'], ...notHiddenT('type'), ...noSpeed] as Expr)
     map.setLayoutProperty(L(slug, 'casing'), 'visibility', vis(!s.hidden.includes('high_speed')))
     map.setFilter(L(slug, 'casing'), ['all', ['==', get('type'), 'high_speed'], ['!', ['has', 'con']], ...noSpeed] as Expr)
     // city dots: a city shows while one of its systems (metro, tram) is not hidden; "HSR only" has no metro or tram to show
@@ -460,14 +576,13 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     for (const n of ['strand', 'strand-casing']) setFilt(n, hiddenT ? (['all', ...notHiddenT('t')] as Expr) : null, 't')
     map.setFilter(L(slug, 'lbl-lines'), hiddenT || greyOut ? (['all', ...(greyOut ? [strandActive] : []), ...notHiddenT('t')] as Expr) : null)
     map.setFilter(L(slug, 'lbl-track'), ['all', ...(greyOut ? [activeTrack] : []), ['has', 'n'], ['!', ['has', 'nl']], ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight'], ...notHiddenT('type'), ...noSpeed] as Expr)
-    // construction track is not sorted into speed bands, so hiding a band leaves it hoverable
     const hide: Expr[] = [...notHiddenT('type')]
     if (!s.freight) hide.push(['!=', get('type'), 'freight'] as Expr)
     if (greyOut) hide.push(activeTrack)  // greyed-out track cannot be hovered or selected
     const hit = (kind: Expr, extra: Expr[]) => ['all', ['!=', get('type'), 'yard'], kind, ...hide, ...extra] as Expr
     map.setFilter(L(slug, 'hit'), hit(['!', ['has', 'con']] as Expr, noSpeed))
-    map.setFilter(L(slug, 'hit-con'), hit(['all', ['has', 'con'], ['!', ['has', 'prop']]] as Expr, []))
-    map.setFilter(L(slug, 'hit-prop'), hit(['has', 'prop'] as Expr, []))
+    map.setFilter(L(slug, 'hit-con'), hit(['all', ['has', 'con'], ['!', ['has', 'prop']]] as Expr, noSpeed))
+    map.setFilter(L(slug, 'hit-prop'), hit(['has', 'prop'] as Expr, noSpeed))
     map.setLayoutProperty(L(slug, 'hit-con'), 'visibility', vis(s.construction))
     map.setLayoutProperty(L(slug, 'hit-prop'), 'visibility', vis(s.proposed))
   }

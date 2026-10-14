@@ -3,8 +3,8 @@ import * as maplibregl from 'maplibre-gl'   // MapLibre 6 is ESM-only: no defaul
 import type { GeoJSONSource, Map as MLMap, MapGeoJSONFeature } from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { addAirportIcon, addBoundary, addOutline, setOutline, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayers, prefetchHighlights, setFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
-import { loadParts, regionOf, REGIONS, TILES } from './regions'
+import { addAirportIcon, addBoundary, addPlaceLabels, setPlaceRail, addOutline, setOutline, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayers, prefetchHighlights, setFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
+import { loadParts, loadRailArea, regionOf, REGIONS, TILES } from './regions'
 
 export type Hit =
   | { kind: 'station'; slug: string; props: Record<string, string | number>; lngLat: [number, number] }
@@ -95,6 +95,8 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       map.addLayer({ id: 'selection', type: 'circle', source: 'selection',
         paint: { 'circle-radius': 15, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#1E1E1C', 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.55 } })
       addAirportIcon(map)
+      addPlaceLabels(map)
+      loadRailArea().then((a) => { if (mapRef.current === map) setPlaceRail(map, a) })   // names only where there is rail
       loaded.current = true
       applyState(map, p.current.state)
       highlightLine(map, p.current.highlightSlug, p.current.selectedLine, p.current.selectedTrackName)

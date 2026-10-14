@@ -108,6 +108,10 @@ Tile options the user wants benchmarked (items 7, 8, 11, plus 9 and the drop-ids
 
 Tried, no measurable gain (2026-10-13): `maxTileCacheSize` 200/500 (MapLibre 6.12 can only lower it; `maxTileCacheZoomLevels` is the raising knob), `cancelPendingTileRequestsWhileZooming` off plus `maxTileCacheZoomLevels` 8 (18 to 14.5, small), `renderWorldCopies: false`. `crossSourceCollisions: false` was tried and not kept: it made basemap labels overlap station labels.
 
+## Must fix: performance dropped after the themes, labels and Europe (user, 2026-10-14)
+
+The user reports the map feels slower after the dark / light themes, the rail-only place labels and the Europe countries (France, Switzerland, Italy, Germany) were added. The bench did not show it (fast zoom, 1 headless run, 6x throttle, loaded machine: 14 missed frames with the place labels, 12 without, inside the noise), so it is probably real-device cost the headless bench misses, or the Europe tile weight (see the section above), not the labels alone. To do: measure headed on the user's display (`--headed`, 120 Hz), A/B each change on its own (themes, place labels, extra landcover / landuse base layers, the `within` label filter, Europe tiles), and fix what shows. Until then, expect lower smoothness than the last commit before `c4ddee1`.
+
 ## Must fix: Europe low-zoom tile weight (user, 2026-10-13)
 
 Adding France, Switzerland and Italy (with Germany) made the zoomed-out views heavy: laptop views at z5 and z6 across Europe are 590 to 1,030 KB (France z5 936 KB, Lyon z6 1,026 KB, Switzerland z6 993 KB, Germany z6 600 KB), over the 600 KB budget, because the four countries' z0 to z8 overview tiles share the same tile addresses and `tile-join` merges them into one big tile. Every region added in the same part of the world makes it worse (Paris z5 went from 60 KB to 906 KB). Not acceptable for release; the zoom-smoothness target (fast zoom must beat trains.theojaffee.net) applies. To do, before more countries are added:

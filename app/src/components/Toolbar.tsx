@@ -4,10 +4,11 @@ import type { ColorMode } from '../mapStyle'
 import type { StatsArea } from '../data'
 import { AREA_KIND } from './AreaCard'
 import { Icon, Segmented, Toggle, type Lang } from './ui'
+import type { Theme } from '../palette'
 
 export interface Controls {
   /** the area the card shows (what the view is over); the picker names it, falling back to the pilot region */
-  area: StatsArea | null; region: Region; mode: ColorMode; hsrOnly: boolean; setHsrOnly(v: boolean): void; construction: boolean; proposed: boolean; outline: boolean; freight: boolean; units: 'km' | 'mi'; lang: Lang; setLang(l: Lang): void; inspect: boolean
+  area: StatsArea | null; region: Region; mode: ColorMode; hsrOnly: boolean; setHsrOnly(v: boolean): void; construction: boolean; proposed: boolean; outline: boolean; freight: boolean; units: 'km' | 'mi'; lang: Lang; setLang(l: Lang): void; theme: Theme; setTheme(t: Theme): void; inspect: boolean
   setRegion(slug: string): void; setMode(m: ColorMode): void; setConstruction(v: boolean): void; setProposed(v: boolean): void; setOutline(v: boolean): void; setFreight(v: boolean): void
   setUnits(u: 'km' | 'mi'): void; setInspect(v: boolean): void; openLines(): void; copyLink(): void; copied: boolean
 }
@@ -63,7 +64,8 @@ export function MoreMenu({ c }: { c: Controls }) {
             <span>Units</span>
             <Segmented label="Units" value={c.units} options={[{ value: 'km', label: 'km' }, { value: 'mi', label: 'mi' }]} onChange={c.setUnits} />
           </div>
-          <div className="row between pad">
+          <div className="row between"><span>Map</span><Segmented label="Map" value={c.theme} options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} onChange={c.setTheme} /></div>
+            <div className="row between pad">
             <span>Names</span>
             <Segmented label="Names" value={c.lang} options={[{ value: 'local', label: 'Local' }, { value: 'en', label: 'English' }]} onChange={c.setLang} />
           </div>

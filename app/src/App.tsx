@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapView, type Hit, type MapHandle, type View } from './MapView'
 import { SPEED_BANDS, SPEED_NONE, type ColorMode, type MapState } from './mapStyle'
+import type { Theme } from './palette'
 import { regionBySlug, isChina, hsMinKmh } from './regions'
 import { TYPE_ORDER } from './palette'
 import { loadBoundary, loadLineIndex, loadNamedLines, loadRailways, loadStation, railwayOf, type LineIndex, type NamedLine, type Railways } from './data'
@@ -41,6 +42,7 @@ export default function App() {
   const [freight, setFreight] = useState(init.freight)
   const [units, setUnits] = useState(init.units)
   const [lang, setLang] = useState(init.lang)
+  const [theme, setTheme] = useState<Theme>(init.theme)
   const [hidden, setHidden] = useState<string[]>(init.hidden)
   const [hiddenSpeed, setHiddenSpeed] = useState<number[]>(() => (init.hidden.includes('high_speed') ? [...new Set([...init.hiddenSpeed, 400, 350, 300, 250])] : init.hiddenSpeed))
   const [inspect, setInspect] = useState(init.inspect)
@@ -101,8 +103,8 @@ export default function App() {
     if (r) setRegionState((cur) => (cur.slug === r.slug ? cur : regionBySlug(r.slug)))
   }, [stats, viewNow])
 
-  const mapState = useMemo<MapState>(() => ({ mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang }), [mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang])
-  const sync = useCallback(() => writeHash({ region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, outline, view: view.current }), [region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, outline])
+  const mapState = useMemo<MapState>(() => ({ mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang, theme }), [mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang, theme])
+  const sync = useCallback(() => writeHash({ region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, outline, theme, view: view.current }), [region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, outline, theme])
   useEffect(sync, [sync])
 
   const setRegion = (slug: string) => {
@@ -203,7 +205,7 @@ export default function App() {
   }
 
   const controls: Controls = {
-    area: cardArea, region, mode, hsrOnly, setHsrOnly, construction, proposed, setProposed, outline, setOutline, freight, units, inspect, setInspect, lang, setLang, setRegion, setMode, setConstruction, setFreight, setUnits, copied, copyLink,
+    area: cardArea, region, mode, hsrOnly, setHsrOnly, construction, proposed, setProposed, outline, setOutline, freight, units, inspect, setInspect, lang, setLang, theme, setTheme, setRegion, setMode, setConstruction, setFreight, setUnits, copied, copyLink,
     openLines: () => { openList(); setSheetOpen(false) },
   }
 
@@ -322,6 +324,7 @@ export default function App() {
               : <Legend mode={mode} hsrOnly={hsrOnly} open setOpen={() => {}} freight={freight} index={idx} compact {...legendProps} />}
             <h3 className="eyebrow">More</h3>
             <div className="row between"><span>Units</span><Segmented<'km' | 'mi'> label="Units" value={units} onChange={setUnits} options={[{ value: 'km', label: 'km' }, { value: 'mi', label: 'mi' }]} /></div>
+            <div className="row between"><span>Map</span><Segmented<Theme> label="Map" value={theme} onChange={setTheme} options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} /></div>
             <div className="row between"><span>Names</span><Segmented<Lang> label="Names" value={lang} onChange={setLang} options={[{ value: 'local', label: 'Local' }, { value: 'en', label: 'English' }]} /></div>
             <Toggle on={inspect} onChange={(v) => { setInspect(v); setSheetOpen(false) }}>Inspect OSM tags<span className="muted sm"> taps show raw tags</span></Toggle>
             <button type="button" className="btn wide" onClick={copyLink}>{copied ? Icon.check : Icon.link}{copied ? 'Link copied' : 'Copy link to this view'}</button>
