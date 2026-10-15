@@ -14,6 +14,7 @@ A static web map of passenger rail built from OpenStreetMap, made for comparing 
 | `docs/05-pilot-plan.md` | Pilot regions and phases 0 to 5, each with a "Done when" test |
 | `docs/06-open-questions.md` | What is still undecided, and what is parked |
 | `docs/07-freight-detection.md` | How freight is told from passenger track in OSM: the research, the ordered rules, the settings, the known failures |
+| `docs/09-performance-playbook.md` | What made the map fast (MLT writer, glyphs, feature state, hover), what did not, how to benchmark, and the open problems (glyph download size, duplicate range requests) |
 | `docs/reference/research-summary.md` | Key measurements from the original research (tile sizes, build times, OSM coverage) |
 
 ## How to work
@@ -28,7 +29,7 @@ A static web map of passenger rail built from OpenStreetMap, made for comparing 
 
 ## Stack (summary)
 
-- Pipeline: Rust extractor (`pipeline/rail-extract`: planet -> world rail cache -> region cuts, including rail type classification; `build`: station model, tile input, side files), tippecanoe, PMTiles
+- Pipeline: Rust extractor (`pipeline/rail-extract`: planet -> world rail cache -> region cuts, including rail type classification; `build`: station model, tile input, side files, MLT tiles through the Rust writer `tilewriter.rs`), PMTiles; no tippecanoe
 - App: Vite + React + TypeScript, MapLibre GL JS, OpenFreeMap basemap restyled minimal
 - Hosting: Cloudflare R2 for tiles (`r2.dev` during the pilot), static host for the app
 

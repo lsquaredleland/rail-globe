@@ -22,7 +22,7 @@ What the filter keeps from the OSM planet, and what it drops. v3 (2026-10-11) ap
 ## Source and processing
 
 - Source: OpenStreetMap planet extract filtered to railway-related objects
-- Output 1: GeoJSON features, intended for conversion to vector tiles (tippecanoe, then PMTiles)
+- Output 1: GeoJSON features, converted to MapLibre Tiles (MLT) in a PMTiles file by the Rust tile writer (`pipeline/rail-extract/src/tilewriter.rs`); no tippecanoe, no MVT
 - Output 2 (New): relations side table, JSONL, used at build time and for side files, never tiled
 - Output 3 (New): stop positions, JSONL, used at build time only
 - Every feature keeps its OSM type and id as `osm_id` (New)

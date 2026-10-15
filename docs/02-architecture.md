@@ -9,7 +9,7 @@ A static site. An offline build turns OSM into one PMTiles file plus small JSON 
 | Source | OSM planet, read once into a world rail cache (Rust, `pipeline/rail-extract`) | About 1 minute per planet |
 | Filter and export | Rust: each region cut from the cache by its outline (countries and provinces / states from the planet's admin boundaries, or hand-made) | Exactly as `03-data-spec.md` says; under a second per region, all of China included |
 | Processing | Python + shapely | PostGIS at build time only if corridor work needs it (phase 5) |
-| Tiles | tippecanoe → PMTiles | One run: merged track overview (z0–8, `--coalesce`) and full detail (z9–14) in the same layers |
+| Tiles | Rust writer (`tilewriter.rs`: geojson-vt-rs slicing, `mlt-core` encoding) → MLT in PMTiles | One run: merged track overview (z0–8, consecutive and end-to-start pieces joined) and full detail (z9–14) in the same layers. MLT only, no MVT, no tippecanoe |
 | Hosting | Cloudflare R2 for tiles, a static host for the app | `r2.dev` for the pilot; custom domain at public launch |
 | Map | MapLibre GL JS | |
 | Basemap | OpenFreeMap, restyled minimal | See `01-features.md` |
@@ -51,14 +51,14 @@ URL state uses these, e.g. `#compare=sf-bay-area,paris&color=type`.
 4. **Build stations** with the station model.
 5. **Build lines**: join each route's member ways into one feature per line.
 6. **Compute region stats** for each preset.
-7. **Tile** with tippecanoe and write side files.
+7. **Tile** with the Rust MLT writer (`rail-extract build`, reading each region's `tiles_tmp`) and write side files.
 8. **Publish** to R2 and the static host.
 
 Also: a QA report per region per build (broken route relations, orphan stations, stops that map to no station), plus a diff against the previous build.
 
 ## Tile layers
 
-The app reads one tile source, `pilot` (`pilot.pmtiles`). Per-region PMTiles files are its input: `rail-extract build` joins them with `tile-join` and writes each part's bounds to `pilot.parts.json`. Tiles carry no region field, so the app finds a feature's region from its position (the part whose bounds hold it) to pick side files. See `00-overview.md`, 2026-10-13.
+The app reads one tile source, `pilot` (`pilot.pmtiles`). `rail-extract build` runs the tile writer once over the pilot sources' tile input (`tiles_tmp`) for `pilot.pmtiles` (the pilot sources get no PMTiles of their own; nothing reads one), and writes each part's outline bounds to `pilot.parts.json`. `--combined` writes `<name>.pmtiles` and `<name>.parts.json` the same way (`americas.pmtiles` was built that way, but the app does not draw it). Tiles carry no region field, so the app finds a feature's region from its position to pick side files: bounds may overlap, so the region is the part whose outline holds the point (`partAt` in `regions.ts`). See `00-overview.md`, 2026-10-13.
 
 | Layer | Geometry | Zooms | Key attributes |
 | --- | --- | --- | --- |

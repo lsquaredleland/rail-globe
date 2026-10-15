@@ -15,7 +15,7 @@ Map data © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/cop
 | Path | What it is |
 | --- | --- |
 | `app/` | Vite + React + TypeScript app, MapLibre GL JS 6, PMTiles |
-| `pipeline/` | Rust extractor (`rail-extract`: planet to rail cache to region cuts, classification, station model, tile input), tippecanoe, config per region. See `pipeline/README.md` |
+| `pipeline/` | Rust extractor (`rail-extract`: planet to rail cache to region cuts, classification, station model, tile input, MLT tile writer), config per region. See `pipeline/README.md` |
 | `docs/` | Spec: overview and decisions, features, architecture, data spec, station model, pilot plan, open questions |
 | `CLAUDE.md` | Working rules for this repo |
 
@@ -23,7 +23,7 @@ Map data © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/cop
 
 ## Run it
 
-Needs Node 20+, Rust, Python 3 (shapely, numpy) and [tippecanoe](https://github.com/felt/tippecanoe).
+Needs Node 20+, Rust and Python 3 (shapely, numpy). No tippecanoe: tiles are written by the Rust extractor.
 
 ```
 # 1. Build the data (not committed: *.osm.pbf, data/ and app/public/data/ are git-ignored)
@@ -31,11 +31,14 @@ cd pipeline/rail-extract && cargo build --release && cd ..
 rail-extract/target/release/rail-extract cache --planet ../planet-260928.osm.pbf
 rail-extract/target/release/rail-extract cut sf-bay-area paris china --build
 
-# 2. Run the app
+# 2. Generate the label glyphs (git-ignored; without them every map label fails)
+(cd glyphs && npm install && node build-glyphs.mjs)
+
+# 3. Run the app
 cd ../app && npm install && npm run dev
 ```
 
-The app reads tiles and side files from its own `public/data/`, or from `VITE_DATA_BASE` (for example an R2 bucket) when set; see `app/.env.example`. `npm run build` type-checks and builds for a static host. Details, timings and the other pipeline commands are in `pipeline/README.md`.
+The app reads tiles and side files from its own `public/data/`, or from `VITE_DATA_BASE` (for example an R2 bucket) when set; see `app/.env.example`. `npm run build` type-checks and builds for a static host. The map's label glyphs come from `app/public/glyphs/`, which must be generated (step 2, `pipeline/glyphs`, see `pipeline/README.md`) before `npm run dev` or `npm run build`; it reads `pilot.pmtiles`, so build the data first. Details, timings and the other pipeline commands are in `pipeline/README.md`.
 
 ## Status
 

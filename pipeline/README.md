@@ -1,6 +1,6 @@
 # Pipeline
 
-Run from `pipeline/`. Needs Rust 1.99 (extraction), Python 3 with shapely and numpy, and tippecanoe.
+Run from `pipeline/`. Needs Rust 1.99 (extraction and MLT tiles) and Python 3 with shapely and numpy. No tippecanoe or tile-join.
 Timings below were measured on 2026-10-12 (14-core Mac, planet-260928).
 
 ```
@@ -14,14 +14,23 @@ rail-extract/target/release/rail-extract cut sf-bay-area paris chengdu greater-b
 #                          features.typed.geojsonl, lines.json, classify_report.json}
 #   rail type rules: rail-extract/src/classify.rs (ported from classify.py 2026-10-12, same output byte for byte)
 rail-extract/target/release/rail-extract build sf-bay-area paris china
-#   per region, in parallel: station model (stations, complexes, size tiers), stations under construction, tile input,
-#   tippecanoe and side files into ../app/public/data (was stations.py, con_stations.py, build_tiles.py; ported 2026-10-13)
-#   China: 11.9 s before tippecanoe (station model 6.4 s), tippecanoe 28.5 s
+#   per region, in parallel: station model (stations, complexes, size tiers), stations under construction, tile input and side files
+#   into ../app/public/data; then the Rust MLT tile writer (tilewriter.rs) for each region in turn -> <slug>.pmtiles (it holds a whole region in memory); skipped for the pilot sources when the pilot join runs (the app reads only pilot.pmtiles)
+#   timings 2026-10-14 (earlier run, per-region files plus the pilot join): sf-bay-area, paris, china, de, fr, ch, it together 40.4 s wall, 14.1 GB peak RSS; in the orig-vs-mlt benchmark (pilot file only) the same seven slugs took 27.4 s. Tile step per region (earlier single runs): SF 0.1 s, Paris 0.3 s,
+#   China 4.3 s (133.3 MB, 5.3 GB; 4.1 s median of 3 runs in the benchmark, 4.9 s in another single run), Germany 3.8 s, France 2.4 s, Switzerland 0.6 s, Italy 1.0 s. (tippecanoe took China 28 to 37 s)
 #   construction and proposed track is also written merged end to end as the draw-only layer `con_draw` (tiles.rs, z3 and up, no yard track): the app's dashes. Upload tiles before deploying the app: it has no fallback, so old tiles show no construction
-#   whenever tiles are built and any of sf-bay-area, paris, china is among the regions, `tile-join -pk` merges the per-region PMTiles already in ../app/public/data
-#   into pilot.pmtiles (19 s, 161.3 MB, same bytes per view), so a partial rebuild (e.g. only paris) refreshes the join; a missing region file is warned about and the join skipped.
-#   It also writes pilot.parts.json (each file's slug and bounds, read from its PMTiles header) and fails if two bounds overlap. Both are written to a temporary file and renamed.
-#   The app draws all rail from pilot.pmtiles (one set of ~46 style layers instead of 3 x 50) and learns the parts from pilot.parts.json; the per-region .pmtiles are kept as join input
+#   the tile input is tiles_tmp/*.geojsonl; each line's "zoom":{minzoom,maxzoom} member is the feature's zoom range (read by tilewriter.rs)
+#   whenever tiles are built and any of sf-bay-area, china, de, fr, ch, it is among the regions, one tile writer run over those six sources' tiles_tmp writes pilot.pmtiles (12.7 s; 298.8 MB now, 310.5 MB with FastPFOR and FSST on),
+#   so a partial rebuild refreshes the pilot; a source with no tile input is warned about and the join skipped. It also writes pilot.parts.json (each source's slug and its outline's bounds;
+#   bounds of neighbouring countries overlap, so they are not checked). Both are written to a temporary file and renamed.
+#   The app draws all rail from pilot.pmtiles (one set of ~46 style layers instead of 3 x 50) and learns the parts from pilot.parts.json
+rail-extract/target/release/rail-extract build ch it fr --combined europe-test
+#   combined build: per-slug work without tiles, then ONE tile writer run over every slug's tiles_tmp -> ../app/public/data/europe-test.pmtiles
+#   plus europe-test.parts.json (slug and outline bounds). Does not write per-region .pmtiles or touch pilot.pmtiles
+#   TIMING ONLY, not reproducible from a fresh clone (the Americas configs pipeline/config/{ar,...,ve}.json are not committed; the Americas rule work was reverted, docs/00-overview.md 2026-10-15): 27 American countries (ar bb bo br ca cl co cr cu do ec gt hn ht jm kn mx ni pa pe py sv tc tt us uy ve --combined americas): 15.3 s wall, 11.4 GB peak, 207.9 MB
+#   (tile writer 7.9 s; tippecanoe took 276 s, 222 MB)
+rail-extract/target/release/rail-extract tiles ch it --name x --out ../data/tiles
+#   the tile writer alone over existing tiles_tmp (no station model, no side files); slices one region at a time, so do not run several in parallel
 rail-extract/target/release/rail-extract build greater-bay-area chengdu cn-beijing --no-tiles
 #   side files only: the app draws these regions from China's tiles (0.5 s for all three)
 #   also writes ../app/public/data/<slug>/stats.json (region card); areas inside a region: "stat_areas" (a list) or "stat_auto" (all provinces and cities of a country) in config/<slug>.json;
@@ -32,8 +41,14 @@ python3 measure_views.py                         # compressed tile bytes per vie
 python3 top.py <slug> [n]                        # dev helper: biggest stations
 ```
 
+Map glyphs (label fonts; the app draws every label from its own files, not OpenFreeMap's font server). `app/public/glyphs/` is git-ignored and must be generated before `npm run dev` or `npm run build`, or every label fails to load (the app logs 'glyphs missing' to the console). Run it once on a fresh clone and after any rebuild that changes names:
+```
+cd glyphs && npm install && node build-glyphs.mjs    # 45 s; writes ../../app/public/glyphs/<fontstack>/<start>-<end>.pbf
+```
+It collects the code points of the label properties (`n`, `ne`, `lb`, `lbe`) of every tile of `pilot.pmtiles` (and `americas.pmtiles` if present) plus `places.json` (3,288 on 2026-10-15), and writes only those, as 256-code-point SDF ranges, for the two stacks the style uses (`Noto Sans Regular`, `Noto Sans Bold`): 138 files each, 2.4 MB per stack (1.6 MB gzipped), 4.9 MB in all (2.4 + 2.5). Fonts, in priority order per code point: Noto Sans (Latin, Greek, Cyrillic), Noto Sans CJK SC (Han, kana, hangul, CJK punctuation: one Simplified Chinese design draws every Han character, so Traditional names from Hong Kong use the same shapes), then, for the 131 code points neither has (Arabic, Lao, Tibetan, Mongolian), the OpenFreeMap glyph server's Noto Sans, which is what the map drew them with before (no shaping either way). 35 code points (Canadian syllabics, Tai Le, Yi) and 2 above U+FFFF are in no source and draw blank, as before. The fonts (SIL Open Font License 1.1, Noto Project Authors) are downloaded from github.com/notofonts into `glyphs/fonts/` (git-ignored, sha256 pinned in the script). `app/public/glyphs/` is git-ignored like the data: deploy it with the app. Dev-only dependencies: fontnik, pbf, pmtiles, @maplibre/mlt, esbuild.
+
 All six regions, cut to tiles: 42 s (2026-10-13, quiet machine: cut 1.1 s, tiled builds 40.9 s, side-file builds 0.5 s).
-With the Python steps it was 106 s. Rust, without tippecanoe, per region:
+With the Python steps it was 106 s. Rust, without tippecanoe, per region (these exclude the tile step):
 
 | Region | Python (stations + con_stations + build_tiles) | Rust build |
 | --- | --- | --- |
@@ -43,6 +58,8 @@ With the Python steps it was 106 s. Rust, without tippecanoe, per region:
 | Greater Bay Area | 2.3 s | 0.45 s |
 | Beijing | 1.09 s | 0.24 s |
 | China | 45.5 s | 11.1 s |
+
+History, tippecanoe era (everything below up to the Python timings used tippecanoe and `tile-join`, both removed 2026-10-14; the tippecanoe and `tile-join` figures are no longer reproducible with this code).
 
 Germany (`de`, whole country, added 2026-10-13): cut 7.4 s (335,680 features), build 47.4 s (station model 3.5 s, tile input 9.2 s, tippecanoe 32.5 s -> 92.8 MB), side files 139 MB (app/public/data/de).
 `tile-join` of all four sources: 20 to 28 s, pilot.pmtiles 163 MB -> 256 MB. Joining lifts Paris's z4 and z5 view from 13 and 60 KB to 146 and 501 KB, because Germany's low-zoom tiles share those tiles.
