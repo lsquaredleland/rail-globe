@@ -34,8 +34,8 @@ export const regionBySlug = (s: string) => REGIONS.find((r) => r.slug === s) ?? 
 export const TILES = 'pilot'
 type Part = { slug: string; bounds: [number, number, number, number] }
 let parts: Part[] = []
-/** The per-region tile files that were joined, with their data bounds (PMTiles headers), from pilot.parts.json (written by the join in
- *  rail-extract). Await once at startup before `partAt` / `regionOf`. They do not overlap. Tiles carry no region field, so a
+/** The per-region sources that were joined, with their outline bounds, from pilot.parts.json (written by the join in
+ *  rail-extract). Await once at startup before `partAt` / `regionOf`. Bounds may overlap (see `partAt`). Tiles carry no region field, so a
  *  feature's region (its side files: tags, lines, stations, highlights) is found from where it lies. */
 export async function loadParts() {
   const r = await fetch(`${DATA_BASE}${TILES}.parts.json`)
@@ -56,7 +56,7 @@ const inRing = (ring: number[][], x: number, y: number) => {
   }
   return inside
 }
-/** the joined file a point (lon, lat) belongs to: the part whose outline holds it (bounds first, outlines where they overlap), else the nearest */
+/** the joined file a point (lon, lat) belongs to. Part bounds come from the outlines and may overlap (neighbouring countries), so this resolves by outline: the part whose outline holds the point, else the nearest bounds */
 export function partAt([lng, lat]: [number, number]): string {
   const d = (b: number[]) => Math.hypot(Math.max(b[0] - lng, 0, lng - b[2]), Math.max(b[1] - lat, 0, lat - b[3]))
   const near = parts.filter((p) => d(p.bounds) === 0)

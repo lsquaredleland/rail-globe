@@ -1,4 +1,4 @@
-//! `rail-extract build <slug>`: the station model, stations under construction, tile input, tippecanoe and side files for one
+//! `rail-extract build <slug>`: the station model, stations under construction, tile input and side files for one
 //! region, from the cut's files in data/<slug>/ (was stations.py, con_stations.py and build_tiles.py). Writes the same files.
 
 use crate::pyjson::{self, COMPACT, SPACED};
@@ -90,7 +90,7 @@ pub struct Paths {
 }
 
 /// Build one region; returns its log lines.
-pub fn build(slug: &str, paths: &Paths, tiles_on: bool) -> Vec<String> {
+pub fn build(slug: &str, paths: &Paths) -> Vec<String> {
     let t0 = Instant::now();
     let mut log = Vec::new();
     let lap = |log: &mut Vec<String>, t: &mut Instant, what: String| {
@@ -112,19 +112,13 @@ pub fn build(slug: &str, paths: &Paths, tiles_on: bool) -> Vec<String> {
     write_lines(&dir.join("complexes.geojsonl"), &st.complexes);
     lap(&mut log, &mut t, format!("under construction: {con}"));
 
-    let prep = tiles::run(slug, &inp, &mut st.stations, &mut st.complexes, &st.route_order, &dir, &paths.out, &paths.regions, tiles_on);
+    let prep = tiles::run(slug, &inp, &mut st.stations, &mut st.complexes, &st.route_order, &dir, &paths.out, &paths.regions);
     lap(&mut log, &mut t, "tile input and side files written".to_string());
     // after the tiles: they turn stations that are only being built into construction stations, which the card counts that way
     write_lines(&dir.join("stations.geojsonl"), &st.stations);
     write_lines(&dir.join("complexes.geojsonl"), &st.complexes);
     let summary = stats::run(slug, &inp, &st.stations, &paths.regions, &paths.out);
     lap(&mut log, &mut t, format!("region statistics: {summary}"));
-    if let Some(mut child) = prep.tippecanoe {
-        let ok = child.wait().map_or(false, |s| s.success());
-        assert!(ok, "tippecanoe failed for {slug}");
-        let mb = fs::metadata(&prep.pmtiles).map_or(0.0, |m| m.len() as f64 / 1e6);
-        lap(&mut log, &mut t, format!("tippecanoe finished (waited): {mb:.2} MB"));
-    }
     log.push(format!("  {}", prep.summary));
     log.push(format!("  {:6.2}s  total", t0.elapsed().as_secs_f64()));
     log

@@ -12,3 +12,7 @@ export const STATION_ZOOM: Record<1 | 2 | 3, { dot: number; label: number }> = {
  *  else the app's own data/ folder (dev server, local preview). Always ends in a slash. */
 const envBase = import.meta.env.VITE_DATA_BASE as string | undefined
 export const DATA_BASE = envBase ? envBase.replace(/\/?$/, '/') : new URL('data/', document.baseURI).href
+
+/** Map label glyphs (SDF fonts, only the characters the map can draw): the app's own glyphs/ folder, written by pipeline/glyphs. MapLibre
+ *  wants an absolute URL with its {fontstack} and {range} placeholders left as they are. */
+export const GLYPHS_URL = `${new URL('glyphs/', document.baseURI).href}{fontstack}/{range}.pbf`

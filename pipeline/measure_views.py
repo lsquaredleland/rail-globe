@@ -1,5 +1,5 @@
 """Phase 3 budget check: compressed PMTiles bytes needed to draw one view (docs: under 600 KB per view).
-Usage: python3 measure_views.py   (reads ../app/public/data/*.pmtiles; TILES=pilot reads every view from that one file)
+Usage: python3 measure_views.py   (reads ../app/public/data/<slug>.pmtiles per view; use TILES=pilot to read every view from pilot.pmtiles, the file the app draws from: `build` no longer writes per-region files for the pilot sources)
 A view = one screen; MapLibre uses 512 px tiles and loads tile zoom floor(map zoom)."""
 import math
 import os

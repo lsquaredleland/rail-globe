@@ -21,8 +21,8 @@ export interface LineRecord {
   hl?: Highlight
 }
 
-/** What a line or named railway is drawn with when highlighted: its track pieces' ids (feature state, z8 and closer) and a
- *  simplified geometry (the merged overview below z8 has no per-piece ids). Written by pipeline/rail-extract/src/tiles.rs. */
+/** What a line or named railway is drawn with when highlighted: its track pieces' ids (a layer filter on the track layer, z9 and closer) and a
+ *  simplified geometry (the merged overview below z9 has no per-piece ids). Written by pipeline/rail-extract/src/tiles.rs. */
 export interface Highlight { ways: string[]; geom: GeoJSON.MultiLineString | null; type: RailType; oc?: string }
 
 export interface NamedLine { n: string; ne?: string | null; t: RailType; km: number; ways: number; bbox: [number, number, number, number] }

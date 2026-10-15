@@ -42,6 +42,57 @@ interface Props {
 }
 
 let protocolAdded = false
+
+/** pmtiles protocol handler that fetches each tile once, however many sources ask: `pilot` and its highlight source `pilot:hls`
+ *  read the same PMTiles URL, and pmtiles itself caches directories but not tile bytes, so every byte range went out twice.
+ *  Requests in flight are shared (aborted only when every asker has given up) and finished tiles stay in a small LRU. Every
+ *  caller gets its own copy: MapLibre may transfer the buffer to a worker, which would detach a shared one. */
+type TileResult = Awaited<ReturnType<Protocol['tilev4']>>
+function dedupedPmtiles(proto: Protocol) {
+  const inflight = new Map<string, { promise: Promise<TileResult>; ac: AbortController; refs: number }>()
+  const done = new Map<string, TileResult>()   // insertion order = age
+  let doneBytes = 0
+  const MAX_BYTES = 32 << 20
+  const size = (r: TileResult) => (r.data instanceof Uint8Array ? r.data.byteLength : 0) + 128   // +128: an empty (missing) tile still costs its entry, so it can be evicted
+  const copy = (r: TileResult): TileResult => (r.data instanceof Uint8Array ? { ...r, data: r.data.slice() } : r)
+  return async (params: { url: string; type?: string }, abortController: AbortController): Promise<TileResult> => {
+    if (params.type === 'json') return proto.tilev4(params as never, abortController)
+    abortController.signal.throwIfAborted()   // already given up: do not start or join a request
+    const key = params.url
+    const hit = done.get(key)
+    if (hit) { done.delete(key); done.set(key, hit); return copy(hit) }
+    let e = inflight.get(key)
+    if (!e) {
+      const ac = new AbortController()
+      const promise = proto.tilev4(params as never, ac) as Promise<TileResult>
+      e = { promise, ac, refs: 0 }
+      inflight.set(key, e)
+      const entry = e
+      promise.then((r) => {
+        if (inflight.get(key) === entry) inflight.delete(key)
+        const n = size(r)
+        done.set(key, r)
+        doneBytes += n
+        for (const [k, v] of done) {
+          if (doneBytes <= MAX_BYTES) break
+          done.delete(k)
+          doneBytes -= size(v)
+        }
+      }, () => { if (inflight.get(key) === entry) inflight.delete(key) })
+    }
+    const entry = e
+    entry.refs++
+    const onAbort = () => { if (--entry.refs === 0) { if (inflight.get(key) === entry) inflight.delete(key); entry.ac.abort() } }
+    abortController.signal.addEventListener('abort', onAbort, { once: true })
+    try {
+      const r = await entry.promise
+      abortController.signal.throwIfAborted()
+      return copy(r)
+    } finally {
+      abortController.signal.removeEventListener('abort', onAbort)
+    }
+  }
+}
 // MapLibre 6 keeps its tile worker in two module files next to the library, which a bundler (and Vite's dependency cache) does
 // not carry along: production uses the copies vite.config.ts emits, dev the files in node_modules
 maplibregl.setWorkerUrl(new URL(import.meta.env.PROD ? 'maplibre/maplibre-gl-worker.mjs' : 'node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs', document.baseURI).href)
@@ -70,12 +121,13 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
 
   useEffect(() => {
     if (!protocolAdded) {
-      maplibregl.addProtocol('pmtiles', new Protocol().tile)
+      maplibregl.addProtocol('pmtiles', dedupedPmtiles(new Protocol()) as Parameters<typeof maplibregl.addProtocol>[1])
       protocolAdded = true
     }
     const map = new maplibregl.Map({
       container: el.current!, style: baseStyle(), center: p.current.initial.center, zoom: p.current.initial.zoom,
       minZoom: 2, maxZoom: 17, attributionControl: false, dragRotate: false, pitchWithRotate: false, maxPitch: 0,
+      localIdeographFontFamily: false,   // CJK from our own subset glyph files (public/glyphs): drawing them locally on a canvas hitched the first zoom
       fadeDuration: 100,   // 0 makes MapLibre redo full label placement every frame (never paused); any fade keeps it time-sliced
     })
     mapRef.current = map

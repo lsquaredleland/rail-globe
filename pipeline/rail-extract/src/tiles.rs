@@ -1,5 +1,5 @@
-//! Tile input and side files, ported from pipeline/build_tiles.py: the GeoJSON layers tippecanoe turns into the region's PMTiles
-//! (run here, in the background while the side files are written) and the JSON side files the app loads on demand.
+//! Tile input and side files, ported from pipeline/build_tiles.py: the GeoJSON layers the Rust tile writer (tilewriter.rs) turns into MLT PMTiles
+//! (tile input only; main.rs runs the writer afterwards) and the JSON side files the app loads on demand.
 //! Layers (docs/02-architecture.md): track (with the merged zoomed-out overview), lines (one strand per line per way), areas,
 //! buildings, platforms, stations, complexes, airports, airport_pts. Tiles include each class one zoom before the style shows it.
 
@@ -16,7 +16,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
-use std::process::{Child, Command};
 
 const TYPE_ORDER: [&str; 8] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "other"];
 // Zoomed out (tile zooms 0..OVERVIEW_MAXZOOM) the track layer holds a merged overview instead of every piece (docs/00-overview.md)
@@ -114,14 +113,14 @@ fn safe(i: &str) -> String {
     i.replace('/', "-")
 }
 
-/// one tippecanoe input line: {"type":"Feature","properties":...,"geometry":...,"tippecanoe":{...}}
+/// one tile input line: {"type":"Feature","properties":...,"geometry":...,"zoom":{"minzoom":..,"maxzoom":..}} ("zoom" is read by tilewriter.rs)
 fn feat(out: &mut String, props: &Map<String, Value>, geom: &str, minzoom: Option<i64>, maxzoom: Option<i64>) {
     out.push_str("{\"type\":\"Feature\",\"properties\":");
     pyjson::write_map(out, props, COMPACT);
     out.push_str(",\"geometry\":");
     out.push_str(geom);
     if minzoom.is_some() || maxzoom.is_some() {
-        out.push_str(",\"tippecanoe\":{");
+        out.push_str(",\"zoom\":{");
         if let Some(z) = minzoom {
             out.push_str(&format!("\"minzoom\":{z}"));
         }
@@ -229,9 +228,13 @@ fn geojson_value(g: &Geometry<f64>) -> Value {
     }
 }
 
+/// the tile layers of one region: (tile layer, file in tiles_tmp), in stacking order (the overview is the first "track" file)
+pub const TILE_LAYERS: [(&str, &str); 12] = [("track", "track_overview.geojsonl"), ("track", "track.geojsonl"), ("con_draw", "con_draw.geojsonl"),
+    ("lines", "lines.geojsonl"), ("areas", "areas.geojsonl"), ("buildings", "buildings.geojsonl"), ("platforms", "platforms.geojsonl"),
+    ("stations", "stations.geojsonl"), ("complexes", "complexes.geojsonl"), ("airports", "airports.geojsonl"),
+    ("airport_pts", "airport_pts.geojsonl"), ("cities", "cities.geojsonl")];
+
 pub struct Prepared {
-    pub tippecanoe: Option<Child>,
-    pub pmtiles: std::path::PathBuf,
     pub summary: String,
 }
 
@@ -336,10 +339,10 @@ fn city_dots(samples: &[(f64, f64, f64, u8)]) -> String {
     out
 }
 
-/// Writes tippecanoe's input and starts it (unless `tiles` is false), then writes the side files. `stations` and `complexes`
+/// Writes the tile input (tiles_tmp), then the side files; the caller runs the tile writer afterwards. `stations` and `complexes`
 /// are the station model's features, construction stations appended.
 pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Value], route_order: &Map<String, Value>, data: &Path, out: &Path,
-    regions_dirs: &[std::path::PathBuf], tiles: bool) -> Prepared {
+    regions_dirs: &[std::path::PathBuf]) -> Prepared {
     let tmp = data.join("tiles_tmp");
     let side = out.join(slug);
     for d in [&tmp, &side.join("lines"), &side.join("stations"), &side.join("tags"), &side.join("name-hl")] {
@@ -789,35 +792,17 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
     // ------------------------------------------------------------ city dots: where metro and tram systems are, visible from far out
     let cities_text = city_dots(&city_track);
 
-    // ------------------------------------------------------------ tippecanoe: every layer in one run, the overview coalesced
+    // ------------------------------------------------------------ tile input: every layer, the overview first
     overview.sort_by(|a, b| a.0.cmp(&b.0));
     let mut ov_text = String::new();
     for (_, props, geom, mz, xz) in &overview {
         feat(&mut ov_text, props, geom, Some(*mz), Some(*xz));
     }
-    let layers: [(&str, &String); 12] = [("track", &ov_text), ("track", &track), ("con_draw", &con_draw), ("lines", &strands), ("areas", &areas), ("buildings", &buildings),
-        ("platforms", &plats), ("stations", &st_rows), ("complexes", &cx_rows), ("airports", &airports), ("airport_pts", &airport_pts), ("cities", &cities_text)];
-    let mut args: Vec<String> = Vec::new();
-    for (k, (name, text)) in layers.iter().enumerate() {
-        let file = tmp.join(if k == 0 { "track_overview.geojsonl".to_string() } else { format!("{name}.geojsonl") });
+    let texts: [&String; 12] = [&ov_text, &track, &con_draw, &strands, &areas, &buildings, &plats, &st_rows, &cx_rows, &airports, &airport_pts, &cities_text];
+    for ((_, file), text) in TILE_LAYERS.iter().zip(texts) {
+        let file = tmp.join(file);
         fs::File::create(&file).and_then(|mut w| w.write_all(text.as_bytes())).unwrap_or_else(|e| panic!("write {}: {e}", file.display()));
-        args.push("-L".into());
-        args.push(format!("{name}:{}", file.display()));
     }
-    let pm = out.join(format!("{slug}.pmtiles"));
-    // --coalesce merges consecutive features with equal attributes (overview pieces, identical neighbouring strands, and the
-    // con_draw lines of one group, which are written consecutively: tippecanoe joins them into multi-lines per tile, harmless for
-    // drawing); --preserve-input-order keeps every layer in the order written here
-    let child = if tiles {
-        Some(Command::new("tippecanoe")
-            .args(["-o", &pm.to_string_lossy(), "-f", "-Z0", "-z14", "--no-tile-size-limit", "--no-feature-limit", "--drop-rate=0", "--simplification=2",
-                "--coalesce", "--preserve-input-order", "--read-parallel", "-q"])
-            .args(&args)
-            .spawn()
-            .expect("start tippecanoe (is it installed?)"))
-    } else {
-        None
-    };
 
     // ------------------------------------------------------------ side files
     let mut idx = Map::new();
@@ -960,8 +945,6 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
         }
     }
     Prepared {
-        tippecanoe: child,
-        pmtiles: pm,
         summary: format!(
             "{slug}: track={n_track}, lines={n_strands}, areas={n_areas}, buildings={n_bld}, platforms={n_plats}, stations={}, complexes={}, airports={n_air}, airport_pts={n_air_pts}; track overview z0-{OVERVIEW_MAXZOOM}: {} pieces; side files {} stations, {} lines, {n_named} named railway lines",
             stations.len(), complexes.len(), overview.len(), stations.len(), lines.len()

@@ -1,5 +1,5 @@
 import type { ExpressionSpecification, GeoJSONSource, LayerSpecification, Map as MLMap, StyleSpecification } from 'maplibre-gl'
-import { STATION_ZOOM } from './config'
+import { STATION_ZOOM, GLYPHS_URL } from './config'
 import { FILL, INK, THEME_COLORS, TYPE_COLOR, TYPE_WIDTH, TYPE_ORDER, type RailType, type Theme } from './palette'
 import { regionOf, TILES } from './regions'
 import { boundaryUrl, loadLineHighlight, loadNameHighlight, pmtilesUrl, type Highlight } from './data'
@@ -122,7 +122,7 @@ const L = (slug: string, name: string) => `${slug}:${name}`
 export function baseStyle(): StyleSpecification {
   return {
     version: 8,
-    glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+    glyphs: GLYPHS_URL,
     sources: { ofm: { type: 'vector', url: OFM, attribution: '' } },
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': FILL.land } },
@@ -255,8 +255,8 @@ export function applyTheme(map: MLMap, theme: Theme, slug: string = TILES) {
 
 /** All rail layers of the tile source `source` (TILES), stacked in drawing order; ids are `<source>:<name>`. */
 export function addRailSource(map: MLMap, source: string) {
-  // a track piece's OSM id ("way/123") is its feature id, so a highlighted line can be flagged with feature state
-  map.addSource(source, { type: 'vector', url: pmtilesUrl(source), attribution: ATTRIBUTION, promoteId: { track: 'id' } })
+  // our PMTiles are MLT (written by rail-extract); MapLibre does not detect the format, so say so here
+  map.addSource(source, { type: 'vector', url: pmtilesUrl(source), encoding: 'mlt', attribution: ATTRIBUTION })
   const add = (l: Record<string, unknown>): void => { map.addLayer(l as unknown as LayerSpecification) }
   const src = { source } as const
 
@@ -333,10 +333,14 @@ export function addRailSource(map: MLMap, source: string) {
     8, ['+', ['*', byType((t) => TYPE_WIDTH[t][0]), 1.8], 2], 12, ['+', ['*', byType((t) => TYPE_WIDTH[t][1]), 1.8], 2.5],
     15, ['+', ['*', byType((t) => TYPE_WIDTH[t][2]), 1.8], 3]] as Expr
   // The highlight layers come after the casing, so no twin is needed; high-speed sorts last within each.
-  // z9 and closer: the track pieces flagged with feature state by highlightLine (no tile reload, no copying geometry)
-  hlLayer({ id: L(source, 'hl-fs'), type: 'line', ...src, 'source-layer': 'track', minzoom: 9,
+  // z9 and closer: the track pieces whose `id` property ("way/123") is in the filter set by highlightLine. No feature state:
+  // MapLibre decodes every loaded MLT tile on the main thread as soon as a source has any feature state.
+  // Own source (same PMTiles, z9 and closer only): a filter change reloads every tile of the layer's source, and on the main
+  // source that drops each tile's decoded copy, which MLT then decodes again whole on the next hover query.
+  map.addSource(L(source, 'hls'), { type: 'vector', url: pmtilesUrl(source), encoding: 'mlt', minzoom: 9 })
+  hlLayer({ id: L(source, 'hl-fs'), type: 'line', source: L(source, 'hls'), 'source-layer': 'track', minzoom: 9,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': typeColor, 'line-width': hlW, 'line-opacity': ['case', ['boolean', ['feature-state', 'hl'], false], 1, 0] } })
+    filter: HL_NONE, paint: { 'line-color': typeColor, 'line-width': hlW } })
   // below z9 the merged overview has no per-piece ids: the line's simplified geometry from its side file
   map.addSource(L(source, 'hl'), { type: 'geojson', data: EMPTY })
   hlLayer({ id: L(source, 'hl'), type: 'line', source: L(source, 'hl'), maxzoom: 9,
@@ -567,23 +571,22 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
 }
 
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
+const HL_NONE = ['==', ['get', 'id'], ''] as Expr   // matches no track piece
 let hlKey = ''          // what was asked for last
 let hlShown = ''        // what is on the map
 let hlCurrent: Highlight | null = null
 const hlLoaded = new Map<string, Highlight | null>()   // highlight data already fetched, by key: shown with no wait
 
-function clearHighlight(map: MLMap) {
-  // remove the flags we set, one id at a time: removing a whole source layer makes MapLibre re-send every id that was ever
-  // flagged on each later update, so a long session of hovering got slower and slower
-  if (hlCurrent && map.getSource(TILES)) for (const id of hlCurrent.ways) map.removeFeatureState({ source: TILES, sourceLayer: 'track', id }, 'hl')
+function clearHighlight(map: MLMap, setFilter = true) {
+  if (hlCurrent && setFilter && map.getLayer(L(TILES, 'hl-fs'))) map.setFilter(L(TILES, 'hl-fs'), HL_NONE)
   if (hlCurrent) (map.getSource(L(TILES, 'hl')) as GeoJSONSource | undefined)?.setData(EMPTY)
   hlCurrent = null
 }
 
 function showHighlight(map: MLMap, h: Highlight) {
-  clearHighlight(map)
+  clearHighlight(map, false)
   hlCurrent = h
-  for (const id of h.ways) map.setFeatureState({ source: TILES, sourceLayer: 'track', id }, { hl: true })
+  map.setFilter(L(TILES, 'hl-fs'), ['in', ['get', 'id'], ['literal', h.ways]] as Expr)
   const src = map.getSource(L(TILES, 'hl')) as GeoJSONSource | undefined
   if (src && h.geom) src.setData({ type: 'Feature', properties: { type: h.type, ...(h.oc ? { oc: h.oc } : {}) }, geometry: h.geom })
 }
@@ -594,9 +597,8 @@ function apply(map: MLMap, key: string, slug: string | null, h: Highlight | null
   hlShown = key
 }
 
-/** Highlight a line (or, with no line, a named railway) of region `slug`: flags the line's track pieces with feature state in
- *  the tile source and shows its simplified geometry below z9. No tile is decoded or reloaded. A line whose data is already
- *  loaded is shown at once; otherwise its data is fetched once the pointer rests. */
+/** Highlight a line (or, with no line, a named railway) of region `slug`: filters the line's track pieces on the highlight layer
+ *  and shows its simplified geometry below z9. A line whose data is already loaded is shown at once; otherwise its data is fetched once the pointer rests. */
 export function highlightLine(map: MLMap, slug: string | null, lineId: number | null, trackName: string | null = null) {
   const key = slug && (lineId != null || trackName != null) ? `${slug}|${lineId ?? ''}|${trackName ?? ''}` : ''
   if (key === hlKey) return
