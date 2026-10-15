@@ -37,6 +37,11 @@
 | `--delta <n>` | calibrated | Fixed wheel delta per tick; skips calibration (fast only) |
 | `--eval '<js>'` | none | JS run in the page after load (fast only) |
 | `--trace <dir>` | none | Saves a Chrome trace per view, first run only (fast only) |
+| `--latency <ms>` / `--down <Mbps>` | 0 / unlimited | CDP network emulation (RTT, download cap) on the page and its workers, so tile and basemap requests are both slowed; recorded in `env.latencyMs` / `env.downMbps` (fast only). Workers attach after the first requests, so the very first startup fetches may escape it |
+| `--start-zoom <z>` | 10 | Zoom the bursts start from (fast only); `--delta 70` gives about z6 to z10, `--delta 127` gives about 4 to 7 levels |
+| `--view <names>` | all five | Run only these views, comma-separated, e.g. `"Chengdu East,Shenzhen"` (fast only) |
+| `--zoomout` / `--outs <n>` | off / 1 | Zoom-OUT scenario (fast only): per view and cycle (3), jump to `--start-zoom`, settle, then only wheel out (n bursts 300 ms apart); frames are recorded from the first tick to the idle after the last. `idleAfterLastWheelMs` = median settle time. With `--delta 127` one burst is about 6 levels, so use `--start-zoom 14 --outs 2` (reaches z2, the min zoom), `--delta 100 --outs 2` (still z2 to 2.4) or `--start-zoom 12 --outs 1` (about z6) |
+| `--tilestate` | off | Per frame, whether the map had every wanted tile loaded (`areTilesLoaded`); saved as `ts` plus burst end `marks`. Costs one call per frame, so do not compare with runs made without it (fast only) |
 
 Examples:
 
@@ -59,6 +64,8 @@ node bench/zoom-pan.mjs --scenario fast --headed --delta 127 --url https://train
 Chengdu East, Shenzhen, Guangzhou, Beijing, Shanghai. China has the densest network, and every view draws from the one pilot tile source, so tile cost is the same for all. Compare totals across the five, not single views (single views are noisier).
 
 ## A/B comparisons
+
+- Quick preset for iteration: `--view "Chengdu East,Shenzhen" --runs 2 --warmup 1 --headed --delta 127 --throttle 4`, configs alternated (ABAB). Confirm a final winner with the full five views.
 
 - Same script, same flags, same machine state for both sides. Run them back to back.
 - Two builds: `git stash` the change under `app/src` and rebuild, or build into two directories (`npx vite build --outDir <dir>`) and serve each on its own port.
@@ -110,5 +117,7 @@ Files go to `app/bench/results/` (git-ignored): `<label>-<timestamp>.json`, or `
 - Headless at 60 Hz hides 120 Hz overruns. Check final claims headed.
 - Tracing inflates misses about 2x.
 - Zoom span differs between sites (see External sites). Compare a site only against itself unless the end zoom is reported.
-- The throttle does not slow workers, so it understates tile cost. Cold-cache and slow-network tests are not covered here.
+- The throttle does not slow workers, so it understates tile cost. Slow-network tests use `--latency`; a cold cache is the first measured run with `--warmup 0` (fresh browser profile). `bench/probe.mjs <latencyMs> <url>` prints tiles in view and rendered feature counts per zoom.
 - Trackpad pinch input is not simulated; wheel ticks are.
+
+The request table also counts the app's own glyph files (`/glyphs/`: requests / KB) and the PMTiles KB transferred (`encodedDataLength`, cache hits count 0, so it varies with the HTTP cache; do not compare it across runs).
