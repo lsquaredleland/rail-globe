@@ -26,26 +26,61 @@ export const REGIONS: Region[] = [
   { slug: 'cn-beijing', name: 'Beijing', sub: 'Municipality', local: '北京', center: [116.4, 39.93], zoom: 9.6, zoomPhone: 8.6, tiles: 'china', noCard: true },
   { slug: 'de', name: 'Germany', sub: 'Whole country', local: 'Deutschland', center: [10.45, 51.1], zoom: 5.4, zoomPhone: 4.5 },
   { slug: 'china', name: 'China', sub: 'Mainland + HK + Macao', local: '中国', center: [108.0, 34.5], zoom: 3.8, zoomPhone: 2.8 },
+  { slug: 'ar', name: 'Argentina', sub: 'Whole country', center: [-64, -38], zoom: 3.9, zoomPhone: 3.0 },
+  { slug: 'bb', name: 'Barbados', sub: 'Whole country', center: [-59.55, 13.18], zoom: 9.5, zoomPhone: 8.6 },
+  { slug: 'bo', name: 'Bolivia', sub: 'Whole country', center: [-64.7, -16.7], zoom: 4.9, zoomPhone: 4.0 },
+  { slug: 'br', name: 'Brazil', sub: 'Whole country', local: 'Brasil', center: [-52, -14], zoom: 3.5, zoomPhone: 2.6 },
+  { slug: 'ca', name: 'Canada', sub: 'Whole country', center: [-98, 56], zoom: 2.9, zoomPhone: 2.0 },
+  { slug: 'cl', name: 'Chile', sub: 'Whole country', center: [-71, -33], zoom: 3.2, zoomPhone: 2.3 },
+  { slug: 'co', name: 'Colombia', sub: 'Whole country', center: [-73.5, 4.2], zoom: 4.8, zoomPhone: 3.9 },
+  { slug: 'cr', name: 'Costa Rica', sub: 'Whole country', center: [-84.2, 9.9], zoom: 6.9, zoomPhone: 6.0 },
+  { slug: 'cu', name: 'Cuba', sub: 'Whole country', center: [-79, 21.7], zoom: 5.4, zoomPhone: 4.5 },
+  { slug: 'do', name: 'Dominican Republic', sub: 'Whole country', local: 'República Dominicana', center: [-70.5, 18.9], zoom: 6.8, zoomPhone: 5.9 },
+  { slug: 'ec', name: 'Ecuador', sub: 'Whole country', center: [-78.4, -1.5], zoom: 6, zoomPhone: 5.1 },
+  { slug: 'gt', name: 'Guatemala', sub: 'Whole country', center: [-90.4, 15.6], zoom: 6.6, zoomPhone: 5.7 },
+  { slug: 'hn', name: 'Honduras', sub: 'Whole country', center: [-86.6, 14.8], zoom: 6.6, zoomPhone: 5.7 },
+  { slug: 'ht', name: 'Haiti', sub: 'Whole country', local: 'Ayiti', center: [-72.8, 19.0], zoom: 7, zoomPhone: 6.1 },
+  { slug: 'jm', name: 'Jamaica', sub: 'Whole country', center: [-77.3, 18.15], zoom: 8.1, zoomPhone: 7.2 },
+  { slug: 'kn', name: 'Saint Kitts and Nevis', sub: 'Whole country', center: [-62.75, 17.33], zoom: 10.5, zoomPhone: 9.6 },
+  { slug: 'mx', name: 'Mexico', sub: 'Whole country', local: 'México', center: [-102, 23.6], zoom: 4.6, zoomPhone: 3.7 },
+  { slug: 'ni', name: 'Nicaragua', sub: 'Whole country', center: [-85.2, 12.8], zoom: 6.5, zoomPhone: 5.6 },
+  { slug: 'pa', name: 'Panama', sub: 'Whole country', local: 'Panamá', center: [-80, 8.6], zoom: 6.9, zoomPhone: 6.0 },
+  { slug: 'pe', name: 'Peru', sub: 'Whole country', local: 'Perú', center: [-75.5, -9.5], zoom: 4.7, zoomPhone: 3.8 },
+  { slug: 'py', name: 'Paraguay', sub: 'Whole country', local: 'Paraguay / Paraguái', center: [-58.4, -23.4], zoom: 5.8, zoomPhone: 4.9 },
+  { slug: 'sv', name: 'El Salvador', sub: 'Whole country', center: [-88.9, 13.7], zoom: 8, zoomPhone: 7.1 },
+  { slug: 'tc', name: 'Turks and Caicos Islands', sub: 'Whole country', center: [-71.8, 21.8], zoom: 8.5, zoomPhone: 7.6 },
+  { slug: 'tt', name: 'Trinidad and Tobago', sub: 'Whole country', center: [-61.3, 10.5], zoom: 8.3, zoomPhone: 7.4 },
+  { slug: 'us', name: 'United States', sub: 'Whole country', center: [-98, 39], zoom: 3.3, zoomPhone: 2.4 },
+  { slug: 'uy', name: 'Uruguay', sub: 'Whole country', center: [-56, -32.8], zoom: 6.2, zoomPhone: 5.3 },
+  { slug: 've', name: 'Venezuela', sub: 'Whole country', center: [-66.2, 7.6], zoom: 5.2, zoomPhone: 4.3 },
 ]
 
 export const regionBySlug = (s: string) => REGIONS.find((r) => r.slug === s) ?? REGIONS[1]
 
-/** The one tile source on the map: the per-region PMTiles (SF Bay Area, China and the countries) joined (rail-extract build, join_pilot). Style layer ids are `pilot:<name>`. */
-export const TILES = 'pilot'
-type Part = { slug: string; bounds: [number, number, number, number] }
+/** The tile sources on the map, each a joined PMTiles file with its own `<name>.parts.json` (rail-extract build, join_pilot):
+ *  the pilot regions, and the Americas. Style layer ids are `<source>:<name>`, one set per source. */
+export const TILE_SOURCES = ['pilot', 'americas'] as const
+type Part = { slug: string; bounds: [number, number, number, number]; source: string }
 let parts: Part[] = []
-/** The per-region tile files that were joined, with their data bounds (PMTiles headers), from pilot.parts.json (written by the join in
- *  rail-extract). Await once at startup before `partAt` / `regionOf`. They do not overlap. Tiles carry no region field, so a
+/** The per-region tile files that were joined, with their data bounds (PMTiles headers), from each source's parts.json (written by the join in
+ *  rail-extract). Await once at startup before `partAt` / `regionOf`. Within a source they do not overlap. Tiles carry no region field, so a
  *  feature's region (its side files: tags, lines, stations, highlights) is found from where it lies. */
 export async function loadParts() {
-  const r = await fetch(`${DATA_BASE}${TILES}.parts.json`)
-  if (!r.ok) throw new Error(`${TILES}.parts.json: ${r.status}`)
-  parts = await r.json()
-  // the countries' bounding boxes overlap (France, Germany, Switzerland, Italy), so where they do the outlines decide
+  parts = (await Promise.all(TILE_SOURCES.map(async (source) => {
+    const r = await fetch(`${DATA_BASE}${source}.parts.json`)
+    if (!r.ok) throw new Error(`${source}.parts.json: ${r.status}`)
+    return ((await r.json()) as Omit<Part, 'source'>[]).map((p) => ({ ...p, source }))
+  }))).flat()
+  // the countries' bounding boxes overlap (France, Germany, Switzerland, Italy, the Americas), so where they do the outlines decide
   await Promise.all(parts.map((p) => fetch(`${DATA_BASE}${p.slug}.boundary.geojson`).then((x) => (x.ok ? x.json() : null)).then((j: GeoJSON.Feature | null) => {
     const g = j?.geometry
     outers[p.slug] = !g ? [] : g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map((q) => q[0]) : []
   }).catch(() => { outers[p.slug] = [] })))
+}
+/** the tile source (style layer set) that draws a region: the source of its own part, else of the part it lies in (`tiles`) */
+export function sourceOf(slug: string): string {
+  const own = parts.find((p) => p.slug === slug) ?? parts.find((p) => p.slug === REGIONS.find((r) => r.slug === slug)?.tiles)
+  return own?.source ?? TILE_SOURCES[0]
 }
 const outers: Record<string, number[][][]> = {}
 const inRing = (ring: number[][], x: number, y: number) => {

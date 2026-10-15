@@ -1,7 +1,7 @@
 import type { ExpressionSpecification, GeoJSONSource, LayerSpecification, Map as MLMap, StyleSpecification } from 'maplibre-gl'
 import { STATION_ZOOM } from './config'
 import { FILL, INK, THEME_COLORS, TYPE_COLOR, TYPE_WIDTH, TYPE_ORDER, type RailType, type Theme } from './palette'
-import { regionOf, TILES } from './regions'
+import { regionOf, sourceOf, TILE_SOURCES } from './regions'
 import { boundaryUrl, loadLineHighlight, loadNameHighlight, pmtilesUrl, type Highlight } from './data'
 
 export type ColorMode = 'type' | 'operator' | 'speed'
@@ -222,12 +222,11 @@ export function placesGeoJSON(rows: [number, number, string, number, string, str
 
 const themeOf = new WeakMap<MLMap, Theme>()
 /** Light or dark map colours: the basemap, the station symbols, the labels and the ground under stations. A no-op when the theme is unchanged. */
-export function applyTheme(map: MLMap, theme: Theme, slug: string = TILES) {
+export function applyTheme(map: MLMap, theme: Theme) {
   if (themeOf.get(map) === theme) return
   themeOf.set(map, theme)
   const t = THEME_COLORS[theme]
   const set = (id: string, prop: string, v: unknown) => { if (map.getLayer(id)) map.setPaintProperty(id, prop as never, v as never) }
-  const r = (n: string) => L(slug, n)
   set('background', 'background-color', t.land)
   set('landcover-wood', 'fill-color', t.wood); set('landcover-farm', 'fill-color', t.farm); set('landuse-urban', 'fill-color', t.urban)
   set('park', 'fill-color', t.park)
@@ -236,24 +235,27 @@ export function applyTheme(map: MLMap, theme: Theme, slug: string = TILES) {
   set('road-major', 'line-color', t.road); set('road-secondary', 'line-color', t.road)
   set('admin', 'line-color', t.border4); set('admin-country', 'line-color', t.border)
   for (const id of PLACE_LAYERS) { set(id, 'text-color', t.label); set(id, 'text-halo-color', t.land) }
-  set(r('veil'), 'background-color', t.land)
-  set(r('airport-fill'), 'fill-color', t.airport); set(r('airport-line'), 'line-color', t.airportLine)
-  set(r('airport-terminal'), 'fill-color', t.terminal); set(r('airport-terminal'), 'fill-outline-color', t.terminalEdge)
-  set(r('ground'), 'fill-color', t.ground); set(r('yard-fill'), 'fill-color', t.yard); set(r('ground-edge'), 'line-color', t.groundEdge)
-  set(r('buildings'), 'fill-color', t.building); set(r('buildings'), 'fill-outline-color', t.buildingEdge)
-  set(r('platforms-fill'), 'fill-color', t.platform); set(r('platforms-line'), 'line-color', t.platform)
-  set(r('casing'), 'line-color', t.casing)
-  const ring = (id: string, w: unknown) => set(r(id), 'circle-stroke-color', w)
-  for (const id of ['st1', 'st2', 'st3']) set(r(id), 'circle-color', t.stationFill)
-  ring('st3', t.st3); ring('st2', t.ink); ring('st1', ['case', ['==', get('hsr'), 1], t.hsr, t.ink])
-  for (const id of ['stcon1', 'stcon2', 'stcon3']) set(r(id), 'circle-color', t.stationFill)
-  for (const id of ['lbl1', 'lbl2', 'lbl3', 'lblcon1', 'lblcon2', 'lblcon3']) { set(r(id), 'text-color', id.startsWith('lbl') && !id.includes('con') ? t.ink : t.ink3); set(r(id), 'text-halo-color', t.land) }
-  for (const id of ['lbl-lines', 'lbl-track']) { set(r(id), 'text-color', t.ink2); set(r(id), 'text-halo-color', t.land) }
-  set(r('cities'), 'circle-stroke-color', t.land)
+  for (const source of TILE_SOURCES) {
+    const r = (n: string) => L(source, n)
+    set(r('veil'), 'background-color', t.land)
+    set(r('airport-fill'), 'fill-color', t.airport); set(r('airport-line'), 'line-color', t.airportLine)
+    set(r('airport-terminal'), 'fill-color', t.terminal); set(r('airport-terminal'), 'fill-outline-color', t.terminalEdge)
+    set(r('ground'), 'fill-color', t.ground); set(r('yard-fill'), 'fill-color', t.yard); set(r('ground-edge'), 'line-color', t.groundEdge)
+    set(r('buildings'), 'fill-color', t.building); set(r('buildings'), 'fill-outline-color', t.buildingEdge)
+    set(r('platforms-fill'), 'fill-color', t.platform); set(r('platforms-line'), 'line-color', t.platform)
+    set(r('casing'), 'line-color', t.casing)
+    const ring = (id: string, w: unknown) => set(r(id), 'circle-stroke-color', w)
+    for (const id of ['st1', 'st2', 'st3']) set(r(id), 'circle-color', t.stationFill)
+    ring('st3', t.st3); ring('st2', t.ink); ring('st1', ['case', ['==', get('hsr'), 1], t.hsr, t.ink])
+    for (const id of ['stcon1', 'stcon2', 'stcon3']) set(r(id), 'circle-color', t.stationFill)
+    for (const id of ['lbl1', 'lbl2', 'lbl3', 'lblcon1', 'lblcon2', 'lblcon3']) { set(r(id), 'text-color', id.startsWith('lbl') && !id.includes('con') ? t.ink : t.ink3); set(r(id), 'text-halo-color', t.land) }
+    for (const id of ['lbl-lines', 'lbl-track']) { set(r(id), 'text-color', t.ink2); set(r(id), 'text-halo-color', t.land) }
+    set(r('cities'), 'circle-stroke-color', t.land)
+  }
   set('area-outline', 'line-color', t.ink); set('area-outline-shade', 'line-color', t.ink)
 }
 
-/** All rail layers of the tile source `source` (TILES), stacked in drawing order; ids are `<source>:<name>`. */
+/** All rail layers of the tile source `source` (one of TILE_SOURCES), stacked in drawing order; ids are `<source>:<name>`. */
 export function addRailSource(map: MLMap, source: string) {
   // a track piece's OSM id ("way/123") is its feature id, so a highlighted line can be flagged with feature state
   map.addSource(source, { type: 'vector', url: pmtilesUrl(source), attribution: ATTRIBUTION, promoteId: { track: 'id' } })
@@ -461,13 +463,15 @@ const vis = (on: boolean) => (on ? 'visible' : 'none')
 
 /** Push toggles / colour mode into the rail layers. Cheap enough to call on every state change. */
 export function applyState(map: MLMap, s: MapState) {
-  if (map.getLayer(L(TILES, 'track'))) applyRegion(map, TILES, s)
+  applyTheme(map, s.theme)
+  for (const source of TILE_SOURCES) if (map.getLayer(L(source, 'track'))) applyRegion(map, source, s)
 }
 
-/** Fade every line but the highlighted one (a line or railway is selected); null: no focus. One source, so the veil covers
- *  all regions on screen (it used to cover only the selected region's source and those below it). */
+/** Fade every line but the highlighted one (a line or railway is selected); null: no focus. Each tile source has its own veil,
+ *  covering the layers below it: only the focused region's source gets one (the other source's rail is not faded). */
 export function setFocus(map: MLMap, slug: string | null) {
-  if (map.getLayer(L(TILES, 'veil'))) map.setPaintProperty(L(TILES, 'veil'), 'background-opacity', slug ? FOCUS_VEIL : 0)
+  const on = slug ? sourceOf(slug) : null
+  for (const source of TILE_SOURCES) if (map.getLayer(L(source, 'veil'))) map.setPaintProperty(L(source, 'veil'), 'background-opacity', source === on ? FOCUS_VEIL : 0)
 }
 const FOCUS_VEIL = 0.72
 
@@ -476,7 +480,6 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
   {
     map.setLayoutProperty(L(slug, 'freight'), 'visibility', vis(s.freight))
 
-    applyTheme(map, s.theme, slug)
     for (const id of PLACE_LAYERS) if (map.getLayer(id)) map.setLayoutProperty(id, 'text-field', placeText(s.lang))
     for (const n of ['lbl1', 'lbl2', 'lbl3', 'lblcon1', 'lblcon2', 'lblcon3']) map.setLayoutProperty(L(slug, n), 'text-field', nameExpr(s.lang, 'n', 'ne'))
     map.setLayoutProperty(L(slug, 'lbl-track'), 'text-field', nameExpr(s.lang, 'n', 'ne'))
@@ -570,26 +573,28 @@ const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: 
 let hlKey = ''          // what was asked for last
 let hlShown = ''        // what is on the map
 let hlCurrent: Highlight | null = null
+let hlSource = ''       // the tile source hlCurrent is flagged in
 const hlLoaded = new Map<string, Highlight | null>()   // highlight data already fetched, by key: shown with no wait
 
 function clearHighlight(map: MLMap) {
   // remove the flags we set, one id at a time: removing a whole source layer makes MapLibre re-send every id that was ever
   // flagged on each later update, so a long session of hovering got slower and slower
-  if (hlCurrent && map.getSource(TILES)) for (const id of hlCurrent.ways) map.removeFeatureState({ source: TILES, sourceLayer: 'track', id }, 'hl')
-  if (hlCurrent) (map.getSource(L(TILES, 'hl')) as GeoJSONSource | undefined)?.setData(EMPTY)
+  if (hlCurrent && map.getSource(hlSource)) for (const id of hlCurrent.ways) map.removeFeatureState({ source: hlSource, sourceLayer: 'track', id }, 'hl')
+  if (hlCurrent) (map.getSource(L(hlSource, 'hl')) as GeoJSONSource | undefined)?.setData(EMPTY)
   hlCurrent = null
 }
 
-function showHighlight(map: MLMap, h: Highlight) {
+function showHighlight(map: MLMap, h: Highlight, slug: string) {
   clearHighlight(map)
   hlCurrent = h
-  for (const id of h.ways) map.setFeatureState({ source: TILES, sourceLayer: 'track', id }, { hl: true })
-  const src = map.getSource(L(TILES, 'hl')) as GeoJSONSource | undefined
+  hlSource = sourceOf(slug)
+  for (const id of h.ways) map.setFeatureState({ source: hlSource, sourceLayer: 'track', id }, { hl: true })
+  const src = map.getSource(L(hlSource, 'hl')) as GeoJSONSource | undefined
   if (src && h.geom) src.setData({ type: 'Feature', properties: { type: h.type, ...(h.oc ? { oc: h.oc } : {}) }, geometry: h.geom })
 }
 
 function apply(map: MLMap, key: string, slug: string | null, h: Highlight | null) {
-  if (h && slug) showHighlight(map, h)
+  if (h && slug) showHighlight(map, h, slug)
   else clearHighlight(map)
   hlShown = key
 }
@@ -618,7 +623,7 @@ export function highlightLine(map: MLMap, slug: string | null, lineId: number | 
 const PREFETCH_MAX = 48
 export function prefetchHighlights(map: MLMap) {
   if (map.getZoom() < 6) return
-  const layers = hitLayers(TILES).filter((l) => map.getLayer(l))
+  const layers = TILE_SOURCES.flatMap(hitLayers).filter((l) => map.getLayer(l))
   if (!layers.length) return
   const todo = new Map<string, () => Promise<unknown>>()
   for (const f of map.queryRenderedFeatures({ layers })) {
