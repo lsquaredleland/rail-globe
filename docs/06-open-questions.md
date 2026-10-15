@@ -122,6 +122,20 @@ Adding France, Switzerland and Italy (with Germany) made the zoomed-out views he
 - Re-test the whole of Europe together after each change; the budget is per view, not per country.
 - Success test: no laptop or phone view over 600 KB for the worst Europe views (France z5, Lyon z6, Zurich z6), and the zoom/pan bench not worse than before the countries were added.
 
+## Americas passenger QA: TODO (paused 2026-10-15 until the MLT conversion is merged into main)
+
+Full log, findings and reasoning: `docs/08-americas-passenger-qa.md`. Work lives on branch `americas-qa` (cut from the last MVT commit). Checklist, in order:
+
+- [ ] Merge `main` (with MLT) into `americas-qa`; fix conflicts in `tiles.rs`, `mapStyle.ts`, `data.ts`; rebuild the 26 Americas slugs with `build ... --combined americas`; re-shoot (`node pipeline/qa/shoot.mjs <N> --port 5180`) and compare with pass 1.
+- [ ] Confirm the 9 pilot regions are byte-identical (md5 of `classify_report.json`, `features.typed.geojsonl`, `lines.json`) with the pass-2 options in the code (they must be default off).
+- [ ] Finish pass 2: measure `freight_unrouted_no_station`, `freight_isolated_km` (5, 10, 25 km) and `passenger_station_level` with `RAIL_CFG_SET` on US and Canada against NARN (`pipeline/qa/narn_check.py us ca`), and on the rest of the Americas by listing the largest changed railways per country. Real services that must survive are listed in docs/08.
+- [ ] Look at all 54 views by eye (pass 1: 8 judged by the reviewer); add dense-network views.
+- [ ] Add independent passenger data where NARN does not reach: GTFS shapes (VIA, GO, exo, TransLink, Trenes Argentinos, EFE, Brazilian metros), BTS National Transit Map, Mexico ARTF layer, Chile BCN. Cross-check only; OSM stays the source (GTFS in the map is still parked).
+- [ ] Decide: Linea FA, Linea Morelos and Juarez (Mexico); Intercity vs Regional for Amtrak corridor services; the 5 km shield and 20 m beside-route distance; tourist lines as Other; Ontario Northland, Algoma, Gaspe.
+- [ ] App: Bay Area drawn twice (pilot and US tiles); hover, click and highlight in the Americas source; Americas place labels; upload `americas.pmtiles` + `americas.parts.json` to R2 before deploy; check per-country centres.
+- [ ] Each pass: rebuild, pilots identical, `check.py` (only the pre-existing Chengdu failure allowed), `narn_check.py`, `shoot.mjs`, log a section in docs/08.
+- [ ] Tile writer (`tiles-rs`): spatial partitioning for memory, low-zoom overview behaviour, visual comparison; MLT encoding via `mlt-core` if the benchmark favours MLT.
+
 ## To do later
 
 - **Move off tippecanoe** (user, 2026-10-13). Long-term goal; weigh tippecanoe-only settings against it.
