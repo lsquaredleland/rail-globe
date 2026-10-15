@@ -4,7 +4,7 @@ import type { GeoJSONSource, Map as MLMap, MapGeoJSONFeature } from 'maplibre-gl
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { addAirportIcon, addBoundary, addPlaceLabels, placesGeoJSON, addOutline, setOutline, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayers, prefetchHighlights, setFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
-import { loadParts, regionOf, REGIONS, TILE_SOURCES } from './regions'
+import { loadParts, regionOf, REGIONS, TILES } from './regions'
 import { DATA_BASE } from './config'
 
 export type Hit =
@@ -91,7 +91,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       if (mapRef.current !== map) return   // removed while waiting
       for (const r of REGIONS) addBoundary(map, r.slug)
       addOutline(map)
-      for (const source of TILE_SOURCES) addRailSource(map, source)   // the pilot regions' tiles joined, and the Americas'; regions inside China are drawn from China's part
+      addRailSource(map, TILES)   // one source: the pilot regions' tiles joined; regions inside China are drawn from China's part
       map.addSource('selection', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
       map.addLayer({ id: 'selection', type: 'circle', source: 'selection',
         paint: { 'circle-radius': 15, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#1E1E1C', 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.55 } })
@@ -117,28 +117,28 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       const slugOf = (f: MapGeoJSONFeature) => regionOf(f, lngLat)
       const toProps = (f: MapGeoJSONFeature) => f.properties as Record<string, string | number>
 
-      const st = q(TILE_SOURCES.flatMap(stationLayers))
+      const st = q(stationLayers(TILES))
       if (st.length) {
         const best = [...st].sort((a, b) => Number(a.properties.tier) - Number(b.properties.tier))[0]
         const g = best.geometry as GeoJSON.Point
         return { kind: 'station', slug: slugOf(best), props: toProps(best), lngLat: g.coordinates as [number, number] }
       }
       if (p.current.state.mode === 'operator' && map.getZoom() >= 12) {
-        const ln = q(TILE_SOURCES.flatMap((t) => [strandLayer(t), `${strandLayer(t)}-hs`]))
+        const ln = q([strandLayer(TILES), `${strandLayer(TILES)}-hs`])
           .filter((f) => !p.current.state.hsrOnly || f.properties.t === 'high_speed')
         if (ln.length) return { kind: 'line', slug: slugOf(ln[0]), props: toProps(ln[0]), lngLat }
       }
-      const tr = q(TILE_SOURCES.flatMap(hitLayers))
+      const tr = q(hitLayers(TILES))
       if (tr.length) {
         // most prominent type wins when tracks overlap
         const order = ['high_speed', 'intercity', 'regional', 'metro', 'light_rail', 'monorail', 'funicular', 'other', 'freight']
         const best = [...tr].sort((a, b) => order.indexOf(String(a.properties.type)) - order.indexOf(String(b.properties.type)))[0]
         return { kind: 'track', slug: slugOf(best), props: toProps(best), lngLat }
       }
-      const yd = p.current.state.hsrOnly ? [] : q(TILE_SOURCES.map(yardHitLayer))
+      const yd = p.current.state.hsrOnly ? [] : q([yardHitLayer(TILES)])
       if (yd.length) return { kind: 'track', slug: slugOf(yd[0]), props: toProps(yd[0]), lngLat }
       // station grounds, yards, buildings and platforms (polygons are hit inside, with no tolerance)
-      const pt1 = map.queryRenderedFeatures([pt.x, pt.y], { layers: TILE_SOURCES.flatMap(areaLayers).filter((l) => map.getLayer(l)) })
+      const pt1 = map.queryRenderedFeatures([pt.x, pt.y], { layers: areaLayers(TILES).filter((l) => map.getLayer(l)) })
       if (pt1.length) return { kind: 'area', slug: slugOf(pt1[0]), props: toProps(pt1[0]), lngLat }
       return null
     }

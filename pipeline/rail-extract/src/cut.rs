@@ -123,12 +123,7 @@ fn feature(t: &List, k: u8, id: i64, geom: &[u8], label: String, ctx: &Ctx) -> F
 /// decides, by name; else tags do: `public_transport=station`, `train=yes` or a UIC code. A bare `railway=station` is often a freight yard
 /// or a siding stop, and the OSM wiki says stations that handle freight only must not carry `public_transport=station`.
 fn passenger_station(t: &List, cfg: Option<&classify::Cfg>) -> bool {
-    let strict = is(t, b"public_transport", b"station") || is(t, b"train", b"yes") || t.get(b"uic_ref").is_some();
-    let tags = match cfg.map_or(0, |c| c.station_level()) {
-        1 => strict || is(t, b"station", b"train") || t.get(b"operator").is_some() || t.get(b"network").is_some(),
-        2 => true,
-        _ => strict,
-    };
+    let tags = is(t, b"public_transport", b"station") || is(t, b"train", b"yes") || t.get(b"uic_ref").is_some();
     match cfg {
         Some(c) => c.passenger_station(t.get(b"name").map(txt).as_deref(), tags),
         None => tags,

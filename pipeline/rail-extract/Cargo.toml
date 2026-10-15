@@ -17,12 +17,6 @@ geo = "0.33"                    # station model geometry: distances, containment
 rstar = "0.13"                  # spatial indexes (shapely's STRtree in the Python version)
 unicode-normalization = "0.1"   # station name normalisation (NFKD, as stations.py)
 
-# Rust tile writer (tiles-rs spike), replacing tippecanoe
-geojson-vt-rs = "0.2"           # slicing GeoJSON into tiles: Web Mercator projection, clip with buffer, per-zoom simplification
-geojson = "0.24"                # feature types of geojson-vt-rs
-mlt-core = "=0.20.4"           # MapLibre Tile (MLT) encoder and decoder
-pmtiles = { version = "0.24", default-features = false, features = ["write"] }    # PMTiles v3 writer (directories, dedup, gzip)
-
 [profile.release]
 opt-level = 3
 lto = "fat"

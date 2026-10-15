@@ -229,29 +229,6 @@ fn geojson_value(g: &Geometry<f64>) -> Value {
     }
 }
 
-/// the tile layers of one region: (tippecanoe layer, file in tiles_tmp), in the order tippecanoe reads them (the overview is the
-/// first "track" file)
-pub const TILE_LAYERS: [(&str, &str); 12] = [("track", "track_overview.geojsonl"), ("track", "track.geojsonl"), ("con_draw", "con_draw.geojsonl"),
-    ("lines", "lines.geojsonl"), ("areas", "areas.geojsonl"), ("buildings", "buildings.geojsonl"), ("platforms", "platforms.geojsonl"),
-    ("stations", "stations.geojsonl"), ("complexes", "complexes.geojsonl"), ("airports", "airports.geojsonl"),
-    ("airport_pts", "airport_pts.geojsonl"), ("cities", "cities.geojsonl")];
-
-/// tippecanoe writing `pm` from the tiles_tmp folders `dirs` (one per region, or many for a combined build), with the flags used
-/// everywhere. --coalesce merges consecutive features with equal attributes (overview pieces, identical neighbouring strands, and the
-/// con_draw lines of one group, which are written consecutively: tippecanoe joins them into multi-lines per tile, harmless for
-/// drawing); --preserve-input-order keeps every layer in the order written here
-pub fn tippecanoe(pm: &Path, dirs: &[std::path::PathBuf]) -> Command {
-    let mut c = Command::new("tippecanoe");
-    c.args(["-o", &pm.to_string_lossy(), "-f", "-Z0", "-z14", "--no-tile-size-limit", "--no-feature-limit", "--drop-rate=0", "--simplification=2",
-        "--coalesce", "--preserve-input-order", "--read-parallel", "-q"]);
-    for d in dirs {
-        for (name, file) in TILE_LAYERS {
-            c.arg("-L").arg(format!("{name}:{}", d.join(file).display()));
-        }
-    }
-    c
-}
-
 pub struct Prepared {
     pub tippecanoe: Option<Child>,
     pub pmtiles: std::path::PathBuf,
@@ -818,13 +795,29 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
     for (_, props, geom, mz, xz) in &overview {
         feat(&mut ov_text, props, geom, Some(*mz), Some(*xz));
     }
-    let texts: [&String; 12] = [&ov_text, &track, &con_draw, &strands, &areas, &buildings, &plats, &st_rows, &cx_rows, &airports, &airport_pts, &cities_text];
-    for ((_, file), text) in TILE_LAYERS.iter().zip(texts) {
-        let file = tmp.join(file);
+    let layers: [(&str, &String); 12] = [("track", &ov_text), ("track", &track), ("con_draw", &con_draw), ("lines", &strands), ("areas", &areas), ("buildings", &buildings),
+        ("platforms", &plats), ("stations", &st_rows), ("complexes", &cx_rows), ("airports", &airports), ("airport_pts", &airport_pts), ("cities", &cities_text)];
+    let mut args: Vec<String> = Vec::new();
+    for (k, (name, text)) in layers.iter().enumerate() {
+        let file = tmp.join(if k == 0 { "track_overview.geojsonl".to_string() } else { format!("{name}.geojsonl") });
         fs::File::create(&file).and_then(|mut w| w.write_all(text.as_bytes())).unwrap_or_else(|e| panic!("write {}: {e}", file.display()));
+        args.push("-L".into());
+        args.push(format!("{name}:{}", file.display()));
     }
     let pm = out.join(format!("{slug}.pmtiles"));
-    let child = if tiles { Some(tippecanoe(&pm, &[tmp.clone()]).spawn().expect("start tippecanoe (is it installed?)")) } else { None };
+    // --coalesce merges consecutive features with equal attributes (overview pieces, identical neighbouring strands, and the
+    // con_draw lines of one group, which are written consecutively: tippecanoe joins them into multi-lines per tile, harmless for
+    // drawing); --preserve-input-order keeps every layer in the order written here
+    let child = if tiles {
+        Some(Command::new("tippecanoe")
+            .args(["-o", &pm.to_string_lossy(), "-f", "-Z0", "-z14", "--no-tile-size-limit", "--no-feature-limit", "--drop-rate=0", "--simplification=2",
+                "--coalesce", "--preserve-input-order", "--read-parallel", "-q"])
+            .args(&args)
+            .spawn()
+            .expect("start tippecanoe (is it installed?)"))
+    } else {
+        None
+    };
 
     // ------------------------------------------------------------ side files
     let mut idx = Map::new();

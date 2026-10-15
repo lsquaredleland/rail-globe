@@ -22,10 +22,6 @@ rail-extract/target/release/rail-extract build sf-bay-area paris china
 #   into pilot.pmtiles (19 s, 161.3 MB, same bytes per view), so a partial rebuild (e.g. only paris) refreshes the join; a missing region file is warned about and the join skipped.
 #   It also writes pilot.parts.json (each file's slug and bounds, read from its PMTiles header) and fails if two bounds overlap. Both are written to a temporary file and renamed.
 #   The app draws all rail from pilot.pmtiles (one set of ~46 style layers instead of 3 x 50) and learns the parts from pilot.parts.json; the per-region .pmtiles are kept as join input
-rail-extract/target/release/rail-extract build ch it fr --combined europe-test
-#   combined build: per-slug work without tippecanoe, then ONE tippecanoe run over every slug's tiles_tmp -> ../app/public/data/europe-test.pmtiles
-#   plus europe-test.parts.json (slug and outline bounds). Replaces the per-region tippecanoe runs and the tile-join; same flags and layers (tiles.rs). Does not write per-region .pmtiles or touch pilot.pmtiles
-#   timing, 26 American countries: one combined tippecanoe 276 s vs per-region tippecanoe 131 s + tile-join 291 s; 223.4 vs 223.8 MB
 rail-extract/target/release/rail-extract build greater-bay-area chengdu cn-beijing --no-tiles
 #   side files only: the app draws these regions from China's tiles (0.5 s for all three)
 #   also writes ../app/public/data/<slug>/stats.json (region card); areas inside a region: "stat_areas" (a list) or "stat_auto" (all provinces and cities of a country) in config/<slug>.json;

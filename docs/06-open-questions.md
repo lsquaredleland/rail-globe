@@ -122,9 +122,9 @@ Adding France, Switzerland and Italy (with Germany) made the zoomed-out views he
 - Re-test the whole of Europe together after each change; the budget is per view, not per country.
 - Success test: no laptop or phone view over 600 KB for the worst Europe views (France z5, Lyon z6, Zurich z6), and the zoom/pan bench not worse than before the countries were added.
 
-## Americas passenger QA: TODO (paused 2026-10-15 until the MLT conversion is merged into main)
+## Americas freight labelling: TODO (code reverted 2026-10-15; requirement in docs/07, log in docs/08)
 
-Full log, findings and reasoning: `docs/08-americas-passenger-qa.md`. Work lives on branch `americas-qa` (cut from the last MVT commit). Checklist, in order:
+The requirement is in `docs/07-freight-detection.md` ("Americas: correct freight labelling"); log and findings in `docs/08-americas-passenger-qa.md`. The reverted implementation is in the git history of branch `americas-qa` (`76f3740`, `74d71fc`, `d034553`, `9ca7bdb`) and can be cherry-picked. Nothing implements the requirement yet. Checklist, in order:
 
 - [ ] Merge `main` (with MLT) into `americas-qa`; fix conflicts in `tiles.rs`, `mapStyle.ts`, `data.ts`; rebuild the 26 Americas slugs with `build ... --combined americas`; re-shoot (`node pipeline/qa/shoot.mjs <N> --port 5180`) and compare with pass 1.
 - [ ] Confirm the 9 pilot regions are byte-identical (md5 of `classify_report.json`, `features.typed.geojsonl`, `lines.json`) with the pass-2 options in the code (they must be default off).
