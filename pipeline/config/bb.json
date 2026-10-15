@@ -1,0 +1,17 @@
+{
+  "_comment": "All of Barbados (data/regions/bb.geojson, admin level 2). Generic rules, added for the Americas timing build.",
+  "stat_name": "Barbados",
+  "stat_local": "Barbados",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "BB",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}
