@@ -3,13 +3,14 @@
 //!     rail-extract cache --planet planet-260928.osm.pbf [--out data/cache/planet-260928.railcache] [--threads N]
 //!     rail-extract cut [--cache data/cache/<name>.railcache] [--regions pipeline/regions] [--data data] <slug>...
 //!     rail-extract outlines --level 2|4 [--country CC] [--out data/regions]
-//!     rail-extract build <slug>... [--no-tiles]       (or cut ... --build)
+//!     rail-extract build <slug>... [--no-tiles | --combined NAME]       (or cut ... --build)
 //!
 //! `cache` reads the planet once (about a minute) and keeps every rail candidate of the world with its coordinates.
 //! `cut` writes data/<slug>/{features.geojsonl, relations.jsonl, stop_positions.jsonl, qa.json, airports.geojsonl} for each region
 //! outline (pipeline/regions/<slug>.geojson, hand-made, else data/regions/<slug>.geojson), in about a second; the cut also classifies rail types (classify.rs); stations.py and the later steps read those files.
 //! `build` runs the station model, the stations under construction, the tile input, tippecanoe and the side files (was
-//! stations.py, con_stations.py and build_tiles.py); --no-tiles writes side files only (regions drawn from a bigger region's tiles).
+//! stations.py, con_stations.py and build_tiles.py); --no-tiles writes side files only (regions drawn from a bigger region's tiles);
+//! --combined NAME writes side files and tile input for every slug, then one tippecanoe run over all of them -> NAME.pmtiles and NAME.parts.json (no per-region PMTiles, no tile-join).
 //! `outlines` writes country (level 2) or province / state (level 4) outlines from the admin boundaries in the cache.
 //! Paths default to this repository, wherever the command runs from.
 
@@ -29,6 +30,7 @@ mod rules;
 mod site;
 mod stations;
 mod stats;
+mod tilewriter;
 mod tiles;
 
 use rayon::prelude::*;
@@ -44,7 +46,7 @@ fn usage() -> ! {
         "usage:\n  rail-extract cache --planet PLANET.osm.pbf [--out data/cache/<planet>.railcache] [--threads N]\n  \
          rail-extract cut [--cache FILE] [--regions DIR] [--data DIR] [--threads N] <slug>...\n  \
          rail-extract outlines --level 2|4 [--country CC] [--cache FILE] [--out data/regions]\n  \
-         rail-extract build <slug>... [--no-tiles]      (cut ... --build: build straight after the cut)"
+         rail-extract build <slug>... [--no-tiles | --combined NAME]      (cut ... --build: build straight after the cut)"
     );
     std::process::exit(2)
 }
@@ -64,7 +66,7 @@ fn default_cache(root: &Path) -> PathBuf {
 }
 
 /// stations, construction stations, tile input, tippecanoe and side files for each region (in parallel)
-fn build_regions(root: &Path, slugs: &[String], tiles: bool, data: Option<&String>, out: Option<&String>) {
+fn build_regions(root: &Path, slugs: &[String], tiles: bool, data: Option<&String>, out: Option<&String>, combined: bool) {
     let paths = site::Paths {
         data: data.map(PathBuf::from).unwrap_or_else(|| root.join("data")),
         config: root.join("pipeline/config"),
@@ -73,7 +75,7 @@ fn build_regions(root: &Path, slugs: &[String], tiles: bool, data: Option<&Strin
     };
     let logs: Vec<(String, Vec<String>)> = slugs.par_iter().map(|s| (s.clone(), site::build(s, &paths, tiles))).collect();
     for (s, log) in logs {
-        eprintln!("build {s}{}", if tiles { "" } else { " (side files only)" });
+        eprintln!("build {s}{}", if tiles { "" } else if combined { " (tile input for combined)" } else { " (side files only)" });
         for l in log {
             eprintln!("{l}");
         }
@@ -81,6 +83,49 @@ fn build_regions(root: &Path, slugs: &[String], tiles: bool, data: Option<&Strin
     if tiles && PILOT_SOURCES.iter().any(|p| slugs.iter().any(|s| s == p)) {
         join_pilot(&paths.out);
     }
+}
+
+/// One tippecanoe run over the tile input (data/<slug>/tiles_tmp) that `build_regions` just wrote for every slug, same flags and layers as
+/// the per-region run: <out>/<name>.pmtiles, plus <name>.parts.json (each slug and its outline's bounds [west, south, east, north]).
+/// Replaces the per-region tippecanoe runs and the tile-join. A slug with no features is warned about and left out. Both outputs
+/// are written to a temporary file and renamed on success.
+fn build_combined(root: &Path, slugs: &[String], name: &str, data: Option<&String>, out: Option<&String>) {
+    assert!(name != "pilot" && !slugs.iter().any(|s| s == name) && !name.contains(['/', '\\']), "bad --combined name {name:?}: not pilot, not a slug, no path separators");
+    let data = data.map(PathBuf::from).unwrap_or_else(|| root.join("data"));
+    let out = out.map(PathBuf::from).unwrap_or_else(|| root.join("app/public/data"));
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    let mut parts = Vec::new();
+    for slug in slugs {
+        let tmp = data.join(slug).join("tiles_tmp");
+        let empty = tiles::TILE_LAYERS.iter().all(|(_, f)| std::fs::metadata(tmp.join(f)).map_or(true, |m| m.len() == 0));
+        if empty {
+            eprintln!("warning: combined build skips {slug}: no features in {}", tmp.display());
+            continue;
+        }
+        let outline = [root.join("pipeline/regions"), root.join("data/regions")]
+            .iter()
+            .map(|d| d.join(format!("{slug}.geojson")))
+            .find(|p| p.exists())
+            .unwrap_or_else(|| panic!("no outline {slug}.geojson"));
+        // bounds come from the outlines (pilot.parts.json reads them from the PMTiles headers)
+        let b = region::Region::load(slug, &outline).bbox; // min lat, min lon, max lat, max lon in 1e-7 degrees
+        let deg = |v: i32| v as f64 / 1e7;
+        parts.push(serde_json::json!({ "slug": slug, "bounds": [deg(b[1]), deg(b[0]), deg(b[3]), deg(b[2])] }));
+        dirs.push(tmp);
+    }
+    assert!(!dirs.is_empty(), "combined build: no region has tile input");
+    std::fs::create_dir_all(&out).expect("create output folder");
+    // tippecanoe picks the format from the extension, so the temporary name keeps .pmtiles last
+    let tmp = out.join(format!("{name}.tmp.pmtiles"));
+    let t = Instant::now();
+    let status = tiles::tippecanoe(&tmp, &dirs).status().expect("start tippecanoe (is it installed?)");
+    assert!(status.success(), "tippecanoe failed for {name}");
+    let tmp_json = out.join(format!("{name}.parts.tmp.json"));
+    std::fs::write(&tmp_json, serde_json::to_string_pretty(&parts).unwrap() + "\n").expect("write parts.json");
+    std::fs::rename(&tmp, out.join(format!("{name}.pmtiles"))).expect("rename pmtiles");
+    std::fs::rename(&tmp_json, out.join(format!("{name}.parts.json"))).expect("rename parts.json");
+    let mb = std::fs::metadata(out.join(format!("{name}.pmtiles"))).map_or(0.0, |m| m.len() as f64 / 1e6);
+    eprintln!("combined {name}.pmtiles: {mb:.1} MB, tippecanoe {:.1} s", t.elapsed().as_secs_f64());
 }
 
 /// the tiled pilot sources the app draws from one file (app/src/regions.ts, TILES); the app learns each one's bounds from pilot.parts.json
@@ -144,7 +189,7 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            k @ ("--planet" | "--out" | "--cache" | "--regions" | "--data" | "--threads" | "--level" | "--country") => {
+            k @ ("--planet" | "--out" | "--cache" | "--regions" | "--data" | "--threads" | "--level" | "--country" | "--combined" | "--name") => {
                 opt.insert(k, args.get(i + 1).cloned().unwrap_or_else(|| usage()));
                 i += 2;
             }
@@ -215,8 +260,11 @@ fn main() {
                 eprintln!("  {l}");
             }
             eprintln!("[{:6.2}s] cut", t0.elapsed().as_secs_f64());
+            if opt.contains_key("--combined") {
+                usage(); // --combined belongs to `build`
+            }
             if opt.contains_key("--build") {
-                build_regions(&root, &rest, !opt.contains_key("--no-tiles"), opt.get("--data"), None);
+                build_regions(&root, &rest, !opt.contains_key("--no-tiles"), opt.get("--data"), None, false);
             }
             eprintln!("[{:6.2}s] done", t0.elapsed().as_secs_f64());
         }
@@ -225,8 +273,23 @@ fn main() {
                 usage();
             }
             let t0 = Instant::now();
-            build_regions(&root, &rest, !opt.contains_key("--no-tiles"), opt.get("--data"), opt.get("--out"));
+            match opt.get("--combined") {
+                Some(name) => {
+                    assert!(!opt.contains_key("--no-tiles"), "--combined and --no-tiles do not go together");
+                    build_regions(&root, &rest, false, opt.get("--data"), opt.get("--out"), true);
+                    build_combined(&root, &rest, name, opt.get("--data"), opt.get("--out"));
+                }
+                None => build_regions(&root, &rest, !opt.contains_key("--no-tiles"), opt.get("--data"), opt.get("--out"), false),
+            }
             eprintln!("[{:6.2}s] done", t0.elapsed().as_secs_f64());
+        }
+        "tiles-rs" => {
+            if rest.is_empty() {
+                usage();
+            }
+            let out = opt.get("--out").map(PathBuf::from).unwrap_or_else(|| root.join("data/tiles-rs"));
+            let name = opt.get("--name").cloned().unwrap_or_else(|| rest.join("+"));
+            tilewriter::run(&root, &rest, opt.get("--data"), &out, &name);
         }
         "outlines" => {
             let level = opt.get("--level").cloned().unwrap_or_else(|| usage());
