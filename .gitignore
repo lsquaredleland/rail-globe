@@ -13,6 +13,10 @@ app/node_modules/
 app/dist/
 # generated tiles and side files from pipeline/build_tiles.py
 app/public/data/
+# generated map glyphs (pipeline/glyphs/build-glyphs.mjs) and its fonts / node_modules
+app/public/glyphs/
+pipeline/glyphs/node_modules/
+pipeline/glyphs/fonts/
 
 # python
 __pycache__/
@@ -26,3 +30,6 @@ pipeline/rail-extract/target/
 
 # benchmark raw results
 app/bench/results/
+
+# TypeScript incremental build info
+*.tsbuildinfo
