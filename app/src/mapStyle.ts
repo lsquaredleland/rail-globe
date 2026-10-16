@@ -60,6 +60,8 @@ const speedColor: Expr = ['case', ['has', 'kmh'],
 const activeTrack: Expr = ['==', get('type'), 'high_speed'] as Expr
 const activeStation = (ty: Expr): Expr => ['any', ['==', get('hsr'), 1], ['in', ',high_speed,', ty]] as unknown as Expr
 export const INACTIVE = '#D4D1C7'
+/** the same on the dark map: track that is not active sinks into the ground instead of standing out as pale lines */
+export const INACTIVE_DARK = '#383D45'
 const INACTIVE_WIDTH = 0.6
 const typeColor = byType((t) => TYPE_COLOR[t], 'type', TYPE_COLOR.other)
 
@@ -507,7 +509,7 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     const tun: Expr = ['step', ['zoom'], 1, 13, ['case', ['has', 'tun'], 0.45, 1]]
     // each colour mode sets its own colour and width; "HSR only" then greys and thins everything that is not high-speed, in any mode
     const greyOut = s.hsrOnly
-    const grey = (c: Expr, active: Expr = activeTrack): Expr => (greyOut ? (['case', active, c, INACTIVE] as Expr) : c)
+    const grey = (c: Expr, active: Expr = activeTrack): Expr => (greyOut ? (['case', active, c, s.theme === 'dark' ? INACTIVE_DARK : INACTIVE] as Expr) : c)
     const thin = (m?: Expr): Expr | undefined => (greyOut ? (['*', m ?? 1, ['case', activeTrack, 1, INACTIVE_WIDTH]] as Expr) : m)
     const strandActive: Expr = ['==', get('t'), 'high_speed'] as Expr
     let color: Expr, width: Expr, opacity: Expr = tun
