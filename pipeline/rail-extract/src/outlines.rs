@@ -177,12 +177,12 @@ pub fn slugify(s: &str) -> String {
 
 
 /// the GeoJSON Feature of one outline (same layout for every level); `city` marks a city outline (index.json `city: true`)
-fn feature_bytes(slug: &str, b: &Bnd, cc: Option<&str>, iso: Option<&str>, city: bool) -> Vec<u8> {
+fn feature_bytes(slug: &str, b: &Bnd, name_en: Option<&str>, cc: Option<&str>, iso: Option<&str>, city: bool) -> Vec<u8> {
     let mut o = b"{\"type\":\"Feature\",\"properties\":{\"slug\":".to_vec();
         js(&mut o, slug.as_bytes());
         for (k, v) in [
             ("name", b.name.as_deref()),
-            ("name_en", b.name_en.as_deref()),
+            ("name_en", name_en),
             ("admin_level", Some(b.level.as_str())),
             ("country", cc.as_deref()),
             ("iso", iso),
@@ -265,11 +265,12 @@ pub fn city_outlines(c: &Cache, wanted_file: &Path, out: &Path) {
     let mut bytes = 0usize;
     let mut todo: Vec<(&&str, &&Bnd)> = best.iter().collect();
     todo.sort_by_key(|(_, b)| b.id);
+    // 1. what each city replaces: an index entry for the same relation or the same Wikidata id (an earlier run, or another relation chosen then)
+    let mut keep: Vec<(&&str, &&Bnd, String, String)> = Vec::new(); // wikidata, boundary, country, label
     for (w, b) in todo {
         let osm = format!("relation/{}", b.id);
-        let same: Vec<String> = index.iter().filter(|(_, v)| v["osm_id"].as_str() == Some(osm.as_str())).map(|(k, _)| k.clone()).collect();
-        if same.iter().any(|k| index[k]["city"] != true) {
-            already += 1; // a province or a level-5 outline already (Shanghai, Chengdu)
+        if index.iter().any(|(_, v)| v["osm_id"].as_str() == Some(osm.as_str()) && v["city"] != true) {
+            already += 1; // a province or a level-5 outline already (Chengdu)
             continue;
         }
         let area = area_km2(&b.polys);
@@ -285,24 +286,43 @@ pub fn city_outlines(c: &Cache, wanted_file: &Path, out: &Path) {
             no_country += 1;
             continue;
         };
-        for k in &same {
-            index.remove(k);
+        // the place node's English name first: the relation's `english_name` can be a `name:prefix` or a foreign-language name on these levels
+        let label = Some(want[*w].to_string()).filter(|l| !l.is_empty()).or(b.name_en.clone()).or(b.name.clone()).unwrap_or_default();
+        keep.push((w, b, cc, label));
+    }
+    for (w, b, _, _) in &keep {
+        let osm = format!("relation/{}", b.id);
+        let same: Vec<String> = index.iter().filter(|(_, v)| v["city"] == true && (v["osm_id"].as_str() == Some(osm.as_str()) || v["wikidata"].as_str() == Some(**w))).map(|(k, _)| k.clone()).collect();
+        for k in same {
+            index.remove(&k);
             let _ = std::fs::remove_file(out.join(format!("{k}.geojson")));
         }
-        let label = b.name_en.clone().or(b.name.clone()).filter(|l| !l.is_empty()).unwrap_or_else(|| want[*w].to_string());
-        let base = format!("{}-{}", cc.to_ascii_lowercase(), slugify(&label));
+    }
+    // city entries written before the index carried the Wikidata id (the fetch script's) are rewritten from the cache or dropped
+    let old: Vec<String> = index.iter().filter(|(_, v)| v["city"] == true && v["wikidata"].is_null()).map(|(k, _)| k.clone()).collect();
+    for k in old {
+        index.remove(&k);
+        let _ = std::fs::remove_file(out.join(format!("{k}.geojson")));
+    }
+    // 2. slugs, after all the replaced entries are gone (so a slug does not depend on what an earlier run left)
+    for (w, b, cc, label) in keep {
+        let mut name = slugify(&label);
+        if name.is_empty() {
+            name = b.name.as_deref().map(slugify).filter(|n| !n.is_empty()).unwrap_or_else(|| format!("r{}", b.id));
+        }
+        let base = format!("{}-{name}", cc.to_ascii_lowercase());
         let mut slug = base.clone();
         let mut n = 1;
         while index.contains_key(&slug) {
             n += 1; // New York is also a state; Sofia has a province and a city-province
             slug = format!("{base}-city{}", if n == 2 { String::new() } else { (n - 1).to_string() });
         }
-        let o = feature_bytes(&slug, b, Some(&cc), None, true);
+        let o = feature_bytes(&slug, b, Some(&label), Some(&cc), None, true);
         std::fs::write(out.join(format!("{slug}.geojson")), &o).expect("write outline");
         bytes += o.len();
         index.insert(
             slug,
-            serde_json::json!({ "name": b.name, "name_en": b.name_en, "admin_level": b.level, "country": cc, "iso": null, "osm_id": osm, "city": true }),
+            serde_json::json!({ "name": b.name, "name_en": label, "admin_level": b.level, "country": cc, "iso": null, "osm_id": format!("relation/{}", b.id), "city": true, "wikidata": w }),
         );
         made += 1;
     }
@@ -367,7 +387,7 @@ pub fn outlines(c: &Cache, level: &str, country: Option<&str>, out: &Path) {
         };
         used.insert(slug.clone(), b.id);
 
-        let o = feature_bytes(&slug, b, cc.as_deref(), if level == "2" { b.iso1.as_deref() } else { b.iso2.as_deref() }, false);
+        let o = feature_bytes(&slug, b, b.name_en.as_deref(), cc.as_deref(), if level == "2" { b.iso1.as_deref() } else { b.iso2.as_deref() }, false);
         std::fs::write(out.join(format!("{slug}.geojson")), &o).expect("write outline");
         bytes += o.len();
         index.insert(

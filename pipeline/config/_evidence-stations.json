@@ -1,0 +1,6 @@
+{
+  "extends": "_default",
+  "_comment": "Countries whose route relations are thin (Egypt, Tanzania, Sudan, Zambia, ...; docs/15-argentina-africa-freight.md): main-line track typed from its tags alone is Freight unless it runs beside passenger-routed track, or a passenger station is within 200 m of the way, or its operator is a passenger-only agency.",
+  "passenger_needs_evidence": "stations",
+  "passenger_operator_re": ["(?i)\\b(Metrorail|Shosholoza Meyl|Gautrain|Bombela)\\b"]
+}

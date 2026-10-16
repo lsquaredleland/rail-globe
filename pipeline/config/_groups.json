@@ -1,0 +1,5 @@
+{
+  "_comment": "A region with no pipeline/config/<slug>.json of its own whose slug is listed here uses the config named by the key (a template that extends _default) instead of _default.json. docs/12-config-and-exemptions.md, docs/15-argentina-africa-freight.md.",
+  "_evidence-routes": ["ar", "za", "dz", "ma", "ke", "ng", "zw", "ao", "mz", "tn", "cd", "et", "cm", "cg", "ci", "bf", "bj", "mr", "mg", "bw", "na", "dj", "tg", "ss", "lr", "ly", "ne", "sz", "mu"],
+  "_evidence-stations": ["eg", "tz", "sd", "zm", "sn", "gh", "ga", "mw", "ml", "ug", "gn", "er"]
+}

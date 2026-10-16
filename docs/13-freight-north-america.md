@@ -1,6 +1,6 @@
 # Freight or passenger in the US, Canada and Mexico (study, 2026-10-16)
 
-Question (user): in the US passenger rail is probably well labelled, so should anything without passenger service be freight? This file holds the measurement, the rule that came out of it and what it costs. **Implemented 2026-10-16** (user decisions: yes for US, Canada and Mexico; Canada's suspended services stay passenger): config key `passenger_needs_evidence` in `_north-america.json` and `mx.json`, code in `classify.rs` (`beside_routed`). Background and the older, reverted attempt: `docs/07-freight-detection.md` ("Americas: correct freight labelling"), `docs/08-americas-passenger-qa.md`.
+Question (user): in the US passenger rail is probably well labelled, so should anything without passenger service be freight? This file holds the measurement, the rule that came out of it and what it costs. **Implemented 2026-10-16** (user decisions: yes for US, Canada and Mexico; Canada's suspended services stay passenger): config key `passenger_needs_evidence` in `_north-america.json` and `mx.json`, code in `classify.rs` (`beside_routed`). The same key, with a `"stations"` mode, is used for Argentina and Africa: `docs/15-argentina-africa-freight.md`. Background and the older, reverted attempt: `docs/07-freight-detection.md` ("Americas: correct freight labelling"), `docs/08-americas-passenger-qa.md`.
 
 ## Answer
 

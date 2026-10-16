@@ -97,3 +97,8 @@ Reads `<DIR>/<slug>/classify_report.json` (default: every region in `data/`), pr
 ## Current use
 
 `pipeline/config/us.json`: four exemptions for Amtrak's New York and Washington terminal tracks, Metro-North, LIRR and the NJ Transit Atlantic City Line, all `match.type: freight` so only wrongly typed ways change. This is a demonstration of the mechanism, not a fix for the US freight problem (see `07-freight-detection.md`).
+
+
+## Group templates (`_groups.json`)
+
+A region with no `pipeline/config/<slug>.json` normally uses `_default.json`. `pipeline/config/_groups.json` maps a template name to a list of slugs (`{"_evidence-routes": ["ar", "za", ...]}`); a listed region uses `<name>.json` (a template that `"extends": "_default"`) instead, with its names filled from the outline like the default. One file for 41 countries instead of 41 files (`docs/15-argentina-africa-freight.md`). A region's own file still wins.

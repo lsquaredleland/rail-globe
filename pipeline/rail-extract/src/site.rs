@@ -87,9 +87,35 @@ pub fn config_path(config_dir: &Path, slug: &str) -> (PathBuf, bool) {
     let own = config_dir.join(format!("{slug}.json"));
     if own.exists() {
         (own, false)
+    } else if let Some(group) = config_group(config_dir, slug) {
+        (config_dir.join(format!("{group}.json")), true)   // a template like the default: names are filled from the outline
     } else {
         (config_dir.join("_default.json"), true)
     }
+}
+
+/// `_groups.json`: {"<config name>": ["<slug>", ...]}. A region with no file of its own whose slug is listed there uses that config
+/// (itself an "extends": "_default" template) instead of `_default.json`: one file for a group of countries (docs/12).
+fn config_group(config_dir: &Path, slug: &str) -> Option<String> {
+    let path = config_dir.join("_groups.json");
+    let text = std::fs::read_to_string(&path).ok()?; // no file: no groups
+    // a broken _groups.json must stop the run (the whole group would quietly use _default.json)
+    let v: Value = serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+    let groups = v.as_object().unwrap_or_else(|| panic!("{} must be a JSON object", path.display()));
+    let mut found: Vec<&String> = Vec::new();
+    for (k, list) in groups.iter().filter(|(k, _)| k.as_str() != "_comment") {
+        let list = list.as_array().unwrap_or_else(|| panic!("{}: \"{k}\" must be a list of slugs", path.display()));
+        if list.iter().any(|s| s.as_str() == Some(slug)) {
+            found.push(k);
+        }
+    }
+    if found.len() > 1 {
+        panic!("{}: slug \"{slug}\" is in more than one group ({found:?})", path.display());
+    }
+    found.first().map(|k| {
+        assert!(config_dir.join(format!("{k}.json")).exists(), "{}: group \"{k}\" has no {k}.json", path.display());
+        (*k).clone()
+    })
 }
 
 /// Fill the slug-specific keys of the template from the region's outline properties: stat_name <- name_en (else name),
@@ -193,5 +219,8 @@ mod tests {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../config");
         assert_eq!(config_path(&dir, "paris"), (dir.join("paris.json"), false));
         assert_eq!(config_path(&dir, "no-such-slug"), (dir.join("_default.json"), true));
+        // listed in _groups.json: the group's template
+        assert_eq!(config_path(&dir, "tz"), (dir.join("_evidence-stations.json"), true));
+        assert_eq!(config_path(&dir, "ar"), (dir.join("_evidence-routes.json"), true));
     }
 }

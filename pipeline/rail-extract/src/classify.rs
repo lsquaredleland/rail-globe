@@ -220,6 +220,15 @@ impl Exemption {
     }
 }
 
+/// what `passenger_needs_evidence` counts as evidence of passenger service for main-line track typed from its tags alone
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Evidence {
+    /// a passenger route relation, track beside it, or a passenger operator (`true` or `"routes"`): where mappers map the services
+    Routes,
+    /// ... or a passenger station within PAX_NEAR_M of the way (`"stations"`): where route relations are thin (Tanzania, Egypt, Sudan)
+    Stations,
+}
+
 /// pipeline/config/<slug>.json, as classify.py reads it
 pub struct Cfg {
     exemptions: Vec<Exemption>,
@@ -234,13 +243,19 @@ pub struct Cfg {
     passenger_names: Option<std::collections::HashSet<String>>,
     /// `passenger_needs_evidence` (docs/13-freight-north-america.md): unrouted main-line track typed from its tags alone is Freight unless it
     /// runs beside passenger-routed track or its operator is one of `passenger_operator_re`
-    needs_evidence: bool,
+    needs_evidence: Option<Evidence>,
     passenger_operators: Vec<Regex>,
 }
 
 impl Cfg {
     /// Is this station (its name, and whether its tags say passengers) a passenger station? With a passenger list the list decides;
     /// without one the tags do.
+    /// `passenger_needs_evidence: "stations"`: a bare railway=station or halt counts as a passenger station (in these countries stations are
+    /// mapped without `public_transport` or `train` tags, so the tags would find almost none)
+    pub fn bare_stations_count(&self) -> bool {
+        self.needs_evidence == Some(Evidence::Stations)
+    }
+
     pub fn passenger_station(&self, name: Option<&str>, tags_say_passengers: bool) -> bool {
         match &self.passenger_names {
             Some(names) => name.map_or(false, |n| names.contains(n.trim().trim_end_matches('站'))),
@@ -290,7 +305,13 @@ impl Cfg {
             hs_networks: v.get("high_speed_networks_re").and_then(Value::as_array).map_or(Vec::new(), |a| {
                 a.iter().map(|p| Regex::new(p.as_str().expect("pattern")).expect("high_speed_networks_re")).collect()
             }),
-            needs_evidence: v.get("passenger_needs_evidence").map_or(false, truthy),
+            needs_evidence: match v.get("passenger_needs_evidence") {
+                Some(Value::String(m)) if m == "stations" => Some(Evidence::Stations),
+                Some(Value::String(m)) if m == "routes" => Some(Evidence::Routes),
+                Some(Value::String(m)) => panic!("passenger_needs_evidence must be true, \"routes\" or \"stations\", not {m:?}"),
+                Some(x) if truthy(x) => Some(Evidence::Routes),
+                _ => None,
+            },
             passenger_operators: v.get("passenger_operator_re").and_then(Value::as_array).map_or(Vec::new(), |a| {
                 a.iter().map(|p| Regex::new(p.as_str().expect("pattern")).expect("passenger_operator_re")).collect()
             }),
@@ -438,6 +459,32 @@ const SNIPPET_KM: f64 = 2.0; // a piece of track shorter than this that differs 
 fn ll_km(ll: &[(i32, i32)]) -> f64 {
     let pts: Vec<(f64, f64)> = ll.iter().filter(|p| p.0 != i32::MIN).map(|p| (p.1 as f64 / 1e7, p.0 as f64 / 1e7)).collect();
     crate::tiles::haversine_len(&pts)
+}
+
+/// Which `targets` have a passenger station (`pax`, points as (lat, lon) in 1e-7 degrees) within PAX_NEAR_M of one of their segments.
+fn near_station(tracks: &[TrackIn], targets: &[usize], pax: &[(i32, i32)]) -> FxHashSet<usize> {
+    use rayon::prelude::*;
+    let tree = rstar::RTree::bulk_load(pax.iter().filter(|p| p.0 != i32::MIN).map(|p| [p.1 as f64 / 1e7, p.0 as f64 / 1e7]).collect::<Vec<_>>());
+    targets
+        .par_iter()
+        .filter(|&&i| {
+            let pts: Vec<[f64; 2]> = tracks[i].ll.iter().filter(|p| p.0 != i32::MIN).map(|p| [p.1 as f64 / 1e7, p.0 as f64 / 1e7]).collect();
+            pts.windows(2).any(|w| {
+                let k = ((w[0][1] + w[1][1]) / 2.0).to_radians().cos().max(0.01);
+                let (dy, dx) = (PAX_NEAR_M / 110_540.0, PAX_NEAR_M / (111_320.0 * k));
+                let (lo, hi) = ([w[0][0].min(w[1][0]) - dx, w[0][1].min(w[1][1]) - dy], [w[0][0].max(w[1][0]) + dx, w[0][1].max(w[1][1]) + dy]);
+                tree.locate_in_envelope(rstar::AABB::from_corners(lo, hi)).any(|s| {
+                    let xy = |q: [f64; 2]| [(q[0] - s[0]) * 111_320.0 * k, (q[1] - s[1]) * 110_540.0];
+                    let (a, b) = (xy(w[0]), xy(w[1]));
+                    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+                    let len2 = dx * dx + dy * dy;
+                    let t = if len2 == 0.0 { 0.0 } else { ((-a[0] * dx - a[1] * dy) / len2).clamp(0.0, 1.0) };
+                    (a[0] + t * dx).hypot(a[1] + t * dy) <= PAX_NEAR_M
+                })
+            })
+        })
+        .copied()
+        .collect()
 }
 
 const BESIDE_M: f64 = 25.0; // track this close to passenger-routed track for BESIDE_SHARE of its length is part of the same passenger corridor
@@ -908,7 +955,7 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
     // Passenger needs evidence (config `passenger_needs_evidence`): main-line track typed from its own tags alone (no passenger route, not an
     // exemption) is Freight unless it runs beside passenger-routed track or its operator is a passenger agency. Measured against the BTS
     // passenger inventory in docs/13-freight-north-america.md (US precision 26% -> 95%, recall 98% -> 98% on the real output).
-    if cfg.needs_evidence {
+    if let Some(mode) = cfg.needs_evidence {
         let passenger = |t: &str| matches!(t, "intercity" | "regional" | "high_speed");
         let routed: Vec<usize> = (0..tracks.len())
             .filter(|&i| tracks[i].props.g("railway") == Some("rail") && tracks[i].ll.len() >= 2 && decided[i].as_ref().map_or(false, |d| d.s == "route" && passenger(&d.t)))
@@ -923,9 +970,12 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
                     && !p.g("operator").map_or(false, |o| cfg.passenger_operators.iter().any(|r| r.is_match(o)))
             })
             .collect();
-        let beside = beside_routed(tracks, &routed, &targets);
+        let mut kept = beside_routed(tracks, &routed, &targets);
+        if mode == Evidence::Stations {
+            kept.extend(near_station(tracks, &targets, pax));
+        }
         for ti in targets {
-            if !beside.contains(&ti) {
+            if !kept.contains(&ti) {
                 if let Some(d) = decided[ti].as_mut() {
                     d.t = "freight".into();
                     d.s = "no-evidence";

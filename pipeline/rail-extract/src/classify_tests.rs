@@ -164,10 +164,11 @@ fn passenger_needs_evidence_beside_route_or_agency() {
         tags: Owned(vec![("route".into(), "train".into())]),
         rel_members: vec![],
     }];
-    let kinds = |cfg: &Cfg| -> Vec<(String, String)> {
-        let out = classify("t", cfg, &rows, &feats, &tracks, &FxHashSet::default(), &[]);
+    let kinds_at = |cfg: &Cfg, pax: &[(i32, i32)]| -> Vec<(String, String)> {
+        let out = classify("t", cfg, &rows, &feats, &tracks, &FxHashSet::default(), pax);
         String::from_utf8(out.typed).unwrap().lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).map(|v| (v["properties"]["type"].as_str().unwrap().to_string(), v["properties"]["type_source"].as_str().unwrap().to_string())).collect()
     };
+    let kinds = |cfg: &Cfg| kinds_at(cfg, &[]);
     let off = kinds(&cfg_json(json!({})));
     assert!(off.iter().all(|(_, s)| s != "no-evidence"), "off by default: {off:?}");
     let on = kinds(&cfg_json(json!({ "passenger_needs_evidence": true, "passenger_operator_re": ["(?i)\\bAmtrak\\b"] })));
@@ -188,4 +189,11 @@ fn passenger_needs_evidence_beside_route_or_agency() {
     assert_eq!(ex[2], ("intercity".to_string(), "exemption".to_string()));
     assert_eq!(ex[0].1, "route", "type_source decides which ways an exemption touches");
     assert_eq!(ex[4].1, "no-evidence");
+    // "stations": a passenger station within 200 m of a way is evidence too (way/3 is at +100_000 units of latitude; the station is 50 m off its middle)
+    let station = [(400_000_000 + 100_000 + 450, -1_198_500_000)];
+    let routes_mode = kinds_at(&cfg_json(json!({ "passenger_needs_evidence": "routes" })), &station);
+    assert_eq!(routes_mode[2], ("freight".to_string(), "no-evidence".to_string()), "routes mode ignores stations: {routes_mode:?}");
+    let stations_mode = kinds_at(&cfg_json(json!({ "passenger_needs_evidence": "stations" })), &station);
+    assert_eq!(stations_mode[2].0, "intercity", "a station beside the way keeps it: {stations_mode:?}");
+    assert_eq!(stations_mode[4], ("freight".to_string(), "no-evidence".to_string()), "no station near way/5: {stations_mode:?}");
 }
