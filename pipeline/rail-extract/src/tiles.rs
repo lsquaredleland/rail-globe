@@ -386,10 +386,12 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
     let ls = |l: &str, k: &str| line_by.get(l).and_then(|v| v[k].as_str());
 
     // ------------------------------------------------------------ operator logos (pipeline/logos): the Wikidata id of a station's operator, when we have its logo
-    let logo_ids: std::collections::HashSet<String> = std::fs::read_to_string(out.join("../logos/logos.json")).ok()
+    // logos/logos.json sits in app/public, above the data folder (app/public/data, or app/public/data/world for the world build)
+    let logos_json = out.ancestors().map(|a| a.join("logos/logos.json")).find(|p| p.exists());
+    let logo_ids: std::collections::HashSet<String> = logos_json.as_ref().and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|t| serde_json::from_str::<Map<String, Value>>(&t).ok()).map(|m| m.into_iter().map(|(k, _)| k).collect()).unwrap_or_default();
     if logo_ids.is_empty() {
-        eprintln!("warning: no logos: {} not found (expected beside the data folder); stations get no logo", out.join("../logos/logos.json").display());
+        eprintln!("warning: no logos/logos.json found above {}; stations get no logo", out.display());
     }
     let china = inp.cfg.get("china").map_or(false, |v| match v { Value::Bool(b) => *b, Value::String(s) => !s.is_empty() && s != "false", Value::Number(n) => n.as_f64() != Some(0.0), _ => false });
     // the station's own operator:wikidata, else the commonest one of the lines serving it, else China Railway for a train station in China

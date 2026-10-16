@@ -12,6 +12,8 @@ node pipeline/logos/pull-logos.mjs operators.json
 ```
 
 Result (planet 2026-09-28): 1208 operator ids, 672 with a Wikidata logo, 671 downloaded. 282 of the 442 ids seen on stations have one, covering 33,802 of 50,067 tagged stations. 
+Then `node pipeline/logos/squarer.mjs` (2 min): for the 381 logos wider than 2:1 it looks for a squarer one among the operator's own logo claims (SVG or PNG only) and, for subsidiaries of MTA, Deutsche Bahn and TfL, the parent's. 37 replaced (LIRR and Metro-North now show the round MTA mark; DB Netz, DB Regio and S-Bahn Hamburg the DB logo). About 344 wide wordmarks remain.
+
 ## Where the logos are used
 
 - Station model (`stations.rs`) keeps `operator_wd`, the station's own `operator:wikidata` (else `brand:wikidata`); lines.json (`classify.rs`) keeps the same per line. Both tags are in the cache (`rules.rs`), so the cache was rebuilt once.

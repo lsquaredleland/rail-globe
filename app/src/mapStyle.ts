@@ -460,10 +460,10 @@ export function addRailSource(map: MLMap, source: string) {
   label('lbl1', 1, STATION_ZOOM[1].label, [13, 16], true)
   label('lbl2', 2, STATION_ZOOM[2].label, [12, 13], true)
   label('lbl3', 3, STATION_ZOOM[3].label, [10.5, 11.5], false)
-  // operator logo above the dots of the bigger stations (tier 1 and 2); the image is fetched when the layer first asks for it (addBadgeImages)
+  // operator logo on the dots of the bigger stations (tier 1 and 2), covering the dot until z16, then lifted above it; the image is fetched when the layer first asks for it (addBadgeImages)
   add({ id: L(source, 'logo'), type: 'symbol', ...src, 'source-layer': 'stations', minzoom: 9, filter: ['all', ['has', 'lg'], ['<=', get('tier'), 2], ['!', ['has', 'con']]],
-    layout: { 'icon-image': ['concat', 'logo|', get('lg')], 'icon-anchor': 'bottom', 'icon-offset': [0, -9], 'symbol-sort-key': get('tier'),
-      'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.28, 14, 0.4], 'icon-padding': 3 } })
+    layout: { 'icon-image': ['concat', 'logo|', get('lg')], 'icon-anchor': 'center', 'icon-offset': ['step', ['zoom'], ['literal', [0, 0]], 16, ['literal', [0, -22]]], 'symbol-sort-key': get('tier'),
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.6, 14, 0.9], 'icon-padding': 3 } })
   const conLabel = (tier: 1 | 2 | 3, size: [number, number]) =>
     add({ id: L(source, `lblcon${tier}`), type: 'symbol', ...src, 'source-layer': 'complexes', minzoom: STATION_ZOOM[tier].label,
       filter: ['all', ['has', 'con'], ['==', get('tier'), tier]],
@@ -664,7 +664,23 @@ export function addBadgeImages(map: MLMap) {
     if (kind === 'logo' && colour && !map.hasImage(e.id)) {
       // operator logo: fetched on first use; a missing file gets a transparent pixel so it is not asked for again
       map.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) })
-      map.loadImage(logoUrl(colour)).then((r) => { if (map.hasImage(e.id)) map.removeImage(e.id); map.addImage(e.id, r.data, { pixelRatio: 2 }) }).catch(() => {})
+      // drawn on a white rounded chip with a thin outline, so a bare logo does not run into the dot and the track under it
+      map.loadImage(logoUrl(colour)).then((r) => {
+        const px = 2, pad = 4
+        const img = r.data as CanvasImageSource & { width: number; height: number }
+        const k = Math.min(56 / img.width, 24 / img.height)   // wordmarks may be wide, marks are squarer
+        const w = Math.round(img.width * k), h = Math.round(img.height * k)
+        const c = document.createElement('canvas')
+        c.width = (w + 2 * pad) * px; c.height = (h + 2 * pad) * px
+        const g = c.getContext('2d')!
+        g.scale(px, px)
+        g.beginPath(); g.roundRect(0.75, 0.75, w + 2 * pad - 1.5, h + 2 * pad - 1.5, 5)
+        g.fillStyle = '#FFFFFF'; g.fill()
+        g.lineWidth = 1.5; g.strokeStyle = 'rgba(30,30,28,0.35)'; g.stroke()
+        g.drawImage(img, pad, pad, w, h)
+        if (map.hasImage(e.id)) map.removeImage(e.id)
+        map.addImage(e.id, g.getImageData(0, 0, c.width, c.height), { pixelRatio: px })
+      }).catch(() => {})
       return
     }
     if (kind !== 'badge' || !colour || map.hasImage(e.id)) return
