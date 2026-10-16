@@ -2,7 +2,7 @@
 
 **Pilot on r2.dev:** enable public access on the bucket (Settings > Public Development URL), put its exact `https://pub-xxxx.r2.dev` origin in `app/vercel.json` `connect-src` (no wildcard), set `VITE_DATA_BASE=https://pub-xxxx.r2.dev/` and `ALLOW_R2_DEV=1` in Vercel. Switch to a custom domain and disable the r2.dev URL before public launch.
 
-Replace the placeholders first: `data.example.com` (R2 custom domain) in `app/vercel.json` and `rail-globe-nu.vercel.app` (done) in `r2/cors.json`. The Vercel build fails if they do not match `VITE_DATA_BASE`.
+Replace the placeholders first: `data.example.com` (R2 custom domain) in `app/vercel.json` and `rail-globe.vercel.app` (done) in `r2/cors.json`. The Vercel build fails if they do not match `VITE_DATA_BASE`.
 
 ## R2 bucket (Cloudflare dashboard)
 1. Create a bucket. Leave **r2.dev public access disabled**: it is uncached, rate-limited and cannot carry a WAF.
@@ -28,7 +28,7 @@ The app never gets write credentials; the browser only does GET/HEAD.
 - Preview URLs differ from the CORS origin, so previews cannot load data unless you add them to `r2/cors.json` (or keep them protected).
 
 ## Verify after deploy
-`curl -sI https://rail-globe-nu.vercel.app | grep -iE 'content-security|strict-transport'`; `curl -sI -H 'Range: bytes=0-15' https://data.example.com/pilot.pmtiles` returns 206 and `cf-cache-status`; browser console shows no CSP violations on a cold load.
+`curl -sI https://rail-globe.vercel.app | grep -iE 'content-security|strict-transport'`; `curl -sI -H 'Range: bytes=0-15' https://data.example.com/pilot.pmtiles` returns 206 and `cf-cache-status`; browser console shows no CSP violations on a cold load.
 
 ## Known gaps
 - Google Fonts is a third-party stylesheet (no SRI possible); self-hosting IBM Plex would let the CSP drop two origins.

@@ -1,6 +1,6 @@
 [
   {
-    "AllowedOrigins": ["https://rail-globe-nu.vercel.app"],
+    "AllowedOrigins": ["https://rail-globe.vercel.app"],
     "AllowedMethods": ["GET", "HEAD"],
     "AllowedHeaders": ["range", "if-match", "if-none-match"],
     "ExposeHeaders": ["Content-Range", "Content-Length", "ETag", "Accept-Ranges"],
