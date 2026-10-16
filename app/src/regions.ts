@@ -1,4 +1,4 @@
-import { DATA_BASE } from './config'
+import { DATA_BASE, TILE_SOURCE } from './config'
 
 export interface Region {
   slug: string
@@ -31,7 +31,7 @@ export const REGIONS: Region[] = [
 export const regionBySlug = (s: string) => REGIONS.find((r) => r.slug === s) ?? REGIONS[1]
 
 /** The one tile source on the map: the per-region PMTiles (SF Bay Area, China and the countries) joined (rail-extract build, join_pilot). Style layer ids are `pilot:<name>`. */
-export const TILES = 'pilot'
+export const TILES = TILE_SOURCE
 type Part = { slug: string; bounds: [number, number, number, number] }
 let parts: Part[] = []
 /** The per-region sources that were joined, with their outline bounds, from pilot.parts.json (written by the join in

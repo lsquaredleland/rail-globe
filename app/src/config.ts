@@ -11,7 +11,13 @@ export const STATION_ZOOM: Record<1 | 2 | 3, { dot: number; label: number }> = {
 /** Where the pipeline's output (tiles and side files) is served from: VITE_DATA_BASE (the R2 public URL) in a deployed build,
  *  else the app's own data/ folder (dev server, local preview). Always ends in a slash. */
 const envBase = import.meta.env.VITE_DATA_BASE as string | undefined
-export const DATA_BASE = envBase ? envBase.replace(/\/?$/, '/') : new URL('data/', document.baseURI).href
+const dataRoot = envBase ? envBase.replace(/\/?$/, '/') : new URL('data/', document.baseURI).href
+
+/** Which build of the pipeline the map shows: `pilot` (default; pilot.pmtiles in data/), or `world` with VITE_TILE_SOURCE=world (world.pmtiles
+ *  and the country side files in data/world/, written by `rail-extract world`). Dev switch for looking at the world build; the app does
+ *  not offer it to users. */
+export const TILE_SOURCE = import.meta.env.VITE_TILE_SOURCE === 'world' ? 'world' : 'pilot'
+export const DATA_BASE = TILE_SOURCE === 'world' ? `${dataRoot}world/` : dataRoot
 
 /** Map label glyphs (SDF fonts, only the characters the map can draw): the app's own glyphs/ folder, written by pipeline/glyphs. MapLibre
  *  wants an absolute URL with its {fontstack} and {range} placeholders left as they are. */
