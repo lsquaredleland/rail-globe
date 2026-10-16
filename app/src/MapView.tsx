@@ -228,7 +228,8 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       const key = `${c.lng.toFixed(3)}/${c.lat.toFixed(3)}/${map.getZoom().toFixed(2)}`
       if (!loaded.current || key === prefetched) return
       prefetched = key
-      setTimeout(() => { if (!map.isMoving()) prefetchHighlights(map) }, 150)
+      // the outlines that decide which country a track belongs to must be in first, else a border track asks the neighbour for its line file (404)
+      setTimeout(() => { if (!map.isMoving()) void warmParts([c.lng, c.lat]).then(() => { if (!map.isMoving()) prefetchHighlights(map) }) }, 150)
     })
     map.on('moveend', () => {
       const c = map.getCenter()

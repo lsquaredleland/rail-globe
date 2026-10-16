@@ -24,6 +24,7 @@
 //!   - the countries of the regions and the provinces / states (admin level 4) that contain a station complex, with the bounding
 //!     box of their outline (only the polygons that are at least 5 % of the largest one and hold a station complex: overseas
 //!     territories and far islands do not stretch it) and a zoom that fits it;
+//!     A country with under SMALL_COUNTRY_KM (3,000) open passenger route km (its stats.json) and no city below is listed without its provinces.
 //!   - the cities: ONE per metro area. A candidate is a place=city (or a level-5 outline, China's prefecture-level cities) with a
 //!     station complex within CITY_KM and open passenger track typed `metro` or `light_rail` (not construction or proposed; monorail
 //!     alone does not count) within METRO_KM of its point (exact distance to the track). Candidates are sorted by rank, then
@@ -49,6 +50,8 @@ pub const TOWN_KM: f64 = 5.0;
 pub const METRO_KM: f64 = 12.0;
 /// candidates closer than this are one metro area in search.json: only the most important is kept
 pub const MERGE_KM: f64 = 20.0;
+/// a country with less open passenger rail than this (route km, from its stats.json) and no city in search.json is searched at country level only: no provinces
+pub const SMALL_COUNTRY_KM: f64 = 3000.0;
 
 fn txt(b: &[u8]) -> String {
     String::from_utf8_lossy(b).into_owned()
@@ -267,6 +270,13 @@ fn load_outline(dir: &Path, slug: &str) -> Option<Value> {
     serde_json::from_str(&std::fs::read_to_string(dir.join(format!("{slug}.geojson"))).ok()?).ok()
 }
 
+/// open passenger route km of a region (everything but freight and `other`), from <out>/<slug>/stats.json; None without that file
+fn region_km(out: &Path, slug: &str) -> Option<f64> {
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(out.join(slug).join("stats.json")).ok()?).ok()?;
+    let area = v["areas"].as_array()?.iter().find(|a| a["slug"].as_str() == Some(slug))?;
+    Some(area["km"].as_object()?.iter().filter(|(t, _)| !matches!(t.as_str(), "freight" | "other")).filter_map(|(_, k)| k["open"].as_f64()).sum())
+}
+
 fn write_json(path: &Path, v: &Value) {
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, serde_json::to_string(v).expect("json")).unwrap_or_else(|e| panic!("write {}: {e}", tmp.display()));
@@ -422,6 +432,7 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
         }
     }
     struct Country {
+        slug: String,
         region: String,
         name: String,
         en: Option<String>,
@@ -437,7 +448,7 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
             let polys = polys_of(&load_outline(outline_dir, cs)?);
             let (bbox, area) = main_bbox(&polys, &has_station).or_else(|| main_bbox(&polys, &|_| true))?;
             let (lat, lon) = label_point(&polys)?;
-            Some(Country { region: rs.clone(), name: display(o), en: o.name_en.clone(), local: o.name.clone(), pt: (lon, lat), bbox, area })
+            Some(Country { slug: cs.clone(), region: rs.clone(), name: display(o), en: o.name_en.clone(), local: o.name.clone(), pt: (lon, lat), bbox, area })
         })
         .collect();
     countries.sort_by(|a, b| b.area.total_cmp(&a.area));
@@ -552,7 +563,21 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
         // the stations of a country's regions are not counted per country: n is 0 (the map shows no count for a country either)
         s.push(json!([ct.name, ct.en, local(&ct.local, &ct.name), "country", b3(ct.pt.0), b3(ct.pt.1), b3(ct.bbox[0]), b3(ct.bbox[1]), b3(ct.bbox[2]), b3(ct.bbox[3]), fit_zoom(&ct.bbox), ct.region, 0]));
     }
-    let mut prov: Vec<&Area> = areas.iter().filter(|a| outlines[a.o].level == "4").collect();
+    // small countries without a city entry are searched at country level only (a whole-country region, so its km are known)
+    let country_only: Vec<String> = countries
+        .iter()
+        .filter(|ct| ct.region == ct.slug && region_km(out, &ct.slug).map_or(false, |k| k < SMALL_COUNTRY_KM))
+        .filter(|ct| {
+            let reg = load_outline(outline_dir, &ct.slug).map(|v| Region::new(&ct.slug, rings_of(&v)));
+            !cities.iter().any(|c| match &c.outline {
+                Some((slug, _)) => slug.starts_with(&format!("{}-", ct.slug)),
+                None => reg.as_ref().map_or(false, |r| r.contains((c.lat * 1e7).round() as i32, (c.lon * 1e7).round() as i32)),
+            })
+        })
+        .map(|ct| format!("{}-", ct.slug))
+        .collect();
+    lap(&format!("{} small countries without a city are country level only", country_only.len()));
+    let mut prov: Vec<&Area> = areas.iter().filter(|a| outlines[a.o].level == "4" && !country_only.iter().any(|p| outlines[a.o].slug.starts_with(p.as_str()))).collect();
     prov.sort_by(|a, b| (&outlines[a.o].level, std::cmp::Reverse(a.n)).cmp(&(&outlines[b.o].level, std::cmp::Reverse(b.n))));
     for a in prov {
         let o = &outlines[a.o];
