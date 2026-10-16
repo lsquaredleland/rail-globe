@@ -20,11 +20,17 @@ use std::path::Path;
 const TYPE_ORDER: [&str; 8] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "other"];
 // Zoomed out (tile zooms 0..OVERVIEW_MAXZOOM) the track layer holds a merged overview instead of every piece (docs/00-overview.md)
 const OVERVIEW_MAXZOOM: i64 = 8;
-// Construction and proposed track is also written merged end to end, per (type, proposed, speed band), as the draw-only layer `con_draw`
-// (no ids, no tags): the app's dashes. MapLibre restarts a dash pattern at every feature and one OSM way is often shorter than a dash. The
-// per-way features stay in `track` for hover, click and highlight. Yard track is left out. A type's layer starts at its own track_minzoom, but
-// not before CON_DRAW_MINZOOM; the app draws from one zoom later (app/src/mapStyle.ts CON_DASH_MINZOOM), so the tiles are loaded in time.
-const CON_DRAW_MINZOOM: i64 = 3;
+// Construction and proposed track is drawn as dashes cut in the pipeline (no ids, no tags), layer `con_dash`; the per-way features stay in `track` for
+// hover, click and highlight. Yard track is left out. A type's dashes start at its own track_minzoom, but not before CON_DASH_MINZOOM.
+const CON_DASH_MINZOOM: i64 = 3;
+// The track is merged end to end (per type, proposed flag and speed band), parallel tracks made one line, and cut into real dashes: MapLibre's line-dasharray restarts at tile edges and stretches between whole zooms, so
+// the dashes are geometry. One copy per band of CON_BAND_STEP zoom levels from CON_BAND_FIRST; the dash is CON_DASH_PX / CON_GAP_PX on screen at the
+// middle of its band (within a band the map scales it by up to 2^CON_BAND_STEP either way). The app shows one band at a time (property `b`).
+const CON_BAND_FIRST: f64 = 4.0;
+const CON_BAND_STEP: f64 = 0.5;
+const CON_BAND_LAST: f64 = 14.5; // the last band is shown from here to the deepest zoom
+const CON_DASH_PX: f64 = 12.0;
+const CON_GAP_PX: f64 = 8.0;
 const SKETCH_MINZOOM: i64 = 4; // the metro sketch (type only) is drawn from here to the zoom before the metro overview starts
 const CITY_LINK_KM: f64 = 3.0; // track samples this close (directly or through others) are one city dot
 const CITY_ABSORB_KM: f64 = 15.0; // a small group this close to a much bigger one (see CITY_ABSORB_RATIO) is part of that city
@@ -163,6 +169,107 @@ fn write_json(path: &Path, v: &Value) {
 }
 
 /// shapely's linemerge: pieces joined end to end through points where exactly two of them meet
+/// web mercator on the unit square (x east, y south) and back
+fn to_merc((lon, lat): (f64, f64)) -> (f64, f64) {
+    ((lon + 180.0) / 360.0, 0.5 - (std::f64::consts::FRAC_PI_4 + lat.to_radians() / 2.0).tan().ln() / (2.0 * std::f64::consts::PI))
+}
+fn from_merc((x, y): (f64, f64)) -> (f64, f64) {
+    (x * 360.0 - 180.0, (2.0 * ((0.5 - y) * 2.0 * std::f64::consts::PI).exp().atan() - std::f64::consts::FRAC_PI_2).to_degrees())
+}
+
+/// cut a line (mercator) into dashes of `dash` with `gap` between, the pattern running along the whole line from its start
+fn cut_dashes(line: &[(f64, f64)], dash: f64, gap: f64) -> Vec<Vec<(f64, f64)>> {
+    let mut out = Vec::new();
+    let (mut cur, mut on, mut left) = (vec![line[0]], true, dash);
+    for w in line.windows(2) {
+        let (mut a, b) = (w[0], w[1]);
+        let mut seg = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+        while seg > left {
+            let t = left / seg;
+            let p = (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
+            if on {
+                cur.push(p);
+                out.push(std::mem::take(&mut cur));
+            } else {
+                cur = vec![p];
+            }
+            seg -= left;
+            a = p;
+            on = !on;
+            left = if on { dash } else { gap };
+        }
+        left -= seg;
+        if on {
+            cur.push(b);
+        }
+    }
+    if on && cur.len() > 1 {
+        out.push(cur);
+    }
+    out
+}
+
+/// Parallel tracks (double track is mapped as two ways) get the same dashes only if they are one line: each gets its own pattern from its own start, so
+/// two dashed lines a few metres apart interleave into a solid one. Lines are taken longest first; a stretch within about CON_PARALLEL_CELL of one already
+/// taken is dropped, so each corridor keeps one centreline. Input and output in mercator.
+const CON_PARALLEL_CELL: f64 = 1.8e-6; // about 60-80 m
+fn dedupe_parallel(mut lines: Vec<Vec<(f64, f64)>>) -> Vec<Vec<(f64, f64)>> {
+    let len = |l: &Vec<(f64, f64)>| l.windows(2).map(|w| ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt()).sum::<f64>();
+    lines.sort_by(|a, b| len(b).partial_cmp(&len(a)).unwrap_or(std::cmp::Ordering::Equal));
+    let cell = |p: (f64, f64)| ((p.0 / CON_PARALLEL_CELL).floor() as i64, (p.1 / CON_PARALLEL_CELL).floor() as i64);
+    let mut taken: std::collections::HashSet<(i64, i64)> = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for l in lines {
+        // samples along the line, half a cell apart
+        let mut s: Vec<(f64, f64)> = vec![l[0]];
+        for w in l.windows(2) {
+            let d = ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt();
+            let n = (d / (CON_PARALLEL_CELL / 2.0)).ceil().max(1.0) as usize;
+            for i in 1..=n {
+                let t = i as f64 / n as f64;
+                s.push((w[0].0 + (w[1].0 - w[0].0) * t, w[0].1 + (w[1].1 - w[0].1) * t));
+            }
+        }
+        let covered: Vec<bool> = s.iter().map(|&p| { let (cx, cy) = cell(p); (-1..=1).any(|dx| (-1..=1).any(|dy| taken.contains(&(cx + dx, cy + dy)))) }).collect();
+        let mut run: Vec<(f64, f64)> = Vec::new();
+        for (i, &p) in s.iter().enumerate() {
+            if !covered[i] {
+                run.push(p);
+            } else if !run.is_empty() {
+                if run.len() > 1 { out.push(std::mem::take(&mut run)); } else { run.clear(); }
+            }
+        }
+        if run.len() > 1 {
+            out.push(run);
+        }
+        for &p in &s { taken.insert(cell(p)); }
+    }
+    out
+}
+
+/// the dashes of one merged construction line (mercator) for every band (property `b`), each band in the tile zoom where the app shows it
+fn con_dashes(out: &mut String, props: &Map<String, Value>, merc: &[(f64, f64)], first_tile_zoom: i64) {
+    if merc.len() < 2 {
+        return;
+    }
+    let nb = ((CON_BAND_LAST - CON_BAND_FIRST) / CON_BAND_STEP).round() as i64;
+    for b in 0..=nb {
+        let z = CON_BAND_FIRST + b as f64 * CON_BAND_STEP;
+        let tile_zoom = (z.floor() as i64).min(14);
+        if tile_zoom < first_tile_zoom {
+            continue;
+        }
+        let zc = if b == nb { z + CON_BAND_STEP } else { z + CON_BAND_STEP / 2.0 };
+        let px = 1.0 / (512.0 * 2f64.powf(zc));
+        let mut p = props.clone();
+        p.insert("b".into(), json!(b));
+        for d in cut_dashes(&merc, CON_DASH_PX * px, CON_GAP_PX * px) {
+            let coords: Vec<Value> = d.iter().map(|&q| { let (x, y) = from_merc(q); json!([x, y]) }).collect();
+            feat(out, &p, &pyjson::to_string(&json!({"type": "LineString", "coordinates": coords}), COMPACT), Some(tile_zoom), Some(tile_zoom));
+        }
+    }
+}
+
 fn linemerge(lines: Vec<Vec<(f64, f64)>>) -> Vec<Vec<(f64, f64)>> {
     let key = |p: (f64, f64)| (p.0.to_bits(), p.1.to_bits());
     let mut at: FxHashMap<(u64, u64), Vec<usize>> = FxHashMap::default();
@@ -255,7 +362,7 @@ fn geojson_value(g: &Geometry<f64>) -> Value {
 }
 
 /// the tile layers of one region: (tile layer, file in tiles_tmp), in stacking order (the overview is the first "track" file)
-pub const TILE_LAYERS: [(&str, &str); 12] = [("track", "track_overview.geojsonl"), ("track", "track.geojsonl"), ("con_draw", "con_draw.geojsonl"),
+pub const TILE_LAYERS: [(&str, &str); 12] = [("track", "track_overview.geojsonl"), ("track", "track.geojsonl"), ("con_dash", "con_dash.geojsonl"),
     ("lines", "lines.geojsonl"), ("areas", "areas.geojsonl"), ("buildings", "buildings.geojsonl"), ("platforms", "platforms.geojsonl"),
     ("stations", "stations.geojsonl"), ("complexes", "complexes.geojsonl"), ("airports", "airports.geojsonl"),
     ("airport_pts", "airport_pts.geojsonl"), ("cities", "cities.geojsonl")];
@@ -846,8 +953,8 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
         feat(&mut cx_rows, &m, &pyjson::to_string(&c["geometry"], COMPACT), Some(minz), None);
     }
 
-    // ------------------------------------------------------------ merged construction geometry for drawing (con_draw)
-    let mut con_draw = String::new();
+    // ------------------------------------------------------------ construction dashes (con_dash)
+    let mut con_dash = String::new();
     for ((t, prop, band), ways) in con_groups {
         let mut props = Map::new();
         props.insert("type".into(), json!(t));
@@ -857,10 +964,9 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
         if band >= 0 {
             props.insert("kmh".into(), json!(band));
         }
-        for line in linemerge(ways) {
-            let coords: Vec<Value> = line.iter().map(|&(x, y)| json!([x, y])).collect();
-            feat(&mut con_draw, &props, &pyjson::to_string(&json!({"type": "LineString", "coordinates": coords}), COMPACT),
-                Some(track_minzoom(&t).max(CON_DRAW_MINZOOM)), None);
+        let merged = linemerge(ways);
+        for line in dedupe_parallel(merged.iter().map(|l| l.iter().map(|&p| to_merc(p)).collect()).collect()) {
+            con_dashes(&mut con_dash, &props, &line, track_minzoom(&t).max(CON_DASH_MINZOOM));
         }
     }
 
@@ -873,7 +979,7 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
     for (_, props, geom, mz, xz) in &overview {
         feat(&mut ov_text, props, geom, Some(*mz), Some(*xz));
     }
-    let texts: [&String; 12] = [&ov_text, &track, &con_draw, &strands, &areas, &buildings, &plats, &st_rows, &cx_rows, &airports, &airport_pts, &cities_text];
+    let texts: [&String; 12] = [&ov_text, &track, &con_dash, &strands, &areas, &buildings, &plats, &st_rows, &cx_rows, &airports, &airport_pts, &cities_text];
     for ((_, file), text) in TILE_LAYERS.iter().zip(texts) {
         let file = tmp.join(file);
         fs::File::create(&file).and_then(|mut w| w.write_all(text.as_bytes())).unwrap_or_else(|e| panic!("write {}: {e}", file.display()));

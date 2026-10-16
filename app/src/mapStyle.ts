@@ -65,15 +65,17 @@ export const INACTIVE_DARK = '#383D45'
 const INACTIVE_WIDTH = 0.6
 const typeColor = byType((t) => TYPE_COLOR[t], 'type', TYPE_COLOR.other)
 
-// Under-construction and proposed track: dashes, drawn from `con_draw` (the same track merged end to end, no ids; see tiles.rs) so one pattern
-// runs along a stretch instead of restarting at every OSM way. Construction at full opacity, proposed fainter. Hover, click and highlight stay
-// on the per-way `track` features (`hit-con`, `hit-prop`). Dashes alone repeat per tile and stretch between whole zooms (docs/00-overview.md).
+// Under-construction and proposed track: dashes cut as real geometry in the pipeline (tile layer `con_dash`, tiles.rs), not MapLibre's line-dasharray,
+// which restarts at every tile edge and stretches between whole zooms. Parallel tracks are one line, so the pattern runs along a stretch.
+// Construction at full opacity, proposed fainter. Hover, click and highlight stay on the per-way `track` features (`hit-con`, `hit-prop`).
+const CON_BAND_FIRST = 4, CON_BAND_STEP = 0.5, CON_BAND_LAST = 14.5   // tiles.rs: the bands con_dash is cut for
+/** One layer per band (a zoom range of CON_BAND_STEP), because a zoom-dependent opacity on a data-driven property is evaluated at whole zooms
+ *  and blended between them, so it cannot show one band exactly. Layer `<name>-b<k>`, filter b == k. */
+const CON_BANDS = Array.from({ length: Math.round((CON_BAND_LAST - CON_BAND_FIRST) / CON_BAND_STEP) + 1 }, (_, k) => k)
+const conBandRange = (k: number): { minzoom: number; maxzoom: number } =>
+  ({ minzoom: CON_BAND_FIRST + k * CON_BAND_STEP, maxzoom: k === CON_BANDS.length - 1 ? 24 : CON_BAND_FIRST + (k + 1) * CON_BAND_STEP })
 const CON_DASH_OPACITY = 1
 const PROP_DASH_OPACITY = 0.6
-const CON_DASH_PX = 12
-const CON_GAP_PX = 8
-/** First zoom with dashes. `con_draw` is written into tiles from one zoom earlier (tiles.rs CON_DRAW_MINZOOM = this - 1), so it is loaded in time. */
-const CON_DASH_MINZOOM = 4
 /** Rail is drawn at LOW_ZOOM_SHARE of its width at z7 and below, and grows to full width at z10 (the thick lines crowd the zoomed-out map) */
 const LOW_ZOOM_SHARE = 0.5
 /** [zoom, minimum px, TYPE_WIDTH index, share of the width] of the construction width ramp; width = share * max(minimum, type width * 1.2) */
@@ -83,28 +85,6 @@ const conWidth = (mult?: Expr): Expr => ['interpolate', ['linear'], ['zoom'], ..
   const w = byType((t) => conStopWidth(t, k), 'type', conStopWidth('other', k)) as Expr
   return [CON_STOPS[k][0], mult ? ['*', w, mult] : w]
 })] as Expr
-/** line width in px of an under-construction line of type `t` at zoom `z` */
-function conWidthAt(t: RailType, z: number): number {
-  if (z <= CON_STOPS[0][0]) return conStopWidth(t, 0)
-  for (let k = 1; k < CON_STOPS.length; k++) {
-    if (z <= CON_STOPS[k][0]) {
-      const f = (z - CON_STOPS[k - 1][0]) / (CON_STOPS[k][0] - CON_STOPS[k - 1][0])
-      return conStopWidth(t, k - 1) + f * (conStopWidth(t, k) - conStopWidth(t, k - 1))
-    }
-  }
-  return conStopWidth(t, CON_STOPS.length - 1)
-}
-/** MapLibre sizes dashes in line widths, using the line width at the WHOLE zoom (its floorwidth), and evaluates a zoom-dependent
- *  dasharray only at whole zooms. It also stretches the pattern with the map within a zoom (x1 at the whole zoom, x2 just before the
- *  next: the dashes belong to the tile). So the pattern is sized for the width at the whole zoom and for the stretch at half a zoom
- *  (the factor 1/sqrt 2): the drawn dash is CON_DASH_PX at mid zoom and between 0.71 and 1.41 times that at the whole zooms and just
- *  before the next, at every rail type. */
-const conDashPx = (greyOut = false): Expr => {
-  // under HSR only the other types are thinned by INACTIVE_WIDTH, and the pattern is in line widths: divide it by the same factor
-  const arr = (t: RailType, z: number) => ['literal', [CON_DASH_PX, CON_GAP_PX].map((px) => px / (conWidthAt(t, z) * Math.SQRT2 * (greyOut && t !== 'high_speed' ? INACTIVE_WIDTH : 1)))] as unknown as string
-  const at = (z: number): Expr => byType((t) => arr(t, z), 'type', arr('other', z))
-  return ['step', ['zoom'], at(0), ...Array.from({ length: 16 }, (_, i) => [i + 1, at(i + 1)]).flat()] as unknown as Expr
-}
 /** under-construction colour: the colour rule of open track (`other` is drawn dark grey) */
 const conColor: Expr = ['match', get('type'), 'other', '#45423C', typeColor]
 
@@ -325,13 +305,16 @@ export function addRailSource(map: MLMap, source: string) {
     layout: { ...roundJoin, 'line-sort-key': rank },
     paint: { 'line-color': typeColor, 'line-width': widthExpr(), 'line-opacity': 1 } })
 
-  // under construction and proposed: dashes from `con_draw`. An explicit sort key wins over hsLast; `rank` already puts high_speed last.
+  // under construction and proposed: dashes from `con_dash` (one layer per zoom band). An explicit sort key wins over hsLast; `rank` already puts high_speed last.
   // One layer per kind, so a switch only flips visibility: changing a filter makes MapLibre re-evaluate every track piece in the loaded tiles.
   // Yard track is left out of the tiles; freight follows the Freight switch (applyRegion). Proposed starts hidden (its switch is off by default).
   for (const [name, opacity] of [['construction', CON_DASH_OPACITY], ['proposed', PROP_DASH_OPACITY]] as const) {
-    trackLayer(name, { type: 'line', ...src, 'source-layer': 'con_draw', minzoom: CON_DASH_MINZOOM, filter: name === 'proposed' ? ['has', 'prop'] : ['!', ['has', 'prop']],
-      layout: { 'line-cap': 'butt', 'line-join': 'round', 'line-sort-key': rank, visibility: name === 'proposed' ? 'none' : 'visible' },
-      paint: { 'line-color': conColor, 'line-width': conWidth(), 'line-opacity': opacity, 'line-dasharray': conDashPx() } })
+    const kind: Expr = name === 'proposed' ? ['has', 'prop'] : ['!', ['has', 'prop']]
+    const layout = { 'line-cap': 'butt', 'line-join': 'round', 'line-sort-key': rank, visibility: name === 'proposed' ? 'none' : 'visible' }
+    const conPaint = { 'line-color': conColor, 'line-width': conWidth(), 'line-opacity': opacity }
+    for (const k of CON_BANDS) {
+      trackLayer(`${name}-b${k}`, { type: 'line', ...src, 'source-layer': 'con_dash', ...conBandRange(k), filter: ['all', kind, ['==', get('b'), k]], layout, paint: conPaint })
+    }
   }
 
   // highlight for the hovered or selected line: the same line drawn wider in its own colour, no outline
@@ -505,10 +488,14 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     map.setLayoutProperty(L(slug, 'lbl-track'), 'text-field', nameExpr(s.lang, 'n', 'ne'))
     map.setLayoutProperty(L(slug, 'lbl-lines'), 'text-field', nameExpr(s.lang, 'lb', 'lbe'))
     // paint, layout and filter changes reach a layer and its high-speed twin (if it has one) together
-    const names = (n: string) => (TWINS.has(n) ? [n, `${n}-hs`] : [n])
+    const names = (n: string) => (TWINS.has(n) ? [n, `${n}-hs`] : n === 'construction' || n === 'proposed' ? CON_BANDS.map((k) => `${n}-b${k}`) : [n])
     const setPaint = (n: string, prop: string, v: unknown) => names(n).forEach((x) => map.setPaintProperty(L(slug, x), prop as never, v as never))
     const setVis = (n: string, v: string) => names(n).forEach((x) => map.setLayoutProperty(L(slug, x), 'visibility', v as never))
     const setFilt = (n: string, f: Expr | null, typeKey = 'type') => {
+      if (n === 'construction' || n === 'proposed') {
+        CON_BANDS.forEach((k) => map.setFilter(L(slug, `${n}-b${k}`), ['all', ...(f ? [f] : []), ['==', get('b'), k]] as Expr))
+        return
+      }
       if (!TWINS.has(n)) { map.setFilter(L(slug, n), f); return }
       names(n).forEach((x, i) => {
         const hs: Expr = [i === 0 ? '!=' : '==', get(typeKey), 'high_speed'] as Expr
@@ -546,7 +533,7 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     // under-construction track follows the same colour rule as open track
     const conCol = grey(s.mode === 'speed' ? speedColor : conColor)
     const conW = conWidth(greyOut ? (['case', activeTrack, 1, INACTIVE_WIDTH] as Expr) : undefined)
-    for (const n of ['construction', 'proposed']) { setPaint(n, 'line-color', conCol); setPaint(n, 'line-width', conW); setPaint(n, 'line-dasharray', conDashPx(greyOut)) }
+    for (const n of ['construction', 'proposed']) { setPaint(n, 'line-color', conCol); setPaint(n, 'line-width', conW) }
     setPaint('strand', 'line-color', grey(['coalesce', get('c'), byType((t) => TYPE_COLOR[t], 't', TYPE_COLOR.other)] as Expr, strandActive))
     setPaint('strand-casing', 'line-opacity', greyOut ? (['case', strandActive, 0.28, 0] as Expr) : 0.28)
     const hiddenT = s.hidden.length > 0

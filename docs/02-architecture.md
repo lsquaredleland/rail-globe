@@ -64,7 +64,7 @@ The app reads one tile source, `pilot` (`pilot.pmtiles`). `rail-extract build` r
 | --- | --- | --- | --- |
 | `track` (overview) | Merged lines, in the `track` layer (see `00-overview.md`, 2026-10-12) | z0–8 | type, con, prop, oc, kmh band, ln; nk (railway number) on track with no mapped line |
 | `track` | Lines | z9–14 | id, type, usage, electrified, voltage, frequency, maxspeed, gauge, tracks, tunnel, bridge, construction, line ids |
-| `con_draw` | Construction and proposed track merged end to end, per type, proposed flag and speed band. Draw-only (the dashes): no id, no tags; no yard track | z3–14 in tiles (drawn from z4; a type's own minimum zoom if later) | type, prop, kmh band |
+| `con_dash` | Construction and proposed track as real dashes: merged end to end per type, proposed flag and speed band, parallel tracks (double track) collapsed into one line within about 60–80 m, then cut into 12 px dashes with 8 px gaps. One copy per half-zoom band (z4 to z14.5), property `b`, each in the tile zoom where its band is shown. Draw-only: no id, no tags; no yard track | z3–14 in tiles (a type's own minimum zoom if later) | type, prop, kmh band, b |
 | `lines` | One feature per line | z9–14 | line id, type, colour, ref, name |
 | `areas` | Station grounds, yards | z12–14 | id, kind |
 | `buildings` | Station buildings | z13–14 | id |
@@ -86,7 +86,7 @@ Side files: `lines/<id>.json` (with the line's highlight data: its track pieces'
 | 12 | Station grounds and yard outlines; all stations |
 | 13–14 | Yard track, sidings, spurs, crossovers, station buildings; platforms at 14 |
 
-Construction track is shown from the same zoom as its rail type (an under-construction high-speed line shows from z0), not later. It is drawn as dashes at every zoom from z4, from `con_draw` (merged lines, so a dash pattern runs along a stretch within a tile). Hover, click and highlight use the per-way `track` features (`hit-con`, `hit-prop`), which the merged overview carries below z9, not `con_draw`.
+Construction track is shown from the same zoom as its rail type (an under-construction high-speed line shows from z0), not later. It is drawn as dashes at every zoom from z4, from `con_dash`: one style layer per half-zoom band (`construction-b0` to `-b21`, filter `b`), because a zoom-dependent opacity on a data property is blended between whole zooms. Hover, click and highlight use the per-way `track` features (`hit-con`, `hit-prop`), which the merged overview carries below z9, not `con_dash`.
 
 Tiles include each class one zoom earlier than the style shows it, so zoom rules can be tuned in the style without rebuilding. Budget: under 600 KB per view on a mid-range phone.
 
