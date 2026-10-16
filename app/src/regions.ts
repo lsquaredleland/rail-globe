@@ -1,4 +1,5 @@
 import { DATA_BASE, TILE_SOURCE } from './config'
+import type { SearchItem } from './search'
 
 export interface Region {
   slug: string
@@ -15,7 +16,8 @@ export interface Region {
   noCard?: boolean
 }
 
-export const REGIONS: Region[] = [
+/** The hand-tuned regions of the pilot build (their own centre, zoom and card rules). The world build has none: its regions come from search.json. */
+const PILOT_REGIONS: Region[] = [
   { slug: 'sf-bay-area', name: 'SF Bay Area', sub: '9 counties', center: [-122.22, 37.7], zoom: 9.3, zoomPhone: 8.4 },
   { slug: 'greater-bay-area', name: 'Greater Bay Area', sub: 'Pearl River Delta + HK + Macao', local: '粤港澳大湾区', center: [113.55, 22.75], zoom: 8.2, zoomPhone: 7.3, tiles: 'china' },
   { slug: 'paris', name: 'Paris', sub: 'Île-de-France', center: [2.35, 48.86], zoom: 10.6, zoomPhone: 9.6, tiles: 'fr', noCard: true },
@@ -28,7 +30,26 @@ export const REGIONS: Region[] = [
   { slug: 'china', name: 'China', sub: 'Mainland + HK + Macao', local: '中国', center: [108.0, 34.5], zoom: 3.8, zoomPhone: 2.8 },
 ]
 
-export const regionBySlug = (s: string) => REGIONS.find((r) => r.slug === s) ?? REGIONS[1]
+export const REGIONS: Region[] = TILE_SOURCE === 'world' ? [] : PILOT_REGIONS
+
+/** Where the map starts without a link: the Greater Bay Area in the pilot, the whole world in the world build */
+export const DEFAULT_REGION: Region = TILE_SOURCE === 'world'
+  ? { slug: 'world', name: 'World', sub: 'All countries with rail', center: [15, 28], zoom: 2.2, zoomPhone: 1.6, noCard: true }
+  : PILOT_REGIONS[1]
+
+const dynamic = new Map<string, Region>()
+const SUB = { country: 'Country', province: 'Province / state', city: 'City' } as const
+/** Makes the countries and provinces of search.json known as regions (a link to `#r=de-bavaria` finds its centre and zoom). The hand-tuned regions win. */
+export function registerSearch(items: SearchItem[]) {
+  for (const it of items) {
+    if (!it.slug || dynamic.has(it.slug)) continue
+    dynamic.set(it.slug, { slug: it.slug, name: it.nameEn ?? it.name, sub: SUB[it.kind], local: it.local ?? undefined, center: it.center, zoom: it.zoom, zoomPhone: Math.max(1.5, it.zoom - 1) })
+  }
+}
+/** A region by slug: a hand-tuned one, else one made from search.json, else (an unknown slug) a placeholder that names the slug and sits at the default view. Never another region. */
+export const regionBySlug = (s: string): Region =>
+  REGIONS.find((r) => r.slug === s) ?? dynamic.get(s) ?? { ...DEFAULT_REGION, slug: s, name: s, sub: '', local: undefined, noCard: true }
+export const isKnownRegion = (s: string) => REGIONS.some((r) => r.slug === s) || dynamic.has(s)
 
 /** The one tile source on the map: the per-region PMTiles (SF Bay Area, China and the countries) joined (rail-extract build, join_pilot). Style layer ids are `pilot:<name>`. */
 export const TILES = TILE_SOURCE
@@ -41,11 +62,25 @@ export async function loadParts() {
   const r = await fetch(`${DATA_BASE}${TILES}.parts.json`)
   if (!r.ok) throw new Error(`${TILES}.parts.json: ${r.status}`)
   parts = await r.json()
-  // the countries' bounding boxes overlap (France, Germany, Switzerland, Italy), so where they do the outlines decide
-  await Promise.all(parts.map((p) => fetch(`${DATA_BASE}${p.slug}.boundary.geojson`).then((x) => (x.ok ? x.json() : null)).then((j: GeoJSON.Feature | null) => {
-    const g = j?.geometry
-    outers[p.slug] = !g ? [] : g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map((q) => q[0]) : []
-  }).catch(() => { outers[p.slug] = [] })))
+}
+/** Outlines are fetched only where bounds overlap (neighbouring countries), never all at once: the world has 146 of them, 12 MB */
+const outlineLoads = new Map<string, Promise<void>>()
+const loadOuter = (slug: string) => {
+  let p = outlineLoads.get(slug)
+  if (!p) {
+    p = fetch(`${DATA_BASE}${slug}.boundary.geojson`).then((x) => (x.ok ? x.json() : null)).then((j: GeoJSON.Feature | null) => {
+      const g = j?.geometry
+      outers[slug] = !g ? [] : g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map((q) => q[0]) : []
+    }).catch(() => { outers[slug] = [] })
+    outlineLoads.set(slug, p)
+  }
+  return p
+}
+const boundsHold = (b: number[], lng: number, lat: number) => lng >= b[0] && lng <= b[2] && lat >= b[1] && lat <= b[3]
+/** Loads the outlines `partAt` needs near a point: those of the parts whose bounds overlap there. Call when the view settles, so the first hover finds the right country. */
+export function warmParts([lng, lat]: [number, number]): Promise<void> {
+  const near = parts.filter((p) => boundsHold(p.bounds, lng, lat))
+  return near.length > 1 ? Promise.all(near.map((p) => loadOuter(p.slug))).then(() => {}) : Promise.resolve()
 }
 const outers: Record<string, number[][][]> = {}
 const inRing = (ring: number[][], x: number, y: number) => {
@@ -58,12 +93,15 @@ const inRing = (ring: number[][], x: number, y: number) => {
 }
 /** the joined file a point (lon, lat) belongs to. Part bounds come from the outlines and may overlap (neighbouring countries), so this resolves by outline: the part whose outline holds the point, else the nearest bounds */
 export function partAt([lng, lat]: [number, number]): string {
+  if (!parts.length) return ''   // parts.json not loaded yet
   const d = (b: number[]) => Math.hypot(Math.max(b[0] - lng, 0, lng - b[2]), Math.max(b[1] - lat, 0, lat - b[3]))
   const near = parts.filter((p) => d(p.bounds) === 0)
   if (near.length === 1) return near[0].slug
   const pool = near.length ? near : parts
+  const area = (b: number[]) => (b[2] - b[0]) * (b[3] - b[1])
+  if (near.length > 1) for (const p of near) void loadOuter(p.slug)   // not warmed yet: the smallest bounds answer meanwhile
   const inside = near.length ? near.find((p) => outers[p.slug]?.some((r) => inRing(r, lng, lat))) : undefined
-  return (inside ?? pool.reduce((a, p) => (d(p.bounds) < d(a.bounds) ? p : a))).slug
+  return (inside ?? pool.reduce((a, p) => (d(p.bounds) < d(a.bounds) || (d(p.bounds) === d(a.bounds) && area(p.bounds) < area(a.bounds)) ? p : a))).slug
 }
 /** the region (a joined file's slug) a rendered feature belongs to, from its first point; `fallback` (a pointer position) when that is not a numeric pair */
 export function regionOf(f: { geometry: GeoJSON.Geometry }, fallback?: [number, number]): string {
@@ -75,5 +113,5 @@ export function regionOf(f: { geometry: GeoJSON.Geometry }, fallback?: [number, 
 }
 
 /** China (a region or an area in it): high-speed starts at 250 km/h there, at 200 km/h everywhere else (UIC) */
-export const isChina = (slug: string) => slug === 'china' || slug === 'greater-bay-area' || slug === 'chengdu' || slug.startsWith('cn-')
+export const isChina = (slug: string) => slug === 'china' || slug === 'cn' || slug === 'greater-bay-area' || slug === 'chengdu' || slug.startsWith('cn-')
 export const hsMinKmh = (slug: string) => (isChina(slug) ? 250 : 200)

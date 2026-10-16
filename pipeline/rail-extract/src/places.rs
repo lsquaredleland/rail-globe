@@ -28,8 +28,8 @@
 //!     station complex within CITY_KM and open passenger track typed `metro` or `light_rail` (not construction or proposed; monorail
 //!     alone does not count) within METRO_KM of its point (exact distance to the track). Candidates are sorted by rank, then
 //!     population (larger first), then capital, then n_stations, and taken greedily: one is dropped when an accepted one lies
-//!     within MERGE_KM. So Tokyo wins over its wards. A level-5 outline that contains a candidate place takes that place's name,
-//!     rank and point and keeps its own box and slug (one entry for Chengdu, not two). A level-5 outline inside a province of the
+//!     within MERGE_KM. So Tokyo wins over its wards. A level-5 outline that contains candidate places takes the best one's name,
+//!     rank and point and keeps its own box and slug (one entry for Chengdu, not two; the other places inside it are not entries). A level-5 outline inside a province of the
 //!     same name as a city (Hong Kong's districts) is dropped. A city entry from a place has no box and a fixed zoom by rank.
 //! `name` is name_en, else name; `name_en` and `local_name` are null when absent or the same as `name`.
 
@@ -488,7 +488,7 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
     let city_names: HashSet<&str> = place_cands.iter().flat_map(|c| [c.name.as_str(), c.en.as_str()]).collect();
     let city_provinces: Vec<&Area> = areas.iter().filter(|a| outlines[a.o].level == "4" && [&outlines[a.o].name, &outlines[a.o].name_en].iter().any(|n| n.as_deref().map_or(false, |n| city_names.contains(n)))).collect();
     // per level-5 outline: its candidate and the place it took the name from
-    let from_outlines: Vec<(Cand, Option<usize>)> = areas
+    let from_outlines: Vec<(Cand, Vec<usize>)> = areas
         .par_iter()
         .filter(|a| outlines[a.o].level == "5")
         .filter_map(|a| {
@@ -504,20 +504,24 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
             }
             let reg = Region::new(&o.slug, rings_of(&load_outline(outline_dir, &o.slug)?));
             let outline = Some((o.slug.clone(), a.bbox));
-            if let Some(i) = place_cands.iter().position(|c| {
-                let (la, lo) = at(c.lat, c.lon);
-                reg.contains(la, lo)
-            }) {
+            // every candidate place inside the outline is this city (Tianfu New Area is Chengdu); the best of them gives the name
+            let inside: Vec<usize> = (0..place_cands.len())
+                .filter(|&i| {
+                    let (la, lo) = at(place_cands[i].lat, place_cands[i].lon);
+                    reg.contains(la, lo)
+                })
+                .collect();
+            if let Some(&i) = inside.first() {
                 let c = &place_cands[i];
-                return Some((Cand { name: c.name.clone(), en: c.en.clone(), lon: c.lon, lat: c.lat, rank: c.rank, pop: c.pop, capital: c.capital, n: a.n, outline }, Some(i)));
+                return Some((Cand { name: c.name.clone(), en: c.en.clone(), lon: c.lon, lat: c.lat, rank: c.rank, pop: c.pop, capital: c.capital, n: a.n, outline }, inside));
             }
             metro_near(&metro, a.pt.0, a.pt.1, METRO_KM).then(|| {
                 let en = display(o);
-                (Cand { name: o.name.clone().unwrap_or(en.clone()), en, lon: a.pt.0, lat: a.pt.1, rank: rank(true, None, false), pop: None, capital: false, n: a.n, outline }, None)
+                (Cand { name: o.name.clone().unwrap_or(en.clone()), en, lon: a.pt.0, lat: a.pt.1, rank: rank(true, None, false), pop: None, capital: false, n: a.n, outline }, Vec::new())
             })
         })
         .collect();
-    let taken: HashSet<usize> = from_outlines.iter().filter_map(|(_, i)| *i).collect();
+    let taken: HashSet<usize> = from_outlines.iter().flat_map(|(_, i)| i.iter().copied()).collect();
     let n_outline = from_outlines.len();
     let cands: Vec<Cand> = place_cands.into_iter().enumerate().filter(|(i, _)| !taken.contains(i)).map(|(_, c)| c).chain(from_outlines.into_iter().map(|(c, _)| c)).collect();
     let n_cands = cands.len();

@@ -276,3 +276,9 @@ section { display: flex; flex-direction: column; gap: 8px; }
 .ac-con { display: flex; flex-direction: column; gap: 7px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .ac-con .ac-sec { margin-top: 0; white-space: nowrap; } .ac-conkm { font-size: 13px; }
 .sq-grid.out { gap: 2px; } .sq-grid.out i { width: 9px; height: 9px; box-sizing: border-box; border: 1.5px dashed #9b978e; background: none; box-shadow: none; transition: border-color .3s; }
+
+.search-pop { min-width: 300px; max-width: min(360px, calc(100vw - 24px)); }
+.pop-wrap.block .search-pop { max-width: none; width: 100%; }
+.search-in { margin: 2px 2px 4px; padding: 9px 10px; font: inherit; border: 1px solid var(--line); border-radius: 8px; background: var(--white); color: inherit; }
+.search-in:focus { outline: 2px solid var(--ink3); outline-offset: -1px; }
+.search-list { display: flex; flex-direction: column; gap: 2px; max-height: min(52vh, 420px); overflow-y: auto; }

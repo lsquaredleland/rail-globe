@@ -4,7 +4,7 @@ import type { GeoJSONSource, Map as MLMap, MapGeoJSONFeature } from 'maplibre-gl
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { addAirportIcon, addBoundary, addPlaceLabels, placesGeoJSON, addOutline, setOutline, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayers, prefetchHighlights, setFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
-import { loadParts, regionOf, REGIONS, TILES } from './regions'
+import { loadParts, regionOf, warmParts, REGIONS, TILES } from './regions'
 import { DATA_BASE } from './config'
 
 export type Hit =
@@ -141,6 +141,9 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
     map.on('load', async () => {
       await loadParts()   // the joined files' bounds: needed to find a feature's region
       if (mapRef.current !== map) return   // removed while waiting
+      const c0 = map.getCenter()
+      await warmParts([c0.lng, c0.lat])
+      if (mapRef.current !== map) return
       for (const r of REGIONS) addBoundary(map, r.slug)
       addOutline(map)
       addRailSource(map, TILES)   // one source: the pilot regions' tiles joined; regions inside China are drawn from China's part
@@ -229,7 +232,9 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
     })
     map.on('moveend', () => {
       const c = map.getCenter()
-      p.current.onMoveEnd({ center: [c.lng, c.lat], zoom: map.getZoom() })
+      const v: View = { center: [c.lng, c.lat], zoom: map.getZoom() }
+      // neighbouring countries: their outlines decide which country the view is over, so the view is reported once they are in
+      warmParts(v.center).then(() => { if (mapRef.current === map) p.current.onMoveEnd(v) })
     })
     return () => { map.remove(); mapRef.current = null; loaded.current = false }
   }, [])

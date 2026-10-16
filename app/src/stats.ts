@@ -1,32 +1,44 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { loadShapes, loadStats, type Shapes, type StatsArea } from './data'
-import { REGIONS } from './regions'
+import { REGIONS, regionBySlug } from './regions'
+import type { SearchItem } from './search'
 import type { View } from './MapView'
 
 export interface StatsData {
-  /** every pilot region's own totals (its bounds say where the region is) */
+  /** every loaded region's own totals (its bounds say where the region is) */
   regions: StatsArea[]
   /** areas inside the regions that draw from their own tiles: provinces, cities, Hong Kong */
   areas: StatsArea[]
   shapes: Shapes
 }
 
-/** Loads the statistics of every region once. */
-export function useStats(): StatsData {
-  const [d, setD] = useState<StatsData>({ regions: [], areas: [], shapes: {} })
+type Loaded = Record<string, [StatsArea[], Shapes]>
+
+/** The statistics of the regions the view can be over. Pilot: the fixed list of regions, once. World: the countries (search.json) whose
+ *  outline box holds the view centre, loaded as the map moves there and kept, so only the countries the user visits are fetched. */
+export function useStats(items: SearchItem[], view: View, picked: string): StatsData {
+  const [loaded, setLoaded] = useState<Loaded>({})
+  const [lon, lat] = view.center
+  const wanted = useMemo(() => {
+    if (REGIONS.length) return REGIONS.map((r) => r.slug)
+    const w = view.zoom < 3.2 ? [] : items.filter((i) => i.kind === 'country' && i.slug && i.bbox && lon >= i.bbox[0] && lon <= i.bbox[2] && lat >= i.bbox[1] && lat <= i.bbox[3]).map((i) => i.slug!)
+    return picked && items.some((i) => i.slug === picked && i.kind === 'country') ? [...new Set([...w, picked])] : w
+  }, [items, lon, lat, view.zoom, picked])
   useEffect(() => {
     let live = true
-    Promise.all(REGIONS.map((r) => Promise.all([loadStats(r.slug), loadShapes(r.slug)]))).then((all) => {
-      if (!live) return
-      const regions = all.map(([a], i) => a.find((x) => x.slug === REGIONS[i].slug)).filter((a): a is StatsArea => !!a)
-      // regions inside a bigger region (Chengdu, Beijing, ...) are cards of the bigger region's areas already
-      const own = new Set(REGIONS.filter((r) => !r.tiles).map((r) => r.slug))
-      const areas = all.flatMap(([a], i) => (own.has(REGIONS[i].slug) ? a : []))
-      setD({ regions, areas, shapes: Object.assign({}, ...all.map(([, s]) => s)) })
-    })
+    for (const slug of wanted) {
+      if (loaded[slug]) continue
+      Promise.all([loadStats(slug), loadShapes(slug)]).then((r) => { if (live) setLoaded((l) => (l[slug] ? l : { ...l, [slug]: r })) })
+    }
     return () => { live = false }
-  }, [])
-  return d
+  }, [wanted, loaded])
+  return useMemo(() => {
+    const slugs = Object.keys(loaded)
+    const regions = slugs.map((s) => loaded[s][0].find((x) => x.slug === s)).filter((a): a is StatsArea => !!a)
+    // regions inside a bigger region (Chengdu, Beijing, ...) are cards of the bigger region's areas already
+    const areas = slugs.flatMap((s) => (regionBySlug(s).tiles ? [] : loaded[s][0].filter((a) => a.kind !== 'region')))   // a region's own row is in `regions`
+    return { regions, areas, shapes: Object.assign({}, ...slugs.map((s) => loaded[s][1])) }
+  }, [loaded])
 }
 
 const viewSpan = (v: View, screenW: number) => (360 * screenW) / (512 * 2 ** v.zoom)   // degrees of longitude on screen

@@ -1,5 +1,5 @@
 import type { ColorMode } from './mapStyle'
-import { REGIONS, regionBySlug, type Region } from './regions'
+import { DEFAULT_REGION, regionBySlug, type Region } from './regions'
 import type { View } from './MapView'
 import type { Theme } from './palette'
 
@@ -7,7 +7,7 @@ export interface UrlState { region: Region; mode: ColorMode; hsrOnly: boolean; c
 
 export function readHash(): UrlState {
   const h = new URLSearchParams(location.hash.replace(/^#/, ''))
-  const region = regionBySlug(h.get('r') ?? REGIONS[1].slug)
+  const region = regionBySlug(h.get('r') ?? DEFAULT_REGION.slug)
   let view: View | null = null
   const v = h.get('v')?.split('/').map(Number)
   if (v && v.length === 3 && v.every(Number.isFinite)) view = { zoom: v[0], center: [v[2], v[1]] }

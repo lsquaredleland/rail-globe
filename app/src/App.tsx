@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapView, type Hit, type MapHandle, type View } from './MapView'
 import { SPEED_BANDS, SPEED_NONE, type ColorMode, type MapState } from './mapStyle'
 import type { Theme } from './palette'
-import { regionBySlug, isChina, hsMinKmh } from './regions'
+import { regionBySlug, registerSearch, isChina, hsMinKmh, isKnownRegion, partAt, DEFAULT_REGION, REGIONS, type Region } from './regions'
+import { featured, itemInView, useSearch, type SearchItem } from './search'
 import { TYPE_ORDER } from './palette'
 import { loadBoundary, loadLineIndex, loadNamedLines, loadRailways, loadStation, railwayOf, type LineIndex, type NamedLine, type Railways } from './data'
 import { readHash, writeHash } from './urlState'
@@ -68,25 +69,43 @@ export default function App() {
   const map = useRef<MapHandle>(null)
   const wrap = useRef<HTMLDivElement>(null)
 
+  const found = useSearch()   // search.json: the countries, provinces / states and cities with rail
   const ensureIndex = useCallback((slug: string) => {
     loadLineIndex(slug).then((ix) => setIndexes((p) => (p[slug] ? p : { ...p, [slug]: ix }))).catch(() => {})
     loadRailways(slug).then((rw) => setRailways((p) => (p[slug] ? p : { ...p, [slug]: rw }))).catch(() => {})
   }, [])
-  useEffect(() => ensureIndex(region.slug), [region.slug, ensureIndex])
+  // side files (lines, railways) exist per country, or per hand-tuned pilot region; a province or the world placeholder has none
+  const hasData = useCallback((slug: string) => REGIONS.some((r) => r.slug === slug) || found.some((i) => i.kind === 'country' && i.slug === slug), [found])
+  useEffect(() => { if (hasData(region.slug)) ensureIndex(region.slug) }, [region.slug, ensureIndex, hasData])
   useEffect(() => {
+    if (!hasData(region.slug)) return
     loadNamedLines(region.slug).then((n) => setNamed((p) => (p[region.slug] ? p : { ...p, [region.slug]: n }))).catch(() => {})
-  }, [region.slug])
+  }, [region.slug, hasData])
 
   // the card follows the view; so does the pilot region in the picker (no fly: the map is already where the user put it)
-  const stats = useStats()
+  // hand-tuned regions of the pilot that search.json lacks (SF Bay Area, Paris, ...) are searchable too
+  const items = useMemo(() => {
+    registerSearch(found)
+    const regionItem = (r: Region): SearchItem => ({ name: r.name, nameEn: r.name, local: r.local ?? null, kind: r.sub === 'Whole country' ? 'country' : 'city', center: r.center, bbox: null, zoom: r.zoom, slug: r.slug, stations: 0, key: `${r.name}\n${r.local ?? ''}`.toLowerCase() })
+    return [...found, ...REGIONS.filter((r) => !found.some((i) => i.slug === r.slug)).map(regionItem)]
+  }, [found])
+  const stats = useStats(found, viewNow, region.slug)
   const [boundaryGeo, setBoundaryGeo] = useState<{ slug: string; geo: GeoJSON.Geometry | null } | null>(null)
   // the card is always there (unless collapsed): the area that fills half the screen, else the biggest area under the view centre,
   // else the picked region's own totals
-  const allAreas = useMemo(() => [...stats.regions.filter((r) => !regionBySlug(r.slug).noCard), ...stats.areas], [stats])
+  // World build: a country's box can cover far islands and its neighbours, so the country under the view centre is the one whose outline holds it
+  const overRegions = useMemo(() => (REGIONS.length ? stats.regions : stats.regions.filter((r) => r.slug === partAt(viewNow.center))), [stats, viewNow])
+  const allAreas = useMemo(() => [...overRegions.filter((r) => !regionBySlug(r.slug).noCard), ...stats.areas], [overRegions, stats])
   // the area that fills half the screen: it gets the outline, which goes away when zoomed out further
-  const viewArea = useMemo(() => areaForView(allAreas, stats.shapes, viewNow, window.innerWidth), [allAreas, stats, viewNow])
+  // the place picked in the search keeps the card and outline while it still fills half the screen (else Chengdu would give way to its New Area)
+  const [pickedSlug, setPickedSlug] = useState<string | null>(null)
+  const viewArea = useMemo(() => {
+    const p = pickedSlug ? allAreas.filter((a) => a.slug === pickedSlug) : []
+    return areaForView(p, stats.shapes, viewNow, window.innerWidth) ?? areaForView(allAreas, stats.shapes, viewNow, window.innerWidth)
+  }, [allAreas, stats, viewNow, pickedSlug])
+  const viewItem = useMemo(() => itemInView(found, viewNow, window.innerWidth, REGIONS.length ? '' : partAt(viewNow.center)), [found, viewNow])
   const cardArea = useMemo(
-    () => viewArea ?? areasAt(allAreas, stats.shapes, viewNow.center[0], viewNow.center[1]).pop() ?? stats.regions.find((r) => r.slug === region.slug) ?? null,
+    () => viewArea ?? areasAt(allAreas, stats.shapes, viewNow.center[0], viewNow.center[1]).pop() ?? overRegions.find((r) => r.slug === region.slug) ?? null,
     [viewArea, allAreas, stats, viewNow, region.slug])
   // the outline of the area in view: its simplified shape, else (a pilot region) its boundary file
   const shape = viewArea ? stats.shapes[viewArea.slug] : undefined
@@ -98,10 +117,18 @@ export default function App() {
     return boundaryGeo?.slug === viewArea.slug ? boundaryGeo.geo : null
   }, [outline, viewArea, shape, boundaryGeo])
   useEffect(() => {
-    const r = areaForView(stats.regions, stats.shapes, viewNow, window.innerWidth)
+    const r = areaForView(overRegions, stats.shapes, viewNow, window.innerWidth)
     // depends on the view only: picking a region in the menu must not be undone by the (not yet moved) old view
     if (r) setRegionState((cur) => (cur.slug === r.slug ? cur : regionBySlug(r.slug)))
-  }, [stats, viewNow])
+  }, [overRegions, stats, viewNow])
+
+  // a link to a country or province (#r=de-bavaria) before search.json arrived named a placeholder: now it is known, go there (unless the link had a view)
+  useEffect(() => {
+    if (!found.length || init.view || !isKnownRegion(region.slug)) return
+    const r = regionBySlug(region.slug)
+    if (r !== region) { setRegionState(r); map.current?.flyTo({ center: r.center, zoom: compact ? r.zoomPhone : r.zoom }) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [found])
 
   const mapState = useMemo<MapState>(() => ({ mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang, theme }), [mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang, theme])
   const sync = useCallback(() => writeHash({ region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, outline, theme, view: view.current }), [region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, outline, theme])
@@ -112,6 +139,15 @@ export default function App() {
     setRegionState(r)
     setSelected(null); setSelPt(null); setPeek(null)
     map.current?.flyTo({ center: r.center, zoom: compact ? r.zoomPhone : r.zoom })
+  }
+
+  /** a pick from the search: a hand-tuned region as before, else fly to the outline's box (country, province, a city with an outline) or to the city */
+  const pickPlace = (it: SearchItem) => {
+    setPickedSlug(it.slug)
+    if (it.slug && REGIONS.some((r) => r.slug === it.slug)) { setRegion(it.slug); return }
+    setSelected(null); setSelPt(null); setPeek(null)
+    const center: [number, number] = it.bbox ? [(it.bbox[0] + it.bbox[2]) / 2, (it.bbox[1] + it.bbox[3]) / 2] : it.center
+    map.current?.flyTo({ center, zoom: compact ? Math.max(1.5, it.zoom - 1) : it.zoom })
   }
 
   const openStation = (slug: string, id: string, pt?: [number, number], fly = false) => {
@@ -205,7 +241,7 @@ export default function App() {
   }
 
   const controls: Controls = {
-    area: cardArea, region, mode, hsrOnly, setHsrOnly, construction, proposed, setProposed, outline, setOutline, freight, units, inspect, setInspect, lang, setLang, theme, setTheme, setRegion, setMode, setConstruction, setFreight, setUnits, copied, copyLink,
+    area: cardArea, inView: viewItem, items, featured: REGIONS.length ? items.filter((i) => REGIONS.some((r) => r.slug === i.slug)) : featured(found), pickPlace, region, fallback: REGIONS.length ? region : DEFAULT_REGION, mode, hsrOnly, setHsrOnly, construction, proposed, setProposed, outline, setOutline, freight, units, inspect, setInspect, lang, setLang, theme, setTheme, setRegion, setMode, setConstruction, setFreight, setUnits, copied, copyLink,
     openLines: () => { openList(); setSheetOpen(false) },
   }
 
