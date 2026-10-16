@@ -65,6 +65,12 @@ pub fn cache_key(k: &[u8]) -> bool {
     )
 }
 
+/// Tags stored for the place nodes (place=city, town): what the places step reads.
+#[inline]
+pub fn place_key(k: &[u8]) -> bool {
+    matches!(k, b"place" | b"name" | b"name:en" | b"int_name" | b"population" | b"capital" | b"wikidata")
+}
+
 /// admin levels whose boundaries the cache keeps, as region outlines (2 countries, 4 provinces / states, 5 prefecture-level cities in China and similar)
 pub const ADMIN_LEVELS: [&[u8]; 3] = [b"2", b"4", b"5"];
 

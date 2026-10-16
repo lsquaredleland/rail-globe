@@ -1,11 +1,14 @@
 // Subset map glyphs: writes app/public/glyphs/<fontstack>/<start>-<end>.pbf holding ONLY the characters the map can draw.
 //
-//   cd pipeline/glyphs && npm install && node build-glyphs.mjs [--data ../../app/public/data] [--out ../../app/public/glyphs] [--allow-empty]
-//   --out must end in a folder named 'glyphs' (it is deleted first). Without pilot.pmtiles or another tile source in --data it stops with an error;
+//   cd pipeline/glyphs && npm install && node build-glyphs.mjs [--data ../../app/public/data] [--tiles pilot,americas] [--out ../../app/public/glyphs] [--allow-empty]
+//   --out must end in a folder named 'glyphs' (it is deleted first). Without a tile source in --data it stops with an error;
 //   --allow-empty builds ASCII + places.json only.
+//   --tiles NAMES: the <name>.pmtiles files of --data to read (default pilot,americas). For the world build:
+//       node build-glyphs.mjs --data ../../app/public/data/world --tiles world --out <dir>/glyphs     (reads world.pmtiles and world/places.json)
 //
-// 1. Character set: every code point in the label properties (n, ne, lb, lbe) of every tile of pilot.pmtiles and americas.pmtiles,
-//    the names in places.json, printable ASCII, and the upper-case form of each (country names are drawn in capitals).
+// 1. Character set: every code point in the label properties (n, ne, lb, lbe) of every tile of the --tiles files,
+//    the names in places.json (written by `rail-extract places`, which `build` and `world` run last), printable ASCII,
+//    and the upper-case form of each (country names are drawn in capitals).
 //    Rerun after any rebuild that adds regions or names; the tile glyph files are tied to the tile data.
 // 2. Fonts, in priority order per code point: Noto Sans (Latin, Greek, Cyrillic), Noto Sans CJK SC (Han, kana, hangul, CJK and
 //    fullwidth punctuation), then, for the few code points neither has (Arabic, Lao, Tibetan, Mongolian, Yi ...), the OpenFreeMap
@@ -26,6 +29,7 @@ const arg = (name, dflt) => { const i = process.argv.indexOf(name); return i > 0
 const DATA = arg('--data', path.resolve(here, '../../app/public/data'))
 const OUT = arg('--out', path.resolve(here, '../../app/public/glyphs'))
 const FONTS = path.join(here, 'fonts')
+const TILES = (process.argv.includes('--tiles') ? process.argv[process.argv.indexOf('--tiles') + 1] : 'pilot,americas').split(',').filter(Boolean)
 const ALLOW_EMPTY = process.argv.includes('--allow-empty')
 if (path.basename(OUT) !== 'glyphs') { console.error(`refusing --out ${OUT}: its folder name must be 'glyphs' (the folder is deleted before writing)`); process.exit(2) }
 
@@ -97,7 +101,7 @@ function collectChars() {
   const add = (s) => { if (typeof s === 'string') for (const c of s) cps.add(c.codePointAt(0)) }
   for (let c = 0x20; c < 0x7f; c++) cps.add(c)
   const stats = {}
-  for (const name of ['pilot', 'americas']) {
+  for (const name of TILES) {
     const file = path.join(DATA, `${name}.pmtiles`)
     if (!fs.existsSync(file)) { console.error(`skip ${name}.pmtiles (missing)`); continue }
     let tiles = 0
@@ -114,7 +118,7 @@ function collectChars() {
     console.error(`${name}.pmtiles: ${tiles} tiles, ${cps.size} code points so far`)
   }
   if (!Object.keys(stats).length && !ALLOW_EMPTY) {
-    console.error(`no tile source found in ${DATA} (looked for pilot.pmtiles, americas.pmtiles): build the data first, or pass --allow-empty for ASCII-only glyphs`)
+    console.error(`no tile source found in ${DATA} (looked for ${TILES.map((t) => t + '.pmtiles').join(', ')}): build the data first, or pass --allow-empty for ASCII-only glyphs`)
     process.exit(1)
   }
   const places = path.join(DATA, 'places.json')

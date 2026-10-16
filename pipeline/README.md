@@ -1,14 +1,16 @@
 # Pipeline
 
 Reference for the pipeline commands. For the first-time sequence from a fresh clone (in the right order, with the prerequisites) see `Run it` in the root `README.md`; run `rail-extract outlines --level 2`, `4` and `5 --country CN` before the first cut (see 'Region outlines' below).
-Needs stable Rust (extraction and MLT tiles; tested with 1.99.0). Python 3 is needed only for `places.py` (`mapbox-vector-tile`, which pulls in shapely); `check.py` and `top.py` use the standard library only, `measure_views.py` needs `pmtiles`, `build_regions.py` and `outline_cn.py` need shapely. No tippecanoe or tile-join.
-The commands below are written for running from `pipeline/`; `rail-extract`, `places.py`, `check.py` and the glyph script find the repository from their own location, so they also work from the repository root (`top.py` and `measure_views.py` use relative paths).
+Needs stable Rust (extraction and MLT tiles; tested with 1.99.0). Python 3 is not needed for the pipeline: `check.py` and `top.py` use the standard library only, `measure_views.py` needs `pmtiles`, `build_regions.py` and `outline_cn.py` need shapely. No tippecanoe or tile-join.
+The commands below are written for running from `pipeline/`; `rail-extract`, `check.py` and the glyph script find the repository from their own location, so they also work from the repository root (`top.py` and `measure_views.py` use relative paths).
 Timings below were measured on 2026-10-12 (14-core Mac, planet-260928).
 
 ```
 cd rail-extract && cargo build --release && cd ..        # once, and after changing the Rust code (5 s after a change)
 rail-extract/target/release/rail-extract cache --planet ../planet-260928.osm.pbf
-#   once per planet: 51 s, 4.5 GB peak memory -> ../data/cache/planet-260928.railcache (1.1 GB; blob index cached beside it)
+#   once per planet: 54 s, 4.5 GB peak memory -> ../data/cache/planet-260928.railcache (1.2 GB; blob index cached beside it)
+#   also keeps the place=city and place=town nodes (115,309: name, name:en, int_name, population, capital, wikidata; 10 MB, +0.9%) for the places step; place=village (1.65 M nodes) is counted, not kept.
+#   A cache from before the places step (format RGRAIL02) is refused with a message: rebuild it.
 rail-extract/target/release/rail-extract cut sf-bay-area china de fr ch it paris chengdu greater-bay-area cn-beijing
 #   regions cut in parallel from the cache, by their outline regions/<slug>.geojson, and classified (rail types) with the
 #   rules in config/<slug>.json: ten regions including all of China in 2.4 s (4.8 GB peak)
@@ -38,13 +40,20 @@ rail-extract/target/release/rail-extract build paris chengdu greater-bay-area cn
 #   also writes ../app/public/data/<slug>/stats.json (region card); areas inside a region: "stat_areas" (a list) or "stat_auto" (all provinces and cities of a country) in config/<slug>.json;
 #   run `outlines --level 4` and `--level 5` first; also writes shapes.json (outlines for finding the area under the view)
 #   or: rail-extract cut <slugs> --build   (cut, then build straight away; --no-tiles applies to every slug)
-python3 places.py                                # city and town names -> ../app/public/data/places.json; run after `build` (reads pilot.parts.json and data/<slug>/complexes.geojsonl), before the glyph step; fetches 517 OpenFreeMap tiles (15 min on 2026-10-15)
+rail-extract/target/release/rail-extract places --parts ../app/public/data/pilot.parts.json [--data ../data] [--out ../app/public/data] [--cache FILE]
+#   city, town and country labels -> places.json and the search index -> search.json in <out>; no network (0.3 s for the pilot, 0.6 s for the world). It replaced places.py (517 OpenFreeMap tiles, 15 min, five countries).
+#   `build` runs it by itself after the pilot join and `world` after the tiles, so run it by hand only after changing the code or the outlines; positional slugs instead of --parts also work.
+#   Reads: the stations of each region (<data>/<slug>/complexes.geojsonl: run `build` first), the place=city / town nodes of the cache, and the outlines and index.json in data/regions (`outlines --level 2` and `4`, and 5 for China, first).
+#   Rules: a city is kept when a station complex is within 12 km of its node, a town within 5 km (n_stations = how many); countries: each region's country, labelled at the centroid of its largest polygon;
+#   rank (1 is the biggest; the style's bands are 0-3, 4-7, 8+) from population (>= 10 M 1, 5 M 2, 3 M 3, 1.5 M 4, 1 M 5, 500 k 6, 250 k 7, 100 k 8, 50 k 9, 20 k 10, 10 k 11, else 12; no tag: city 10, town 12), one better for a national capital, towns never better than 8.
+#   Full list in the header of rail-extract/src/places.rs. search.json: [name, name_en, local_name, kind (country|province|city|town), lon, lat, minLon, minLat, maxLon, maxLat, zoom, slug, n_stations]:
+#   the countries of the regions, the provinces / states (level 4) and China's cities (level 5) that hold a station complex (outline box, fitting zoom, outline slug), and every city and town of places.json (no box, fixed zoom, slug null).
 python3 check.py                                 # phase 2 "Done when": answer lists in answers/
 python3 measure_views.py                         # compressed tile bytes per view vs the 600 KB budget
 python3 top.py <slug> [n]                        # dev helper: biggest stations
 ```
 
-Map glyphs (label fonts; the app draws every label from its own files, not OpenFreeMap's font server). `app/public/glyphs/` is git-ignored and must be generated before `npm run dev` or `npm run build`, or every label fails to load (the app logs 'glyphs missing' to the console). Run it once on a fresh clone (after `places.py`, which writes the `places.json` it reads) and after any rebuild that changes names. The first run downloads about 34 MB of fonts (8 min on a slow connection, 40 s with the fonts cached):
+Map glyphs (label fonts; the app draws every label from its own files, not OpenFreeMap's font server). `app/public/glyphs/` is git-ignored and must be generated before `npm run dev` or `npm run build`, or every label fails to load (the app logs 'glyphs missing' to the console). Run it once on a fresh clone (after `build`, whose last step `rail-extract places` writes the `places.json` it reads) and after any rebuild that changes names. The first run downloads about 34 MB of fonts (8 min on a slow connection, 40 s with the fonts cached):
 ```
 cd glyphs && npm install && node build-glyphs.mjs    # 45 s; writes ../../app/public/glyphs/<fontstack>/<start>-<end>.pbf
 ```
@@ -101,7 +110,7 @@ $RE pminfo app/public/data/world/world.pmtiles [--tsv FILE] [--top N]
 VITE_TILE_SOURCE=world npm --prefix app run dev                                   # the app reads only pilot unless this is set
 ```
 
-`world` writes tiles in passes (`--deep-zoom N`, default 6; 5 and 6 give a byte-identical file) so memory stays at about 10 GB; `tiles` and `build` (the pilot path) hold a whole region. `places.py` (city names) is the current step but only covers the pilot, and it will be replaced by a Rust step. Not in the repo: `data/`, the planet, `app/public/data/`, `app/public/glyphs/`, the world outputs.
+`world` writes tiles in passes (`--deep-zoom N`, default 6; 5 and 6 give a byte-identical file) so memory stays at about 10 GB; `tiles` and `build` (the pilot path) hold a whole region. `world` ends by running `places` over the kept countries: `world/places.json` (all kept countries' cities and towns with a station) and `world/search.json`. Not in the repo: `data/`, the planet, `app/public/data/`, `app/public/glyphs/`, the world outputs.
 
 Default config. A region with no `config/<slug>.json` uses the committed template `config/_default.json` (generic rules, a 200 km/h high-speed floor, `stat_auto` for admin level 4); `build` fills `stat_name` (outline `name_en`), `stat_local` (`name`) and `stat_auto.country` (`country`) from the region's outline, and `cut` and `build` log that the template is in use. Add a `config/<slug>.json` only when a region needs its own rules; it wins.
 

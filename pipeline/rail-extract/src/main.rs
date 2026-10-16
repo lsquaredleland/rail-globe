@@ -13,6 +13,7 @@
 //! --combined NAME writes side files and tile input for every slug, then one tile writer run over all of them -> NAME.pmtiles and NAME.parts.json (no per-region PMTiles).
 //! Whenever a pilot source was built with tiles, pilot.pmtiles and pilot.parts.json are rewritten from the pilot sources' tile input.
 //!     rail-extract world-list [--data data/world] [--min-km 1] (--slugs-file FILE | <slug>...)   which countries of a world cut have passenger rail -> kept.txt, dropped.txt
+//!     rail-extract places [--data DIR] [--out DIR] (--parts FILE | <slug>...)       city / town / country labels (places.json) and the search index (search.json); `build` (pilot) and `world` run it last
 //!     rail-extract tiles <slug>... [--name NAME] [--out DIR]       the tile writer alone over existing tile input (default out data/tiles)
 //! `outlines` writes country (level 2) or province / state (level 4) outlines from the admin boundaries in the cache.
 //! Paths default to this repository, wherever the command runs from.
@@ -25,6 +26,7 @@ mod construction;
 mod cut;
 mod out;
 mod outlines;
+mod places;
 mod geomx;
 mod pbf;
 mod pminfo;
@@ -55,6 +57,7 @@ fn usage() -> ! {
          rail-extract tiles <slug>... [--name NAME] [--out DIR] [--data DIR]\n  \
          rail-extract world [--data DIR] [--out DIR] [--name NAME] [--deep-zoom N] [--regions DIR] (--slugs-file FILE | <slug>...)\n  \
          rail-extract world-list [--data DIR] [--min-km N] (--slugs-file FILE | <slug>...)      (kept.txt / dropped.txt from a world cut)\n  \
+         rail-extract places [--data DIR] [--out DIR] [--cache FILE] (--parts FILE | <slug>...)      (places.json and search.json from the cache's place nodes)\n  \
          rail-extract pminfo FILE [--tsv FILE] [--top N]"
     );
     std::process::exit(2)
@@ -63,15 +66,28 @@ fn usage() -> ! {
 /// the one .railcache in data/cache (the newest when there are several)
 fn default_cache(root: &Path) -> PathBuf {
     let dir = root.join("data/cache");
+    find_cache(root).unwrap_or_else(|| panic!("no .railcache in {}: run `rail-extract cache` first", dir.display()))
+}
+
+fn find_cache(root: &Path) -> Option<PathBuf> {
+    let dir = root.join("data/cache");
     let mut v: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(&dir)
-        .unwrap_or_else(|_| panic!("no cache folder {}: run `rail-extract cache` first", dir.display()))
+        .ok()?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| p.extension().map_or(false, |x| x == "railcache"))
         .filter_map(|p| Some((p.metadata().ok()?.modified().ok()?, p)))
         .collect();
     v.sort();
-    v.pop().map(|x| x.1).unwrap_or_else(|| panic!("no .railcache in {}: run `rail-extract cache` first", dir.display()))
+    v.pop().map(|x| x.1)
+}
+
+/// city, town and country labels and the search index for `slugs` -> <out>/places.json, search.json (places.rs); the pilot and world builds call it last
+fn run_places(root: &Path, data: &Path, out: &Path, cache: Option<PathBuf>, slugs: &[String]) {
+    match cache.or_else(|| find_cache(root)) {
+        Some(c) => places::run(data, out, &c, slugs, &[root.join("pipeline/regions"), root.join("data/regions")], &root.join("data/regions")),
+        None => eprintln!("warning: no .railcache in data/cache: places.json and search.json not written (run `rail-extract cache`, then `rail-extract places`)"),
+    }
 }
 
 /// the region's tile input (data/<slug>/tiles_tmp) has no features
@@ -132,6 +148,8 @@ fn build_regions(root: &Path, slugs: &[String], tiles: bool, data: Option<&Strin
     }
     if join {
         join_pilot(root, &paths.data, &paths.out);
+        let pilot: Vec<String> = PILOT_SOURCES.iter().map(|s| s.to_string()).collect();
+        run_places(root, &paths.data, &paths.out, None, &pilot);
     } else if let (true, Some(s)) = (pilot_built, missing_input) {
         eprintln!("warning: pilot join skipped: no tile input for {s}");
     }
@@ -195,7 +213,7 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            k @ ("--planet" | "--out" | "--cache" | "--regions" | "--data" | "--threads" | "--level" | "--country" | "--combined" | "--name" | "--deep-zoom" | "--slugs-file" | "--tsv" | "--top" | "--min-km") => {
+            k @ ("--planet" | "--out" | "--cache" | "--regions" | "--data" | "--threads" | "--level" | "--country" | "--combined" | "--name" | "--deep-zoom" | "--slugs-file" | "--tsv" | "--top" | "--min-km" | "--parts") => {
                 opt.insert(k, args.get(i + 1).cloned().unwrap_or_else(|| usage()));
                 i += 2;
             }
@@ -318,6 +336,7 @@ fn main() {
             tilewriter::run_world(&data, &used, &out, &name, deep);
             std::fs::write(out.join(format!("{name}.parts.json")), serde_json::to_string_pretty(&parts).unwrap() + "\n").expect("write parts.json");
             eprintln!("world {name}: {} slugs, {:.1} s", used.len(), t.elapsed().as_secs_f64());
+            run_places(&root, &data, &out, opt.get("--cache").map(PathBuf::from), &used);
         }
         "world-list" => {
             let mut slugs = rest.clone();
@@ -329,6 +348,20 @@ fn main() {
             }
             let data = opt.get("--data").map(PathBuf::from).unwrap_or_else(|| root.join("data/world"));
             world_list::run(&data, &slugs, opt.get("--min-km").map_or(1.0, |v| v.parse().expect("--min-km")));
+        }
+        "places" => {
+            let mut slugs = rest.clone();
+            if let Some(f) = opt.get("--parts") {
+                let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(f).unwrap_or_else(|e| panic!("read {f}: {e}"))).expect("parse parts file");
+                slugs.extend(v.as_array().expect("parts file is a list").iter().filter_map(|p| p["slug"].as_str().map(String::from)));
+            }
+            if slugs.is_empty() {
+                usage();
+            }
+            let data = opt.get("--data").map(PathBuf::from).unwrap_or_else(|| root.join("data"));
+            let out = opt.get("--out").map(PathBuf::from).unwrap_or_else(|| root.join("app/public/data"));
+            let cache = opt.get("--cache").map(PathBuf::from).unwrap_or_else(|| default_cache(&root));
+            places::run(&data, &out, &cache, &slugs, &[root.join("pipeline/regions"), root.join("data/regions")], &root.join("data/regions"));
         }
         "pminfo" => {
             let file = rest.first().unwrap_or_else(|| usage());

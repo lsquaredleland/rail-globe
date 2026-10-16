@@ -28,9 +28,9 @@ From a fresh clone to a working pilot map. Every command runs from the repositor
 Needs:
 - Node 20+ (tested with 22) and npm.
 - Rust, stable (edition 2021, no version pinned; tested with 1.99.0). No tippecanoe: tiles are written by the Rust extractor.
-- Python 3 with `mapbox-vector-tile` (only `pipeline/places.py` needs it; it pulls in shapely, protobuf and pyclipper). No other step uses Python.
+- No Python in this sequence (the dev checks `pipeline/check.py` etc. use it, with the standard library only).
 - Disk and memory for the optional world build: see below.
-- Network: `places.py` fetches place names from OpenFreeMap; the glyph step downloads about 34 MB of Noto fonts on its first run.
+- Network: only the glyph step, which downloads about 34 MB of Noto fonts on its first run. City, town and country names come from the planet (the `.railcache`), with no network.
 - The planet file, about 80 to 90 GB, only if you have no `.railcache` yet. Memory: the tile step peaks at about 12 GB; cache building at 4.5 GB. Disk: about 4 GB for `data/` and `app/public/data/`, plus the planet.
 
 ```
@@ -38,7 +38,7 @@ Needs:
 cargo build --release --manifest-path pipeline/rail-extract/Cargo.toml
 RE=pipeline/rail-extract/target/release/rail-extract
 
-# 2. Planet -> rail cache (data/cache/<planet name>.railcache, 1.1 GB; about 1 min). Skip if you already have the .railcache.
+# 2. Planet -> rail cache (data/cache/<planet name>.railcache, 1.2 GB; about 1 min). Skip if you already have the .railcache.
 #    Download planet-YYMMDD.osm.pbf from https://planet.openstreetmap.org/pbf/ (or planet-latest.osm.pbf) into the repo root;
 #    the cache takes its name from the file, and the later steps use the newest .railcache in data/cache/.
 $RE cache --planet planet-YYMMDD.osm.pbf
@@ -57,9 +57,9 @@ $RE cut sf-bay-area china de fr ch it paris chengdu greater-bay-area cn-beijing
 $RE build sf-bay-area china de fr ch it
 $RE build paris chengdu greater-bay-area cn-beijing --no-tiles
 
-# 6. City and town names (app/public/data/places.json). Needs step 5 first; slow because it fetches 500 tiles (15 min here); optional: without it no country, city or town names show (station names still do).
-python3 -m pip install mapbox-vector-tile
-python3 pipeline/places.py
+# 6. City, town and country names (app/public/data/places.json) and the search index (search.json). Step 5 already ran this at its end (0.3 s, from the
+#    place nodes in the cache and the stations of step 5); run it again by hand only after changing the code or the outlines. Without places.json no country, city or town names show (station names still do).
+$RE places --parts app/public/data/pilot.parts.json
 
 # 7. Label glyphs (git-ignored; without them every label fails). Run after steps 5 and 6: it reads pilot.pmtiles and places.json. First run 8 min here (font downloads), 40 s once the fonts are cached.
 npm --prefix pipeline/glyphs install
@@ -86,9 +86,22 @@ $RE pminfo app/public/data/world/world.pmtiles                                  
 VITE_TILE_SOURCE=world npm --prefix app run dev                                                      # look at it (the app reads only the pilot by default)
 ```
 
-Not in the repo, so rebuilt by the commands above: `data/`, the planet, `app/public/data/` (including the world folder), `app/public/glyphs/`. City and town names for the world do not exist yet (`places.py`, the current step, only covers the pilot, and a Rust step is planned to replace it). Details and the memory-bounded writer: `docs/10-world-build.md`.
+Not in the repo, so rebuilt by the commands above: `data/`, the planet, `app/public/data/` (including the world folder), `app/public/glyphs/`. The world build also writes `world/places.json` and `world/search.json` (the `world` command runs `rail-extract places` last). Details and the memory-bounded writer: `docs/10-world-build.md`.
 
-Steps 3 to 5 read only the `.railcache`, not the planet, and took about 40 s in all; steps 6 and 7 are network-bound. The app reads tiles and side files from `app/public/data/`, or from `VITE_DATA_BASE` (for example an R2 bucket) when set; see `app/.env.example`. Details, timings and the other pipeline commands are in `pipeline/README.md`.
+Steps 3 to 5 read only the `.railcache`, not the planet, and took about 40 s in all; step 7 is network-bound (font downloads). The app reads tiles and side files from `app/public/data/`, or from `VITE_DATA_BASE` (for example an R2 bucket) when set; see `app/.env.example`. Details, timings and the other pipeline commands are in `pipeline/README.md`.
+
+## Ideas and tools to evaluate
+
+Research notes, not decisions or commitments. v1 stays GTFS-free and fully static (see `CLAUDE.md`), so the GTFS-based tools below are for ideas only.
+
+- **Line number badges** (rounded badge with the line's `ref`, repeated along the track, as on Beijing's map): no library needed. Use a MapLibre `symbol` layer with `symbol-placement: 'line'`, `icon-text-fit: 'both'` and a white stretchable SDF image tinted with `icon-color`; keep the text upright with `text-rotation-alignment: 'viewport'`. Images can be made on demand in the `styleimagemissing` event. Needs `ref` and `colour` in the `lines` tiles. [`@americana/maplibre-shield-generator`](https://cdn.jsdelivr.net/npm/@americana/maplibre-shield-generator@0.1.1/README.md) uses the same on-demand pattern for road shields but is road-specific, so skip it.
+- **Interlining and parallel lines** (several lines on shared track drawn side by side, splitting at junctions):
+  - MapLibre's built-in `line-offset` paint property works for simple cases; sharp angles can show artifacts. Fixed per-strand offsets baked in the pipeline work with stock MapLibre.
+  - [Portolan](https://github.com/alexwohlbruck/portolan) (MIT, Go, MapLibre) does this: it detects corridors where tracks run parallel, orders the routes in each corridor to avoid crossings at the next split, and fans them out at junctions. It is a CLI and workbench driven by GTFS, with no documented library API, so treat it as a design reference. Its note: even spacing at every zoom needs a custom MapLibre build, while fixed pre-baked offsets do not. Busy junction interiors still show artifacts.
+  - [LOOM](https://github.com/ad-freiburg/loom) (University of Freiburg; papers: [Efficient Generation of Geographically Accurate Transit Maps](https://ar5iv.arxiv.org/html/1710.02226)) orders lines along shared edges with an ILP to minimise crossings and separations. Its helper tools `topo` (overlap-free line graph) and `pfaedle` (fits routes to real track) match what our line layer needs. Possible to port the ordering idea to the Rust pipeline; not tried.
+  - [Turf `lineOffset`](https://atlas.co/functions/turf/turf-line-offset/) computes offset geometry if offsets are precomputed in JS instead of in the pipeline.
+  - Design caution (Remix, Esri threads): manual offsets cascade, so one change can hide a line elsewhere. Compute offsets from the line graph, not by hand.
+- **Station markers** (white circle, dark ring, name beside it): `circle` layer or a canvas icon like the airport icon in `app/src/mapStyle.ts`.
 
 ## Status
 

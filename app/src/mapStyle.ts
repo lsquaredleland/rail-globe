@@ -192,7 +192,7 @@ export function setOutline(map: MLMap, geometry: GeoJSON.Geometry | null) {
   ;(map.getSource('area-outline') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: geometry ? [{ type: 'Feature', properties: {}, geometry }] : [] })
 }
 
-/** Place names: only countries with data and the cities and towns that have a passenger station (pipeline/places.py writes places.json).
+/** Place names: only countries with data and the cities and towns that have a passenger station (`rail-extract places` writes places.json).
  *  Drawn above the rail so track does not cover them; colours come from `applyTheme`, the language from `applyState`. */
 const PLACE_LAYERS = ['place-country', 'place-city-1', 'place-city-2', 'place-city-3', 'place-town']
 const placeText = (lang: 'local' | 'en'): Expr => (lang === 'en' ? ['coalesce', get('en'), get('name')] : get('name')) as Expr
@@ -210,10 +210,11 @@ export function addPlaceLabels(map: MLMap, places: GeoJSON.FeatureCollection) {
   const city = (id: string, lo: number, hi: number, minzoom: number, size: number[]) =>
     sym(id, ['all', ['==', get('class'), 'city'], ['>=', get('rank'), lo], ['<=', get('rank'), hi]] as Expr, minzoom, 11,
       { 'text-size': ['interpolate', ['linear'], ['zoom'], minzoom, size[0], 10, size[1]], 'text-max-width': 7 })
-  city('place-city-1', 0, 3, 2, [12, 19])
-  city('place-city-2', 4, 7, 4, [11, 16])
-  city('place-city-3', 8, 99, 6, [10.5, 14])
+  // MapLibre places the layers on top first, so they are added smallest first: where labels collide, the bigger place keeps its name
   sym('place-town', ['==', get('class'), 'town'] as Expr, 8.5, 11, { 'text-size': ['interpolate', ['linear'], ['zoom'], 8.5, 10, 11, 12], 'text-max-width': 7, 'text-font': ['Noto Sans Regular'] })
+  city('place-city-3', 8, 99, 6, [10.5, 14])
+  city('place-city-2', 4, 7, 4, [11, 16])
+  city('place-city-1', 0, 3, 2, [12, 19])
 }
 /** The rows of places.json ([lon, lat, class, rank, name, name_en, n_stations]) as points. */
 export function placesGeoJSON(rows: [number, number, string, number, string, string, number][]): GeoJSON.FeatureCollection {

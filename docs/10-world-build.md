@@ -45,9 +45,13 @@ VITE_TILE_SOURCE=world npm --prefix app run dev      # http://127.0.0.1:5173/ ; 
 VITE_TILE_SOURCE=world npm --prefix app run build    # a build that shows the world (copies app/public/data into dist)
 ```
 
-Dev switch only. The world has no `places.json` (the picker still lists the pilot regions, whose boundary files are not in `data/world/`, so the console shows 404s for them), and `pipeline/glyphs` has not been run over the world's labels.
+Dev switch only. The picker still lists the pilot regions, whose boundary files are not in `data/world/`, so the console shows 404s for them. `pipeline/glyphs` has not been run over the world's labels for the real `app/public/glyphs` (a scratch run: see Places below).
 
-`places.py` is the current step for city and town names (it reads `pilot.parts.json` and fetches OpenFreeMap tiles); a Rust step is planned to replace it, update this line then.
+### Places and search (`rail-extract places`)
+
+`world` ends by running `rail-extract places --data <data> --out <out> <slugs>` over the kept countries, so `app/public/data/world/places.json` (the app's labels: `[lon, lat, class, rank, name, name_en, n_stations]`) and `world/search.json` (the search bar's index) come with the world build. By hand: `$RE places --data data/world --out app/public/data/world --parts app/public/data/world/world.parts.json` (0.6 s). No network: the place nodes (place=city, town) are in the `.railcache`; the stations come from `data/world/<slug>/complexes.geojsonl`, the country and province outlines from `data/regions`. Rules and formats: header of `pipeline/rail-extract/src/places.rs`, summary in `pipeline/README.md`.
+
+Glyphs for the world labels: `node pipeline/glyphs/build-glyphs.mjs --data app/public/data/world --tiles world --out <dir>/glyphs` (it reads `world.pmtiles` and `world/places.json`; the folder must be named `glyphs`).
 
 ## The memory-bounded writer (`tilewriter::run_world`)
 
@@ -71,4 +75,4 @@ Verification:
 - Generic country configs are `pipeline/config/_default.json` (no commuter networks, high-speed from 200 km/h on the track's own tags or route services); no country-specific type overrides except those in the hand-written configs. The world build also used `ca.json`, `us.json`, `mx.json` (Americas freight rules) and `cn.json` (China's rules), which are hand-written and were not tracked in git when this was written: commit them, or a fresh clone builds those four countries with the template and gets different results.
 - Tiles are not cut at country borders: a way that crosses a border is in both countries' tile input and drawn twice, identically (as in the pilot).
 - The glyph subset (`pipeline/glyphs`) was built for the pilot's labels; Cyrillic (Moscow) and CJK (Tokyo) draw; Arabic labels (Cairo) come out as fragments. Other scripts (Devanagari, Thai, Hebrew, Greek and so on) were not checked.
-- `places.json` (city names) is not generated for the world.
+- `places.json` for the world holds every city and town with a station nearby (35.8 k places), not OpenFreeMap's thinned set; the style's collision handling decides what is drawn. A distance or population thinning would shrink the file (1.9 MB, 0.77 MB gzipped) if the first load matters.

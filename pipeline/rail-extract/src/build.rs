@@ -8,7 +8,7 @@
 //!      (station, platform, yard, railway land, station building, aerodrome, terminal multipolygons). Their member ways and
 //!      member nodes are needed even when untagged (multipolygon outlines; route stops for the smart-extract membership rule).
 //!   2. ways: rail candidates by tag, plus the member ways of pass 1. Node refs are decoded only for kept ways.
-//!   3. nodes, once: coordinates of every node a kept way or relation needs, and the tagged rail nodes.
+//!   3. nodes, once: coordinates of every node a kept way or relation needs, the tagged rail nodes, and the place=city / town nodes.
 //! Rail-atlas used a fourth pass (nodes twice) because it also kept roads; tag-only selection does not need the first node pass.
 
 use crate::cache::{self, *};
@@ -98,6 +98,10 @@ struct NodeBlk {
     tagged: Vec<(i64, i32, i32)>,
     tags: Vec<u8>,
     tag_end: Vec<usize>,
+    places: Vec<(i64, i32, i32)>, // place=city / town nodes
+    ptags: Vec<u8>,
+    ptag_end: Vec<usize>,
+    villages: usize, // place=village nodes seen (counted, not kept)
 }
 
 pub fn build(planet: &Path, out: &Path) {
@@ -289,6 +293,7 @@ pub fn build(planet: &Path, out: &Path) {
                 let blk = Block::parse(raw);
                 let quick = key_ids(&blk, &[b"railway", b"public_transport", b"construction:railway", b"construction:public_transport"]);
                 let mut o = NodeBlk::default();
+                let place_k = key_ids(&blk, &[b"place"]);
                 let mut kvb = Vec::new();
                 for g in &blk.groups {
                     if group_kind(g) != K_NODES {
@@ -296,7 +301,7 @@ pub fn build(planet: &Path, out: &Path) {
                     }
                     let Some(first) = first_node_id(g) else { continue };
                     let mut j = need.partition_point(|&x| x < first);
-                    for_each_node(g, !quick.is_empty(), &mut kvb, |id, la, lo, kv| {
+                    for_each_node(g, !quick.is_empty() || !place_k.is_empty(), &mut kvb, |id, la, lo, kv| {
                         while j < need.len() && need[j] < id {
                             j += 1;
                         }
@@ -304,10 +309,25 @@ pub fn build(planet: &Path, out: &Path) {
                         let tagged = !kv.is_empty()
                             && kv.chunks_exact(2).any(|p| quick.contains(&p[0]))
                             && rules::node_kind(&Kv { blk: &blk, kv }).is_some();
-                        if !needed && !tagged {
+                        let place = !kv.is_empty()
+                            && kv.chunks_exact(2).any(|p| place_k.contains(&p[0]) && matches!(blk.s(p[1]), b"city" | b"town"));
+                        if !place && !kv.is_empty() && kv.chunks_exact(2).any(|p| place_k.contains(&p[0]) && blk.s(p[1]) == b"village") {
+                            o.villages += 1;
+                        }
+                        if !needed && !tagged && !place {
                             return;
                         }
                         let (lat, lon) = (blk.lat7(la), blk.lon7(lo));
+                        if place {
+                            o.places.push((id, lat, lon));
+                            let pairs = kv.chunks_exact(2).map(|p| (blk.s(p[0]), blk.s(p[1]))).filter(|(k, _)| rules::place_key(k));
+                            put_var(&mut o.ptags, pairs.clone().count() as u64);
+                            for (k, v) in pairs {
+                                put_bytes(&mut o.ptags, k);
+                                put_bytes(&mut o.ptags, v);
+                            }
+                            o.ptag_end.push(o.ptags.len());
+                        }
                         if needed {
                             o.found.push((j as u32, lat, lon));
                         }
@@ -331,7 +351,12 @@ pub fn build(planet: &Path, out: &Path) {
         found += b.found.len();
     }
     let ntagged: usize = nblks.iter().map(|b| b.tagged.len()).sum();
-    lap(&format!("pass 3 (nodes): {found} of {} needed nodes located, {ntagged} tagged rail nodes", need.len()));
+    let nplaces: usize = nblks.iter().map(|b| b.places.len()).sum();
+    let nvillages: usize = nblks.iter().map(|b| b.villages).sum();
+    lap(&format!(
+        "pass 3 (nodes): {found} of {} needed nodes located, {ntagged} tagged rail nodes, {nplaces} place nodes (city, town; {nvillages} villages not kept)",
+        need.len()
+    ));
 
     // ---- way records
     let chunk = 1 << 14;
@@ -513,6 +538,16 @@ pub fn build(planet: &Path, out: &Path) {
             s = b.tag_end[k];
         }
     }
+    let mut place_idx = Vec::with_capacity(nplaces);
+    let mut place_dat = Vec::new();
+    for b in &nblks {
+        let mut s = 0;
+        for (k, &(id, lat, lon)) in b.places.iter().enumerate() {
+            place_idx.push(NodeIdx { id, off: place_dat.len() as u64, lat, lon });
+            place_dat.extend_from_slice(&b.ptags[s..b.ptag_end[k]]);
+            s = b.ptag_end[k];
+        }
+    }
     drop(nblks);
     lap("assembled way, relation and node records");
 
@@ -529,6 +564,8 @@ pub fn build(planet: &Path, out: &Path) {
             &bway_dat,
             as_bytes(&brel_idx),
             &brel_dat,
+            as_bytes(&place_idx),
+            &place_dat,
         ],
     )
         .unwrap_or_else(|e| panic!("write {}: {e}", out.display()));

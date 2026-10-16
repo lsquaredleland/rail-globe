@@ -100,7 +100,7 @@ fn load(c: &Cache, levels: &[&str]) -> (Vec<Bnd>, Vec<String>) {
 }
 
 /// even-odd test of a point (degrees) against every ring of a set of polygons
-fn inside(polys: &[Poly], lat: f64, lon: f64) -> bool {
+pub fn inside(polys: &[Poly], lat: f64, lon: f64) -> bool {
     let mut c = false;
     for p in polys {
         for r in p {
@@ -116,7 +116,7 @@ fn inside(polys: &[Poly], lat: f64, lon: f64) -> bool {
 }
 
 /// a point inside the largest polygon: the middle of the widest inside span on the horizontal line through its middle
-fn interior_point(polys: &[Poly]) -> Option<(f64, f64)> {
+pub fn interior_point(polys: &[Poly]) -> Option<(f64, f64)> {
     let area = |r: &[(i32, i32)]| -> f64 {
         r.windows(2).map(|w| w[0].1 as f64 * w[1].0 as f64 - w[1].1 as f64 * w[0].0 as f64).sum::<f64>().abs()
     };

@@ -1,6 +1,6 @@
 //! The world rail cache: every rail candidate of the planet with coordinates resolved, in one memory-mapped file.
 //!
-//! Layout (little-endian): magic, then six (offset, length) pairs, then the sections, each aligned to 8 bytes.
+//! Layout (little-endian): magic, then twelve (offset, length) pairs, then the sections, each aligned to 8 bytes.
 //!
 //!   WAY_IDX   [WayIdx]   sorted by id: id, record offset, bbox
 //!   WAY_DAT   records    tags; n; n x (zz delta node id, zz delta lat, zz delta lon)
@@ -12,6 +12,8 @@
 //!   BWAY_DAT  records    n; n x (zz delta lat, zz delta lon), simplified when the cache is built (no node ids, no tags)
 //!   BREL_IDX  [RelIdx]   sorted by id: admin boundary relations, bbox of their ways
 //!   BREL_DAT  records    tags; n; n x (zz delta way id, role); way members only
+//!   PLACE_IDX [NodeIdx]  sorted by id: place=city and place=town nodes (for the places step)
+//!   PLACE_DAT records    tags (`rules::place_key` only: place, name, name:en, int_name, population, capital, wikidata)
 //!
 //! Tags are: count, then (len, key bytes, len, value bytes) per tag, in OSM order, only keys `rules::cache_key` keeps.
 //! Coordinates are 1e-7 degrees; a node missing from the planet has lat = i32::MIN.
@@ -21,8 +23,8 @@ use memmap2::Mmap;
 use std::fs::File;
 use std::path::Path;
 
-pub const MAGIC: &[u8; 8] = b"RGRAIL02";
-pub const NSEC: usize = 10;
+pub const MAGIC: &[u8; 8] = b"RGRAIL03";
+pub const NSEC: usize = 12;
 pub const HEADER: usize = 8 + NSEC * 16;
 pub const MISSING: i32 = i32::MIN;
 
@@ -186,8 +188,16 @@ impl Cache {
     pub fn open(path: &Path) -> Result<Cache, String> {
         let f = File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
         let map = unsafe { Mmap::map(&f) }.map_err(|e| e.to_string())?;
+        if map.len() >= 8 && &map[0..6] == b"RGRAIL" && &map[0..8] != MAGIC {
+            return Err(format!(
+                "{} is an older cache format ({}, this build reads {}): rebuild it with `rail-extract cache --planet <planet>.osm.pbf` (about a minute)",
+                path.display(),
+                String::from_utf8_lossy(&map[0..8]),
+                String::from_utf8_lossy(MAGIC)
+            ));
+        }
         if map.len() < HEADER || &map[0..8] != MAGIC {
-            return Err(format!("{} is not a rail cache (or an older format): rebuild it", path.display()));
+            return Err(format!("{} is not a rail cache: rebuild it with `rail-extract cache`", path.display()));
         }
         let mut sec = [(0usize, 0usize); NSEC];
         for (i, s) in sec.iter_mut().enumerate() {
@@ -214,6 +224,12 @@ impl Cache {
     }
     pub fn rel_idx(&self) -> &[RelIdx] {
         unsafe { table(self.s(4)) }
+    }
+    pub fn place_idx(&self) -> &[NodeIdx] {
+        unsafe { table(self.s(10)) }
+    }
+    pub fn place_tags(&self, i: usize) -> Vec<(&[u8], &[u8])> {
+        Rd { b: self.s(11), p: self.place_idx()[i].off as usize }.tags()
     }
     pub fn way(&self, i: usize) -> Way<'_> {
         let mut r = Rd { b: self.s(1), p: self.way_idx()[i].off as usize };
