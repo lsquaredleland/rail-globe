@@ -423,6 +423,7 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
     let mut line_ways: FxHashMap<i64, Vec<String>> = FxHashMap::default();
     let mut name_ways: Vec<(String, Vec<String>, String)> = Vec::new(); // (name, ids, type), first-seen order
     let mut name_ix: FxHashMap<String, usize> = FxHashMap::default();
+    let mut name_types: Vec<FxHashMap<String, usize>> = Vec::new();   // per name: ways by type, for the colour of its highlight
     let mut way_geom: FxHashMap<String, Vec<(f64, f64)>> = FxHashMap::default();
     let mut way_len: FxHashMap<i64, f64> = FxHashMap::default();
     let mut named: Vec<(String, Option<String>, String, f64, i64, [f64; 4])> = Vec::new(); // (n, ne, t, km, ways, bbox)
@@ -556,9 +557,11 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
             if let Some(n) = props.get("n").and_then(Value::as_str) {
                 let ix = *name_ix.entry(n.to_string()).or_insert_with(|| {
                     name_ways.push((n.to_string(), Vec::new(), t.to_string()));
+                    name_types.push(FxHashMap::default());
                     name_ways.len() - 1
                 });
                 name_ways[ix].1.push(osm_id.to_string());
+                *name_types[ix].entry(t.to_string()).or_default() += 1;
             }
             if mz <= OVERVIEW_MAXZOOM {
                 let mut ov = Map::new();
@@ -996,7 +999,11 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
 
     // highlight data for named railways, sharded by a hash of the name (any track name: a hovered piece with no mapped line)
     let mut hl_shards: Vec<Map<String, Value>> = vec![Map::new(); NAME_SHARDS as usize];
-    for (n, ids, t) in &name_ways {
+    for (ix, (n, ids, first)) in name_ways.iter().enumerate() {
+        // the type most of its ways have, not the first way's: a railway often starts with a yard or siding piece (Korea's Gyeonggang Line did)
+        let mut by: Vec<(&String, &usize)> = name_types[ix].iter().filter(|(k, _)| k.as_str() != "yard").collect();
+        by.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let t = by.first().map(|e| e.0).unwrap_or(first);
         hl_shards[(fnv1a(n) % NAME_SHARDS) as usize].insert(n.clone(), hl_record(ids, &way_geom, vec![("type", json!(t))]));
     }
     for (i, sh) in hl_shards.into_iter().enumerate() {
