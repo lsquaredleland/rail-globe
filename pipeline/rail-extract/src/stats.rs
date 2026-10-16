@@ -3,7 +3,7 @@
 //!
 //! Areas: the region itself (everything in its cut), the areas its config lists under `stat_areas`, and, with `stat_auto`
 //! ({"country": "CN", "levels": ["4", "5"], "min_metro": 20, "exclude": [slugs]}), every outline of those admin levels in data/regions/index.json
-//! (level 4 = provinces, 5 = prefecture-level cities; cities with fewer than `min_metro` metro stations are left out).
+//! (level 4 = provinces, 5 = prefecture-level cities, and index entries with `city: true`, any level; cities with fewer than `min_metro` metro stations are left out).
 //!
 //! Length is route km, with double track counted once. OSM maps most double track as one way per track, so summing ways
 //! doubles it. Instead the map is cut into square cells of CELL_M metres; per rail type, each cell any track touches counts once,
@@ -185,11 +185,11 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         let index: Map<String, Value> = dirs.iter().find_map(|d| fs::read_to_string(d.join("index.json")).ok()).and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_else(|| panic!("stats: stat_auto needs data/regions/index.json (rail-extract outlines --level 4 --country {country})"));
         let have: BTreeSet<String> = areas.iter().map(|a| a.slug.clone()).collect();
-        let mut picked: Vec<(&String, &Value)> = index.iter().filter(|(k, v)| v["country"] == country && levels.contains(&v["admin_level"].as_str().unwrap_or("")) && !have.contains(*k) && !exclude.contains(k.as_str())).collect();
+        let mut picked: Vec<(&String, &Value)> = index.iter().filter(|(k, v)| v["country"] == country && (levels.contains(&v["admin_level"].as_str().unwrap_or("")) || v["city"] == true) && !have.contains(*k) && !exclude.contains(k.as_str())).collect();
         picked.sort_by_key(|(k, _)| k.to_string());
         for (k, v) in picked {
             let Some((poly, bbox)) = outline(k, dirs) else { continue };
-            let lvl5 = v["admin_level"] == "5";
+            let lvl5 = v["admin_level"] == "5" || v["city"] == true;   // `city: true`: an outline fetched by pipeline/fetch_city_outlines.py (any admin level)
             let en = v["name_en"].as_str().or(v["name"].as_str()).unwrap_or(k).trim_end_matches(" City").trim_end_matches(" Prefecture").to_string();
             areas.push(new(k, en.clone(), v["name"].as_str().filter(|n| *n != en).map(String::from), if lvl5 { "city" } else { "province" }, Some(poly), bbox, if lvl5 { min_metro } else { 0 }));
         }

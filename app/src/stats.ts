@@ -56,7 +56,7 @@ function inRings(polys: number[][][][], x: number, y: number): boolean {
 
 /** The smallest of `areas` that holds the view's centre and fills at least half the screen (its width is at least half the
  *  screen's, so all of China is not shown as one province), else null. Areas with an outline are tested against it, the rest against their bounds. */
-export function areaForView<T extends StatsArea>(areas: T[], shapes: Shapes, v: View, screenW: number): T | null {
+export function areaForView<T extends StatsArea>(areas: T[], shapes: Shapes, v: View, screenW: number, minShare = 0.5): T | null {
   const [lon, lat] = v.center
   const vs = viewSpan(v, screenW)
   let best: T | null = null
@@ -65,7 +65,7 @@ export function areaForView<T extends StatsArea>(areas: T[], shapes: Shapes, v: 
     const [w, s, e, n] = a.bbox
     if (lon < w || lon > e || lat < s || lat > n) continue
     const span = e - w
-    if (span < vs * 0.5 || span >= bestSpan) continue
+    if (span < vs * minShare || span >= bestSpan) continue
     const shape = shapes[a.slug]
     if (shape && !inRings(shape, lon, lat)) continue
     best = a

@@ -97,11 +97,11 @@ export default function App() {
   const overRegions = useMemo(() => (REGIONS.length ? stats.regions : stats.regions.filter((r) => r.slug === partAt(viewNow.center))), [stats, viewNow])
   const allAreas = useMemo(() => [...overRegions.filter((r) => !regionBySlug(r.slug).noCard), ...stats.areas], [overRegions, stats])
   // the area that fills half the screen: it gets the outline, which goes away when zoomed out further
-  // the place picked in the search keeps the card and outline while it still fills half the screen (else Chengdu would give way to its New Area)
+  // the place picked in the search keeps the card and outline while it still fills 15% of the screen's width (else Chengdu would give way to its New Area)
   const [pickedSlug, setPickedSlug] = useState<string | null>(null)
   const viewArea = useMemo(() => {
     const p = pickedSlug ? allAreas.filter((a) => a.slug === pickedSlug) : []
-    return areaForView(p, stats.shapes, viewNow, window.innerWidth) ?? areaForView(allAreas, stats.shapes, viewNow, window.innerWidth)
+    return areaForView(p, stats.shapes, viewNow, window.innerWidth, 0.15) ?? areaForView(allAreas, stats.shapes, viewNow, window.innerWidth)
   }, [allAreas, stats, viewNow, pickedSlug])
   const viewItem = useMemo(() => itemInView(found, viewNow, window.innerWidth, REGIONS.length ? '' : partAt(viewNow.center)), [found, viewNow])
   const cardArea = useMemo(
@@ -146,7 +146,8 @@ export default function App() {
     setPickedSlug(it.slug)
     if (it.slug && REGIONS.some((r) => r.slug === it.slug)) { setRegion(it.slug); return }
     setSelected(null); setSelPt(null); setPeek(null)
-    const center: [number, number] = it.bbox ? [(it.bbox[0] + it.bbox[2]) / 2, (it.bbox[1] + it.bbox[3]) / 2] : it.center
+    // a city's box can be mostly water or sprawl (Boston): its own point lies inside it, the middle of its box may not
+    const center: [number, number] = it.bbox && it.kind !== 'city' ? [(it.bbox[0] + it.bbox[2]) / 2, (it.bbox[1] + it.bbox[3]) / 2] : it.center
     map.current?.flyTo({ center, zoom: compact ? Math.max(1.5, it.zoom - 1) : it.zoom })
   }
 

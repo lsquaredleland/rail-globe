@@ -160,6 +160,7 @@ struct Place {
     n: usize,
     pop: Option<u64>,
     capital: bool,
+    wd: Option<String>,
 }
 
 /// one segment of open metro track (lon, lat)
@@ -232,6 +233,7 @@ struct Cand {
     capital: bool,
     n: usize,
     outline: Option<(String, [f64; 4])>, // slug, box of a level-5 outline
+    wd: Option<String>,   // Wikidata id of the place (None for a city made from an outline alone)
 }
 
 /// most important first: rank, then population (larger first, none last), then capital, then n_stations (more first), then name
@@ -264,6 +266,8 @@ struct Outline {
     name_en: Option<String>,
     level: String,
     osm_id: i64,
+    /// a city outline fetched by pipeline/fetch_city_outlines.py (the cache has no boundary relation for it): `city: true` in index.json
+    city: bool,
 }
 
 fn load_outline(dir: &Path, slug: &str) -> Option<Value> {
@@ -275,6 +279,17 @@ fn region_km(out: &Path, slug: &str) -> Option<f64> {
     let v: Value = serde_json::from_str(&std::fs::read_to_string(out.join(slug).join("stats.json")).ok()?).ok()?;
     let area = v["areas"].as_array()?.iter().find(|a| a["slug"].as_str() == Some(slug))?;
     Some(area["km"].as_object()?.iter().filter(|(t, _)| !matches!(t.as_str(), "freight" | "other")).filter_map(|(_, k)| k["open"].as_f64()).sum())
+}
+
+/// box of an outline (min lat, min lon, max lat, max lon in 1e-7 degrees)
+fn bbox7(v: &Value) -> Option<[i32; 4]> {
+    let mut b = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
+    for r in rings_of(v) {
+        for (lon, lat) in r {
+            b = [b[0].min(lat as i32), b[1].min(lon as i32), b[2].max(lat as i32), b[3].max(lon as i32)];
+        }
+    }
+    (b[0] <= b[2]).then_some(b)
 }
 
 fn write_json(path: &Path, v: &Value) {
@@ -362,7 +377,7 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
             let en = crate::rules::english_name(&tags).map(txt).unwrap_or_else(|| name.clone());
             let pop = tags.get(b"population").and_then(|p| population(&txt(p)));
             let capital = tags.get(b"capital") == Some(b"yes");
-            (ni.id, Some(Place { city, lon, lat, rank: rank(city, pop, capital), name, en, n, pop, capital }))
+            (ni.id, Some(Place { city, lon, lat, rank: rank(city, pop, capital), name, en, n, pop, capital, wd: tags.get(b"wikidata").map(txt) }))
         })
         .collect();
     let mut seen = HashSet::new();
@@ -396,6 +411,7 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
                     name_en: v["name_en"].as_str().map(String::from),
                     level: v["admin_level"].as_str().unwrap_or("").to_string(),
                     osm_id: v["osm_id"].as_str().and_then(|s| s.trim_start_matches("relation/").parse().ok()).unwrap_or(0),
+                    city: v["city"].as_bool().unwrap_or(false),
                 })
                 .collect()
         })
@@ -464,10 +480,12 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
     }
     let areas: Vec<Area> = (0..outlines.len())
         .into_par_iter()
-        .filter(|&i| outlines[i].level == "4" || outlines[i].level == "5")
+        .filter(|&i| outlines[i].level == "4" || outlines[i].level == "5" || outlines[i].city)
         .filter_map(|i| {
             let o = &outlines[i];
-            let b = bbox_of.get(&o.osm_id)?; // min lat, min lon, max lat, max lon
+            // min lat, min lon, max lat, max lon: from the cache's relation boxes, or from the outline file for a fetched city
+            let b = bbox_of.get(&o.osm_id).copied().or_else(|| o.city.then(|| bbox7(&load_outline(outline_dir, &o.slug)?)).flatten())?;
+            let b = &b;
             let (lo, hi) = ([b[1] as f64 * 1e-7, b[0] as f64 * 1e-7], [b[3] as f64 * 1e-7, b[2] as f64 * 1e-7]);
             if tree.locate_in_envelope(AABB::from_corners(lo, hi)).next().is_none() {
                 return None;
@@ -491,7 +509,7 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
     let mut place_cands: Vec<Cand> = places
         .iter()
         .filter(|p| p.city && metro_near(&metro, p.lon, p.lat, METRO_KM))
-        .map(|p| Cand { name: p.name.clone(), en: p.en.clone(), lon: p.lon, lat: p.lat, rank: p.rank, pop: p.pop, capital: p.capital, n: p.n, outline: None })
+        .map(|p| Cand { name: p.name.clone(), en: p.en.clone(), lon: p.lon, lat: p.lat, rank: p.rank, pop: p.pop, capital: p.capital, n: p.n, outline: None, wd: p.wd.clone() })
         .collect();
     place_cands.sort_by(importance);
     let n_place_metro = place_cands.len();
@@ -501,7 +519,7 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
     // per level-5 outline: its candidate and the place it took the name from
     let from_outlines: Vec<(Cand, Vec<usize>)> = areas
         .par_iter()
-        .filter(|a| outlines[a.o].level == "5")
+        .filter(|a| outlines[a.o].level == "5" || outlines[a.o].city)
         .filter_map(|a| {
             let o = &outlines[a.o];
             let at = |lat: f64, lon: f64| ((lat * 1e7).round() as i32, (lon * 1e7).round() as i32);
@@ -510,8 +528,8 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
                 let b = bbox_of.get(&outlines[q.o].osm_id).map_or(false, |b| b[0] <= la && la <= b[2] && b[1] <= lo && lo <= b[3]);
                 b && load_outline(outline_dir, &outlines[q.o].slug).map_or(false, |v| Region::new("", rings_of(&v)).contains(la, lo))
             });
-            if district {
-                return None;
+            if district && !o.city {
+                return None; // a district of a city-province (Hong Kong); a fetched city is never one (New York is also a state)
             }
             let reg = Region::new(&o.slug, rings_of(&load_outline(outline_dir, &o.slug)?));
             let outline = Some((o.slug.clone(), a.bbox));
@@ -524,11 +542,11 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
                 .collect();
             if let Some(&i) = inside.first() {
                 let c = &place_cands[i];
-                return Some((Cand { name: c.name.clone(), en: c.en.clone(), lon: c.lon, lat: c.lat, rank: c.rank, pop: c.pop, capital: c.capital, n: a.n, outline }, inside));
+                return Some((Cand { name: c.name.clone(), en: c.en.clone(), lon: c.lon, lat: c.lat, rank: c.rank, pop: c.pop, capital: c.capital, n: a.n, outline, wd: c.wd.clone() }, inside));
             }
             metro_near(&metro, a.pt.0, a.pt.1, METRO_KM).then(|| {
                 let en = display(o);
-                (Cand { name: o.name.clone().unwrap_or(en.clone()), en, lon: a.pt.0, lat: a.pt.1, rank: rank(true, None, false), pop: None, capital: false, n: a.n, outline }, Vec::new())
+                (Cand { name: o.name.clone().unwrap_or(en.clone()), en, lon: a.pt.0, lat: a.pt.1, rank: rank(true, None, false), pop: None, capital: false, n: a.n, outline, wd: None }, Vec::new())
             })
         })
         .collect();
@@ -563,6 +581,14 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
         // the stations of a country's regions are not counted per country: n is 0 (the map shows no count for a country either)
         s.push(json!([ct.name, ct.en, local(&ct.local, &ct.name), "country", b3(ct.pt.0), b3(ct.pt.1), b3(ct.bbox[0]), b3(ct.bbox[1]), b3(ct.bbox[2]), b3(ct.bbox[3]), fit_zoom(&ct.bbox), ct.region, 0]));
     }
+    // the point cities (no outline) for pipeline/fetch_city_outlines.py, which fetches their boundaries by Wikidata id
+    let wanted_outlines: Vec<Value> = cities
+        .iter()
+        .filter(|c| c.outline.is_none())
+        .filter_map(|c| Some(json!({ "name": c.name, "name_en": c.en, "wikidata": c.wd.as_ref()?, "lon": r3(c.lon), "lat": r3(c.lat), "stations": c.n })))
+        .collect();
+    write_json(&data.join("city-outlines-wanted.json"), &Value::Array(wanted_outlines.clone()));
+    lap(&format!("{} cities without an outline written to {}/city-outlines-wanted.json", wanted_outlines.len(), data.display()));
     // small countries without a city entry are searched at country level only (a whole-country region, so its km are known)
     let country_only: Vec<String> = countries
         .iter()
@@ -626,7 +652,7 @@ mod tests {
     }
 
     fn cand(name: &str, lon: f64, lat: f64, rank: i64, pop: Option<u64>, capital: bool, n: usize) -> Cand {
-        Cand { name: name.into(), en: name.into(), lon, lat, rank, pop, capital, n, outline: None }
+        Cand { name: name.into(), en: name.into(), lon, lat, rank, pop, capital, n, outline: None, wd: None }
     }
 
     #[test]

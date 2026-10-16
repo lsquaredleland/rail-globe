@@ -1,8 +1,14 @@
-# City outlines (scope), missing line highlights (research), small countries (done), 2026-10-16
+# City outlines (done), missing line highlights (research), small countries (done), 2026-10-16
 
-Follow-ups to the search work in `docs/10-world-build.md`. Section 3 is implemented; sections 1 and 2 are findings and proposals.
+Follow-ups to the search work in `docs/10-world-build.md`. Sections 1 and 3 are implemented; section 2 is findings and proposals.
 
-## 1. US (and other) city outlines: scope
+## 1. City outlines (implemented 2026-10-16)
+
+**Built (route B).** `rail-extract places` writes `<data>/city-outlines-wanted.json` (the point-only cities with their Wikidata ids; 660 of 663 have one). `pipeline/fetch_city_outlines.py` looks the relations up on Overpass, fetches the polygons from Nominatim (raw answers cached in `data/ext/city-outlines/`, so a re-run is offline) and writes `data/regions/<cc>-<name>.geojson` plus `index.json` entries with `"city": true` (real `admin_level` kept; a slug that already exists gets `-city`: `us-new-york-city`, `bg-sofia-city2`). `stats.rs` treats a `city: true` entry as a city (card, shape, `kind: city`) whatever its level; `places.rs` takes its box and slug into the search entry and drops the other places inside it. Run order: `places`, `fetch_city_outlines.py`, `build` (all countries touched, 35 s), `places` again.
+
+**Result (world).** 445 cities got an outline (88 in the US, 40 in Germany, 38 in Japan, 30 in France, 12 in Canada, ...): 487 of the 726 search cities now have one (was 63, all in China), 239 stay points. Of the 238 point cities still wanted, 169 have no boundary relation under their Wikidata id (Dhaka, Istanbul, Mumbai, Lahore, Lagos, Lima, Cairo, Santiago, ...; a name-and-point fallback would catch some) and the rest were out of the 2 to 20,000 km2 range or at province level (Shanghai, Berlin, Tokyo, Mexico City are provinces already). City limits as decided: Boston 131 km of passenger route, Seattle 77, Chicago 467, New York 600, Toronto 363. The picked place keeps the card while it spans 15% of the screen. Two traps found on the way: New York is also a state (a "district of a city-province" rule would have dropped the city; it now applies to China's level 5 only) and Sofia has two province entries (the first run overwrote one; slugs are unique now).
+
+### Scope as planned (kept for the reasoning)
 
 **The gap.** `search.json` has 663 city entries that are only a point (every city outside China: New York, Boston, Chicago, ...). They can be found and flown to, and the region button names them, but they have no outline, no statistics card of their own and no "outline area in view" line; the card shows the state. Only China's prefecture-level cities (level 5) have outlines, because `outlines --level 5` and `stats.rs` handle only levels 2, 4 and 5 and the cache keeps only those.
 
