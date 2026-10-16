@@ -25,8 +25,8 @@
 //!     box of their outline (only the polygons that are at least 5 % of the largest one and hold a station complex: overseas
 //!     territories and far islands do not stretch it) and a zoom that fits it;
 //!   - the cities: ONE per metro area. A candidate is a place=city (or a level-5 outline, China's prefecture-level cities) with a
-//!     station complex within CITY_KM and open passenger track typed `metro` (not construction or proposed; monorail and light
-//!     rail alone do not count) within METRO_KM of its point (exact distance to the track). Candidates are sorted by rank, then
+//!     station complex within CITY_KM and open passenger track typed `metro` or `light_rail` (not construction or proposed; monorail
+//!     alone does not count) within METRO_KM of its point (exact distance to the track). Candidates are sorted by rank, then
 //!     population (larger first), then capital, then n_stations, and taken greedily: one is dropped when an accepted one lies
 //!     within MERGE_KM. So Tokyo wins over its wards. A level-5 outline that contains a candidate place takes that place's name,
 //!     rank and point and keeps its own box and slug (one entry for Chengdu, not two). A level-5 outline inside a province of the
@@ -45,7 +45,7 @@ use std::time::Instant;
 
 pub const CITY_KM: f64 = 12.0;
 pub const TOWN_KM: f64 = 5.0;
-/// a city in search.json needs open metro track within this distance of its point
+/// a city in search.json needs open metro or light rail track within this distance of its point
 pub const METRO_KM: f64 = 12.0;
 /// candidates closer than this are one metro area in search.json: only the most important is kept
 pub const MERGE_KM: f64 = 20.0;
@@ -180,14 +180,14 @@ fn seg_km(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
     (ax + t * dx).hypot(ay + t * dy) * 111.2
 }
 
-/// whether track typed `metro` lies within `km` of a point
+/// whether track typed `metro` or `light_rail` lies within `km` of a point
 fn metro_near(tree: &RTree<Seg>, lon: f64, lat: f64, km: f64) -> bool {
     let k = lat.to_radians().cos().max(0.01);
     let (dy, dx) = (km / 111.2, km / (111.2 * k));
     tree.locate_in_envelope_intersecting(AABB::from_corners([lon - dx, lat - dy], [lon + dx, lat + dy])).any(|s| seg_km([lon, lat], s.0, s.1) <= km)
 }
 
-/// the open (not construction, not proposed) metro segments of a features.typed.geojsonl
+/// the open (not construction, not proposed) metro and light rail segments of a features.typed.geojsonl
 fn metro_segments(path: &Path) -> Vec<Seg> {
     use std::io::{BufRead, BufReader};
     let Ok(f) = std::fs::File::open(path) else {
@@ -196,12 +196,12 @@ fn metro_segments(path: &Path) -> Vec<Seg> {
     };
     let mut out = Vec::new();
     for l in BufReader::new(f).lines().map_while(Result::ok) {
-        if !l.contains("\"type\":\"metro\"") {
+        if !l.contains("\"type\":\"metro\"") && !l.contains("\"type\":\"light_rail\"") {
             continue;
         }
         let Ok(v) = serde_json::from_str::<Value>(&l) else { continue };
         let pr = &v["properties"];
-        if pr["type"].as_str() != Some("metro") || matches!(pr["railway"].as_str(), Some("construction" | "proposed")) {
+        if !matches!(pr["type"].as_str(), Some("metro" | "light_rail")) || matches!(pr["railway"].as_str(), Some("construction" | "proposed")) {
             continue;
         }
         let g = &v["geometry"];
