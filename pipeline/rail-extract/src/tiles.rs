@@ -38,7 +38,8 @@ const CITY_ABSORB_RATIO: f64 = 5.0;
 const CITY_MIN_KM: f64 = 6.0; // a city dot needs this much metro / tram / monorail track
 const SPEED_BAND_MINS: [i64; 9] = [400, 350, 300, 250, 200, 160, 120, 80, 0]; // the speed colour bands of app/src/mapStyle.ts
 const HL_SIMPLIFY: f64 = 0.001; // degrees, about 100 m: under a pixel at z7
-const NAME_SHARDS: u32 = 256;
+const SHARD_TARGET_BYTES: usize = 256 * 1024; // side-file shards hold about this much JSON each (the app fetches one per click)
+const BIG_LINE_BYTES: usize = 64 * 1024; // a line record over this (long highlight geometry) stays its own file in lines-big/ instead of bloating a shard
 const CSS_NAMES: [&str; 32] = ["red", "blue", "green", "yellow", "orange", "purple", "pink", "brown", "black", "grey", "gray", "darkblue", "skyblue",
     "lightblue", "darkgreen", "lightgreen", "cyan", "magenta", "violet", "gold", "navy", "teal", "maroon", "lime", "olive", "silver",
     "turquoise", "crimson", "indigo", "darkred", "darkorange", "white"];
@@ -141,8 +142,32 @@ fn fnv1a(s: &str) -> u32 {
     h
 }
 
-fn safe(i: &str) -> String {
-    i.replace('/', "-")
+/// shard count for `bytes` of records: a power of two, so a shard holds about SHARD_TARGET_BYTES (1 to 1024)
+fn shard_count(bytes: usize) -> u32 {
+    (bytes.div_ceil(SHARD_TARGET_BYTES).max(1) as u32).next_power_of_two().min(1024)
+}
+
+/// Writes `recs` (key, record as JSON text) to `dir/<n>.json`, each file one JSON object, a record in shard `fnv1a(key) % count`.
+/// Returns the count (the app reads it from shards.json). Every shard file is written, empty ones as `{}`, so a fetch never 404s.
+fn write_shards(dir: &Path, recs: &[(String, String)]) -> u32 {
+    let n = shard_count(recs.iter().map(|r| r.1.len()).sum());
+    let mut out: Vec<String> = vec![String::new(); n as usize];
+    for (k, v) in recs {
+        let sh = &mut out[(fnv1a(k) % n) as usize];
+        sh.push(if sh.is_empty() { '{' } else { ',' });
+        sh.push_str(&pyjson::to_string(&Value::String(k.clone()), pyjson::COMPACT));
+        sh.push(':');
+        sh.push_str(v);
+    }
+    for (i, mut sh) in out.into_iter().enumerate() {
+        if sh.is_empty() {
+            sh.push('{');
+        }
+        sh.push('}');
+        let path = dir.join(format!("{i}.json"));
+        fs::write(&path, sh).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    }
+    n
 }
 
 /// one tile input line: {"type":"Feature","properties":...,"geometry":...,"zoom":{"minzoom":..,"maxzoom":..}} ("zoom" is read by tilewriter.rs)
@@ -478,7 +503,10 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
     regions_dirs: &[std::path::PathBuf]) -> Prepared {
     let tmp = data.join("tiles_tmp");
     let side = out.join(slug);
-    for d in [&tmp, &side.join("lines"), &side.join("stations"), &side.join("tags"), &side.join("name-hl")] {
+    for d in ["lines", "lines-big", "stations", "tags", "name-hl"] {
+        let _ = fs::remove_dir_all(side.join(d)); // fully rewritten below; shard counts change between builds, so stale files must go
+    }
+    for d in [&tmp, &side.join("lines"), &side.join("lines-big"), &side.join("stations"), &side.join("tags"), &side.join("name-hl")] {
         fs::create_dir_all(d).expect("create output folder");
     }
     let lines: Vec<&Value> = inp.lines.iter().collect();
@@ -1013,16 +1041,15 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
 
     // raw (filtered) OSM tags plus Rail Globe derived fields, sharded by id for the app's Inspect mode
     let mut props_by_id: FxHashMap<&str, &Map<String, Value>> = FxHashMap::default();
-    let mut shards: Vec<Map<String, Value>> = vec![Map::new(); 256];
+    let mut tag_recs: Vec<(String, String)> = Vec::with_capacity(inp.feats.len());
     for fe in &inp.feats {
         let oid = s(&fe.p, "osm_id").unwrap_or("");
         props_by_id.insert(oid, &fe.p);
         let without: Map<String, Value> = fe.p.iter().filter(|(k, _)| k.as_str() != "osm_id").map(|(k, v)| (k.clone(), v.clone())).collect();
-        shards[(short(oid).rem_euclid(256)) as usize].insert(oid.to_string(), Value::Object(without));
+        tag_recs.push((oid.to_string(), pyjson::to_string(&Value::Object(without), pyjson::COMPACT)));
     }
-    for (i, sh) in shards.into_iter().enumerate() {
-        write_json(&side.join("tags").join(format!("{i}.json")), &Value::Object(sh));
-    }
+    let n_tag_shards = write_shards(&side.join("tags"), &tag_recs);
+    drop(tag_recs);
 
     let st_by_id: FxHashMap<&str, &Value> = stations.iter().map(|x| (x["properties"]["id"].as_str().unwrap_or(""), &x["properties"])).collect();
     let cx_name_of: FxHashMap<&str, &Value> = complexes.iter().map(|c| (c["properties"]["id"].as_str().unwrap_or(""), &c["properties"]["name"])).collect();
@@ -1031,6 +1058,7 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
         cx_members.entry(x["properties"]["complex"].as_str().unwrap_or("")).or_default().push(&x["properties"]);
     }
     let model_keys = ["score", "tier", "major", "terminus", "dead_ends", "mainline_platforms", "platform_count", "mainline_track_ways", "land_ha", "building_ha", "grouping", "hsr"];
+    let mut station_recs: Vec<(String, String)> = Vec::with_capacity(stations.len());
     for (k, stv) in stations.iter().enumerate() {
         let p = &stv["properties"];
         let mut groups: Vec<(String, Vec<i64>)> = Vec::new();
@@ -1064,9 +1092,14 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
             "osm": sources.first().copied(), "wikidata": p["wikidata"], "pt": stv["geometry"]["coordinates"], "logo": logo_for(p),
             "tags": tags, "model": Value::Object(model),
         });
-        write_json(&side.join("stations").join(format!("{}.json", safe(p["id"].as_str().unwrap_or("")))), &rec);
+        station_recs.push((p["id"].as_str().unwrap_or("").to_string(), pyjson::to_string(&rec, pyjson::COMPACT)));
     }
 
+    let n_station_shards = write_shards(&side.join("stations"), &station_recs);
+    drop(station_recs);
+
+    let mut line_recs: Vec<(String, String)> = Vec::with_capacity(lines.len());
+    let mut big_lines: Vec<i64> = Vec::new();
     for l in &lines {
         let lid = l["id"].as_str().unwrap_or("");
         let mut routes: Vec<Value> = Vec::new();
@@ -1100,21 +1133,32 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
             "route_ids": l["routes"].as_array().map(|v| v.iter().take(30).cloned().collect::<Vec<_>>()).unwrap_or_default(),
             "hl": hl_record(line_ways.get(&short(lid)).map(Vec::as_slice).unwrap_or(&[]), &way_geom, extra),
         });
-        write_json(&side.join("lines").join(format!("{}.json", short(lid))), &rec);
+        let text = pyjson::to_string(&rec, pyjson::COMPACT);
+        if text.len() > BIG_LINE_BYTES {
+            big_lines.push(short(lid));
+            let path = side.join("lines-big").join(format!("{}.json", short(lid)));
+            fs::write(&path, text).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+        } else {
+            line_recs.push((short(lid).to_string(), text));
+        }
     }
+    let n_line_shards = write_shards(&side.join("lines"), &line_recs);
+    drop(line_recs);
 
     // highlight data for named railways, sharded by a hash of the name (any track name: a hovered piece with no mapped line)
-    let mut hl_shards: Vec<Map<String, Value>> = vec![Map::new(); NAME_SHARDS as usize];
+    let mut hl_recs: Vec<(String, String)> = Vec::with_capacity(name_ways.len());
     for (ix, (n, ids, first)) in name_ways.iter().enumerate() {
         // the type most of its ways have, not the first way's: a railway often starts with a yard or siding piece (Korea's Gyeonggang Line did)
         let mut by: Vec<(&String, &usize)> = name_types[ix].iter().filter(|(k, _)| k.as_str() != "yard").collect();
         by.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
         let t = by.first().map(|e| e.0).unwrap_or(first);
-        hl_shards[(fnv1a(n) % NAME_SHARDS) as usize].insert(n.clone(), hl_record(ids, &way_geom, vec![("type", json!(t))]));
+        hl_recs.push((n.clone(), pyjson::to_string(&hl_record(ids, &way_geom, vec![("type", json!(t))]), pyjson::COMPACT)));
     }
-    for (i, sh) in hl_shards.into_iter().enumerate() {
-        write_json(&side.join("name-hl").join(format!("{i}.json")), &Value::Object(sh));
-    }
+    let n_hl_shards = write_shards(&side.join("name-hl"), &hl_recs);
+    drop(hl_recs);
+    // shard counts for the app: it hashes a key with fnv1a and takes it modulo the count; `lines_big` are line ids kept as their own files
+    big_lines.sort_unstable();
+    write_json(&side.join("shards.json"), &json!({"stations": n_station_shards, "lines": n_line_shards, "lines_big": big_lines, "tags": n_tag_shards, "name-hl": n_hl_shards}));
 
     // boundary (simplified) for the faint region outline: hand-made outline first, else one written by `rail-extract outlines`
     if let Some(path) = regions_dirs.iter().map(|d| d.join(format!("{slug}.geojson"))).find(|p| p.exists()) {

@@ -40,10 +40,27 @@ function get<T>(path: string): Promise<T> {
   return p as Promise<T>
 }
 
-const safe = (id: string) => id.replace(/\//g, '-')
 export const loadLineIndex = (slug: string) => get<LineIndex>(`${slug}/lines-index.json`)
-export const loadStation = (slug: string, id: string) => get<StationRecord>(`${slug}/stations/${safe(id)}.json`)
-export const loadLine = (slug: string, id: number | string) => get<LineRecord>(`${slug}/lines/${id}.json`)
+/** Per-feature side files are packed into hash shards, a few per region (shards.json, written by pipeline/rail-extract/src/tiles.rs):
+ *  a record lives in `<kind>/<fnv1a(key) % count>.json`, an object keyed by the record's key. Lines whose record is large stay their own file in lines-big/. */
+interface Shards { stations: number; lines: number; lines_big: number[]; tags: number; 'name-hl': number }
+const loadShards = (slug: string) => get<Shards>(`${slug}/shards.json`)
+async function fromShard<T>(slug: string, kind: 'stations' | 'lines' | 'tags' | 'name-hl', key: string): Promise<T | undefined> {
+  const n = (await loadShards(slug))[kind]
+  const shard = await get<Record<string, T>>(`${slug}/${kind}/${fnv1a(key) % n}.json`)
+  return Object.prototype.hasOwnProperty.call(shard, key) ? shard[key] : undefined
+}
+export async function loadStation(slug: string, id: string): Promise<StationRecord> {
+  const r = await fromShard<StationRecord>(slug, 'stations', id)
+  if (!r) throw new Error(`${slug}: no station ${id}`)
+  return r
+}
+export async function loadLine(slug: string, id: number | string): Promise<LineRecord> {
+  const big = (await loadShards(slug)).lines_big.includes(Number(id))
+  const r = big ? await get<LineRecord>(`${slug}/lines-big/${id}.json`) : await fromShard<LineRecord>(slug, 'lines', String(id))
+  if (!r) throw new Error(`${slug}: no line ${id}`)
+  return r
+}
 export const pmtilesUrl = (slug: string) => `pmtiles://${base}${slug}.pmtiles`
 export const boundaryUrl = (slug: string) => `${base}${slug}.boundary.geojson`
 export const loadNamedLines = (slug: string) => get<NamedLine[]>(`${slug}/named-lines.json`)
@@ -74,15 +91,13 @@ function fnv1a(s: string): number {
 }
 export const loadLineHighlight = async (slug: string, id: number) => (await loadLine(slug, id)).hl ?? null
 export const loadNameHighlight = async (slug: string, name: string) =>
-  (await get<Record<string, Highlight>>(`${slug}/name-hl/${fnv1a(name) % 256}.json`))[name] ?? null
+  (await fromShard<Highlight>(slug, 'name-hl', name)) ?? null
 
 export type Tags = Record<string, string | string[]>
 /** Raw (filtered) OSM tags plus Rail Globe derived fields for one feature, from the id-sharded side files. */
 export async function loadFeatureTags(slug: string, osmId: string): Promise<Tags | null> {
-  const n = Number(osmId.split('/')[1])
-  if (!Number.isFinite(n)) return null
-  const shard = await get<Record<string, Tags>>(`${slug}/tags/${n % 256}.json`)
-  return shard[osmId] ?? null
+  if (!Number.isFinite(Number(osmId.split('/')[1]))) return null
+  return (await fromShard<Tags>(slug, 'tags', osmId)) ?? null
 }
 
 /** Rail totals for a region and the areas inside it: provinces and cities with a metro (pipeline/rail-extract/src/stats.rs).

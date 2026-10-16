@@ -37,6 +37,8 @@ rail-extract/target/release/rail-extract tiles ch it --name x --out ../data/tile
 #   the tile writer alone over existing tiles_tmp (no station model, no side files); slices one region at a time, so do not run several in parallel
 rail-extract/target/release/rail-extract build paris chengdu greater-bay-area cn-beijing --no-tiles
 #   side files only: the app draws these regions from China's tiles (0.5 s for all three)
+#   side files per region are hash shards (stations/, lines/, tags/, name-hl/ plus shards.json), a few to a few hundred files, not one per record; `build` clears and rewrites them.
+#   Output from before 2026-10-16 (one file per station and line): node repack_side_files.mjs ../app/public/data converts it in place without a rebuild (30 s for the world output; it skips folders that already have shards.json)
 #   also writes ../app/public/data/<slug>/stats.json (region card); areas inside a region: "stat_areas" (a list) or "stat_auto" (all provinces and cities of a country) in config/<slug>.json;
 #   run `outlines --level 4` and `--level 5` first; also writes shapes.json (outlines for finding the area under the view)
 #   or: rail-extract cut <slugs> --build   (cut, then build straight away; --no-tiles applies to every slug)

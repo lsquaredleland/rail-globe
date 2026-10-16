@@ -17,6 +17,12 @@ export R2_ACCOUNT_ID=... R2_BUCKET=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY
 r2/sync.sh --dry-run   # check first
 r2/sync.sh
 ```
+**When the data layout changes** (like the move to shards, 2026-10-16) the live app and the bucket must change together, in this order:
+1. `R2_MODE=copy r2/sync.sh -P` (adds the new files, deletes nothing, so the old app keeps working).
+2. Push the app; wait for the Vercel deploy.
+3. `r2/sync.sh -P` (now deletes the old per-record objects).
+A tab left open across step 3 shows "Could not load" on clicks until it is reloaded.
+
 Tiles and side files go to the bucket root, glyphs to `glyphs/` (they are gitignored, so Vercel cannot ship them).
 The app never gets write credentials; the browser only does GET/HEAD.
 
