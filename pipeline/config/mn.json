@@ -1,0 +1,17 @@
+{
+  "_comment": "All of Mongolia (data/regions/mn.geojson, admin level 2). Generic rules, added for the world build.",
+  "stat_name": "Mongolia",
+  "stat_local": "Монгол улс ᠮᠤᠩᠭᠤᠯ ᠤᠯᠤᠰ",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "MN",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}

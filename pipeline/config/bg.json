@@ -1,0 +1,17 @@
+{
+  "_comment": "All of Bulgaria (data/regions/bg.geojson, admin level 2). Generic rules, added for the world build.",
+  "stat_name": "Bulgaria",
+  "stat_local": "България",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "BG",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}

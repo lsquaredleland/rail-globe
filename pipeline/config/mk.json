@@ -1,0 +1,17 @@
+{
+  "_comment": "All of North Macedonia (data/regions/mk.geojson, admin level 2). Generic rules, added for the world build.",
+  "stat_name": "North Macedonia",
+  "stat_local": "Северна Македонија",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "MK",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}

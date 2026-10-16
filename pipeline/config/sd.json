@@ -1,0 +1,17 @@
+{
+  "_comment": "All of Sudan (data/regions/sd.geojson, admin level 2). Generic rules, added for the world build.",
+  "stat_name": "Sudan",
+  "stat_local": "السودان",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "SD",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}

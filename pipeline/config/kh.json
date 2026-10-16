@@ -1,0 +1,17 @@
+{
+  "_comment": "All of Cambodia (data/regions/kh.geojson, admin level 2). Generic rules, added for the world build.",
+  "stat_name": "Cambodia",
+  "stat_local": "ព្រះរាជាណាចក្រ​កម្ពុជា",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "KH",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}

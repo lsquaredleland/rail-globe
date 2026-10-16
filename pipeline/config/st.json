@@ -1,0 +1,17 @@
+{
+  "_comment": "All of São Tomé and Príncipe (data/regions/st.geojson, admin level 2). Generic rules, added for the world build.",
+  "stat_name": "São Tomé and Príncipe",
+  "stat_local": "São Tomé e Príncipe",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "ST",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}

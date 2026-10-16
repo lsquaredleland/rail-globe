@@ -1,0 +1,17 @@
+{
+  "_comment": "All of Poland (data/regions/pl.geojson, admin level 2). Generic rules, added for the world build.",
+  "stat_name": "Poland",
+  "stat_local": "Polska",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "PL",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}

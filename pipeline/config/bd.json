@@ -1,0 +1,17 @@
+{
+  "_comment": "All of Bangladesh (data/regions/bd.geojson, admin level 2). Generic rules, added for the world build.",
+  "stat_name": "Bangladesh",
+  "stat_local": "বাংলাদেশ",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "BD",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}

@@ -1,0 +1,17 @@
+{
+  "_comment": "All of Hungary (data/regions/hu.geojson, admin level 2). Generic rules, added for the world build.",
+  "stat_name": "Hungary",
+  "stat_local": "Magyarország",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "HU",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}

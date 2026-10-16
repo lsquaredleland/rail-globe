@@ -1,0 +1,52 @@
+{
+  "_comment": "All of Canada (data/regions/ca.geojson, admin level 2). Generic rules, added for the Americas timing build.",
+  "stat_name": "Canada",
+  "stat_local": "Canada",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [
+    {
+      "match": {
+        "name_re": "^Amtrak (Cascades|Adirondack)\\b"
+      },
+      "type": "intercity"
+    },
+    {
+      "match": {
+        "name_re": "^VIA Rail Corridor"
+      },
+      "type": "intercity"
+    }
+  ],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "CA",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200,
+  "freight_name_re": "(?i)\\b(Subdivision|Sub|District|Division|Railroad|Railway|Rail Line|Rail Link|Branch|Secondary|Industrial|Lead|Spur|RR)\\b",
+  "track_type_overrides": [
+    {
+      "match": {
+        "name_re": "^GO Transit.*Weston Subdivision"
+      },
+      "type": "regional"
+    },
+    {
+      "match": {
+        "operator_re": "(?i)Scenic|Excursion|Historical|Wine Train|Heritage|Tourist"
+      },
+      "type": "other"
+    },
+    {
+      "match": {
+        "name_re": "^(Texas State Railroad|Great Smoky Mountains Railroad|Napa Valley Railroad|Conway Scenic|Cuyahoga Valley Scenic|Oregon Coast Scenic|Port of Tillamook Bay Railroad|Boone and Scenic|Tennessee Overhill)"
+      },
+      "type": "other"
+    }
+  ],
+  "freight_operator_exempt_re": "(?i)Metra|Metro-North|Long Island Rail|SEPTA|NJ ?Transit|New Jersey Transit|MARC|Maryland Area|Caltrain|Peninsula Corridor|Virginia Railway Express|Amtrak|Metrolink|Southern California Regional|Sound Transit|North County Transit|Brightline|MBTA|Massachusetts Bay|Tri-Rail|South Florida Regional|Northern Indiana Commuter|Trinity Railway|GO Transit|Metrolinx|VIA Rail|Capital Metro|Utah Transit|Rio Metro|SMART|Altamont|Connecticut Department of Transportation|CTrail|Shore Line East|New Mexico Rail Runner|Denton County|Scenic|Excursion|Historical|Wine Train|Heritage|Tourist"
+}

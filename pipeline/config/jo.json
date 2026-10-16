@@ -1,0 +1,17 @@
+{
+  "_comment": "All of Jordan (data/regions/jo.geojson, admin level 2). Generic rules, added for the world build.",
+  "stat_name": "Jordan",
+  "stat_local": "الأردن",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "JO",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}

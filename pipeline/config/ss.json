@@ -1,0 +1,17 @@
+{
+  "_comment": "All of South Sudan (data/regions/ss.geojson, admin level 2). Generic rules, added for the world build.",
+  "stat_name": "South Sudan",
+  "stat_local": "South Sudan",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "SS",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}

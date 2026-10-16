@@ -1,0 +1,17 @@
+{
+  "_comment": "All of Central African Republic (data/regions/cf.geojson, admin level 2). Generic rules, added for the world build.",
+  "stat_name": "Central African Republic",
+  "stat_local": "Ködörösêse tî Bêafrîka / République centrafricaine",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "CF",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}

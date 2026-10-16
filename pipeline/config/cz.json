@@ -1,0 +1,17 @@
+{
+  "_comment": "All of Czechia (data/regions/cz.geojson, admin level 2). Generic rules, added for the world build.",
+  "stat_name": "Czechia",
+  "stat_local": "Česko",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "country": "CZ",
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}
