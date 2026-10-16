@@ -197,3 +197,37 @@ fn passenger_needs_evidence_beside_route_or_agency() {
     assert_eq!(stations_mode[2].0, "intercity", "a station beside the way keeps it: {stations_mode:?}");
     assert_eq!(stations_mode[4], ("freight".to_string(), "no-evidence".to_string()), "no station near way/5: {stations_mode:?}");
 }
+
+/// a short Intercity piece in a Regional line takes the line's type even when a siding branches off it (the siding is no vote)
+#[test]
+fn short_piece_is_smoothed_past_a_siding() {
+    let line = |pts: Vec<(i32, i32)>, tags: Vec<(&'static [u8], &'static [u8])>| (pts, tags);
+    let main = |u: &'static [u8]| vec![(b"usage" as &[u8], u), (b"railway:traffic_mode", b"mixed")];
+    let ways = vec![
+        line(vec![(0, 0), (0, 100_000)], main(b"branch")),             // way/1 Regional, 1.1 km
+        line(vec![(0, 100_000), (0, 101_000)], main(b"main")),         // way/2 Intercity, 11 m
+        line(vec![(0, 101_000), (0, 200_000)], main(b"branch")),       // way/3 Regional
+        line(vec![(0, 101_000), (5_000, 101_000)], vec![(b"service" as &[u8], b"siding")]), // way/4 siding at way/2's far end
+    ];
+    let mut feats = Vec::new();
+    let mut spans = Vec::new();
+    for i in 0..ways.len() {
+        let l = format!("{{\"type\":\"Feature\",\"properties\":{{\"osm_id\":\"way/{}\"}},\"geometry\":null}}\n", i + 1);
+        spans.push((feats.len(), feats.len() + l.len(), feats.len() + l.find("},\"geometry\"").unwrap()));
+        feats.extend_from_slice(l.as_bytes());
+    }
+    let tracks: Vec<TrackIn> = ways
+        .iter()
+        .enumerate()
+        .map(|(i, (ll, kv))| {
+            let mut t: Vec<(&[u8], &[u8])> = vec![(b"railway", b"rail")];
+            t.extend(kv.iter().copied());
+            TrackIn { start: spans[i].0, end: spans[i].1, pos: spans[i].2, props: FeatProps { tags: List(t), osm_id: format!("way/{}", i + 1) }, routes: Vec::new(), first: ll[0], ll: ll.clone() }
+        })
+        .collect();
+    let out = classify("t", &cfg_json(json!({})), &[], &feats, &tracks, &FxHashSet::default(), &[]);
+    let typed: Vec<Value> = String::from_utf8(out.typed).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let ty = |i: usize| (typed[i]["properties"]["type"].as_str().unwrap().to_string(), typed[i]["properties"]["type_source"].as_str().unwrap().to_string());
+    assert_eq!(ty(1), ("regional".to_string(), "neighbour".to_string()), "{typed:?}");
+    assert_eq!(ty(3).0, "yard");
+}

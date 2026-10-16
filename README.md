@@ -74,14 +74,17 @@ Check it worked: `app/public/data/pilot.pmtiles` (about 300 MB) and `pilot.parts
 
 ### Optional: the world build
 
-Every country with passenger rail in one file, `app/public/data/world/world.pmtiles` (1.15 GB, 146 countries). Not part of the pilot; run it only when you want it (disk: about 10 GB for `data/world/` and `app/public/data/world/`; memory: 10.5 GB peak for the tile step, 12 GB for the side files). Needs steps 1 and 2 above (the `.railcache`) and the level 2 and level 4 outlines of step 3. Times on a 14-core Mac: cut 7 s, side files 37 s, tiles 55 to 59 s.
+Every country with passenger rail in one file, `app/public/data/world/world.pmtiles` (1.15 GB, 142 countries). Not part of the pilot; run it only when you want it (disk: about 10 GB for `data/world/` and `app/public/data/world/`; memory: 10.5 GB peak for the tile step, 12 GB for the side files). Needs steps 1 and 2 above (the `.railcache`) and the level 2 and level 4 outlines of step 3. Times on a 14-core Mac: cut 7 s, side files 37 s, tiles 55 to 59 s.
 
 ```
 mkdir -p data/world && ls data/regions | grep -E '^[a-z]{2}\.geojson$' | sed 's/.geojson//' > data/world/slugs.txt   # the 216 country outlines
-$RE cut --regions data/regions --data data/world $(cat data/world/slugs.txt)                         # all countries; no config of their own: pipeline/config/_default.json
-$RE world-list --data data/world --slugs-file data/world/slugs.txt                                   # kept.txt (>= 1 km open passenger track: 146) and dropped.txt
+$RE cut --regions data/regions --data data/world $(cat data/world/slugs.txt)                         # all countries; a country with no config of its own uses pipeline/config/_default.json, or its group template (_groups.json: Argentina and Africa)
+$RE world-list --data data/world --slugs-file data/world/slugs.txt                                   # kept.txt (>= 1 km open passenger track: 142) and dropped.txt
 $RE build $(cat data/world/kept.txt) --no-tiles --threads 5 --data data/world --out app/public/data/world
-$RE world --slugs-file data/world/kept.txt                                                           # app/public/data/world/world.pmtiles + world.parts.json
+$RE world --slugs-file data/world/kept.txt                                                           # first pass: world.pmtiles + world.parts.json, and places + search + data/world/city-outlines-wanted.json (the point cities)
+$RE outlines --cities data/world/city-outlines-wanted.json                                           # city outlines from the cache (admin levels 6 to 9 of the place=city nodes), data/regions/<cc>-<city>.geojson
+$RE build $(cat data/world/kept.txt) --no-tiles --threads 5 --data data/world --out app/public/data/world   # again: the statistics and shapes now have the cities
+$RE world --slugs-file data/world/kept.txt                                                           # second pass: the same, with the city outlines in the search index (skip it if you only changed outlines: `$RE places ...` is enough)
 $RE pminfo app/public/data/world/world.pmtiles                                                       # header, tiles and bytes per zoom
 VITE_TILE_SOURCE=world npm --prefix app run dev                                                      # look at it (the app reads only the pilot by default)
 ```

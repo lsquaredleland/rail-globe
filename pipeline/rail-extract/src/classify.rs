@@ -983,7 +983,7 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
             }
         }
     }
-    // A short piece of track whose type differs from all the track it joins, when those agree, takes their type: a few metres of
+    // A short piece of track whose type differs from all the track it joins (sidings and yard track do not count), when those agree, takes their type: a few metres of
     // "Regional" in the middle of a freight line is a tagging gap, not a service.
     let mut at_end: rustc_hash::FxHashMap<(i32, i32), Vec<usize>> = rustc_hash::FxHashMap::default();
     for (i, tr) in tracks.iter().enumerate() {
@@ -1004,7 +1004,7 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
             let mut around: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
             let mut both_ends = true;
             for e in [tr.ll.first().unwrap(), tr.ll.last().unwrap()] {
-                let n: Vec<&str> = at_end.get(e).into_iter().flatten().filter(|&&j| j != i).filter_map(|&j| decided[j].as_ref().map(|x| x.t.as_str())).collect();
+                let n: Vec<&str> = at_end.get(e).into_iter().flatten().filter(|&&j| j != i).filter_map(|&j| decided[j].as_ref().filter(|x| x.t != "yard").map(|x| x.t.as_str())).collect();   // a siding or yard track at a junction is no vote
                 both_ends &= !n.is_empty();
                 around.extend(n);
             }
