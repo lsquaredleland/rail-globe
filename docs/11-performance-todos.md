@@ -25,7 +25,7 @@ P0 = blocks a release or the zoom-smoothness target (fast zoom must beat trains.
 
 - [ ] **World app wiring, places for 146 countries**
   - State: `VITE_TILE_SOURCE=world` (dev switch, `app/src/config.ts`) lets the app read `world.pmtiles` from `app/public/data/world/`; the default still reads only `pilot`. `rail-extract places` now writes `world/places.json` and `world/search.json` with the world build, so city and country names exist; the region picker still lists the pilot regions only and the search bar is not built.
-  - First step (places done): build the search bar on `search.json`, then decide how the app offers the world (picker, region list for 146 countries, default view) and stop treating the pilot regions as special.
+  - First step (places done): build the search bar on `search.json` (countries, provinces / states, and cities that have a metro system, one per metro area within 20 km, found within 12 km of open metro track; no towns: see `docs/10-world-build.md`, Places and search), then decide how the app offers the world (picker, region list for 146 countries, default view) and stop treating the pilot regions as special.
   - Done when: the world source shows city and country names at the same zooms as the pilot, every country is reachable from the picker or by search, and `npm run build` plus a headless render of z3, Cairo z9 and Tokyo z9 pass.
 
 - [ ] **Glyph coverage for other scripts**

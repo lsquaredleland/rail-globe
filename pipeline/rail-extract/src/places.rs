@@ -20,9 +20,17 @@
 //! the same share of cities in each of the style's three bands: 0-3, 4-7, 8+.)
 //! Countries: 0 for the biggest, up to 12 for the smallest, by log2 of the area relative to the biggest region's country.
 //!
-//! search.json also holds the countries, the provinces / states (admin level 4) and the cities (level 5, where outlines
-//! exist) that contain a station complex, with the bounding box of their outline (only the polygons that are at least 5 % of the
-//! largest one and hold a station complex: overseas territories and far islands do not stretch it) and a zoom that fits it. Cities and towns carry no box and a fixed zoom by rank.
+//! search.json holds, in this order (kinds country | province | city; no towns):
+//!   - the countries of the regions and the provinces / states (admin level 4) that contain a station complex, with the bounding
+//!     box of their outline (only the polygons that are at least 5 % of the largest one and hold a station complex: overseas
+//!     territories and far islands do not stretch it) and a zoom that fits it;
+//!   - the cities: ONE per metro area. A candidate is a place=city (or a level-5 outline, China's prefecture-level cities) with a
+//!     station complex within CITY_KM and open passenger track typed `metro` (not construction or proposed; monorail and light
+//!     rail alone do not count) within METRO_KM of its point (exact distance to the track). Candidates are sorted by rank, then
+//!     population (larger first), then capital, then n_stations, and taken greedily: one is dropped when an accepted one lies
+//!     within MERGE_KM. So Tokyo wins over its wards. A level-5 outline that contains a candidate place takes that place's name,
+//!     rank and point and keeps its own box and slug (one entry for Chengdu, not two). A level-5 outline inside a province of the
+//!     same name as a city (Hong Kong's districts) is dropped. A city entry from a place has no box and a fixed zoom by rank.
 //! `name` is name_en, else name; `name_en` and `local_name` are null when absent or the same as `name`.
 
 use crate::assemble::Poly;
@@ -37,6 +45,10 @@ use std::time::Instant;
 
 pub const CITY_KM: f64 = 12.0;
 pub const TOWN_KM: f64 = 5.0;
+/// a city in search.json needs open metro track within this distance of its point
+pub const METRO_KM: f64 = 12.0;
+/// candidates closer than this are one metro area in search.json: only the most important is kept
+pub const MERGE_KM: f64 = 20.0;
 
 fn txt(b: &[u8]) -> String {
     String::from_utf8_lossy(b).into_owned()
@@ -143,6 +155,104 @@ struct Place {
     name: String,
     en: String,
     n: usize,
+    pop: Option<u64>,
+    capital: bool,
+}
+
+/// one segment of open metro track (lon, lat)
+struct Seg([f64; 2], [f64; 2]);
+
+impl rstar::RTreeObject for Seg {
+    type Envelope = AABB<[f64; 2]>;
+    fn envelope(&self) -> Self::Envelope {
+        AABB::from_corners(self.0, self.1)
+    }
+}
+
+/// kilometres from point `p` to segment a-b (lon, lat), longitude scaled by cos(latitude of p), 111.2 km per degree
+fn seg_km(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
+    let k = p[1].to_radians().cos().max(0.01);
+    let xy = |q: [f64; 2]| ((q[0] - p[0]) * k, q[1] - p[1]);
+    let ((ax, ay), (bx, by)) = (xy(a), xy(b));
+    let (dx, dy) = (bx - ax, by - ay);
+    let l2 = dx * dx + dy * dy;
+    let t = if l2 > 0.0 { (-(ax * dx + ay * dy) / l2).clamp(0.0, 1.0) } else { 0.0 };
+    (ax + t * dx).hypot(ay + t * dy) * 111.2
+}
+
+/// whether track typed `metro` lies within `km` of a point
+fn metro_near(tree: &RTree<Seg>, lon: f64, lat: f64, km: f64) -> bool {
+    let k = lat.to_radians().cos().max(0.01);
+    let (dy, dx) = (km / 111.2, km / (111.2 * k));
+    tree.locate_in_envelope_intersecting(AABB::from_corners([lon - dx, lat - dy], [lon + dx, lat + dy])).any(|s| seg_km([lon, lat], s.0, s.1) <= km)
+}
+
+/// the open (not construction, not proposed) metro segments of a features.typed.geojsonl
+fn metro_segments(path: &Path) -> Vec<Seg> {
+    use std::io::{BufRead, BufReader};
+    let Ok(f) = std::fs::File::open(path) else {
+        eprintln!("places: no {} (build it first); its metro track is not counted", path.display());
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for l in BufReader::new(f).lines().map_while(Result::ok) {
+        if !l.contains("\"type\":\"metro\"") {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(&l) else { continue };
+        let pr = &v["properties"];
+        if pr["type"].as_str() != Some("metro") || matches!(pr["railway"].as_str(), Some("construction" | "proposed")) {
+            continue;
+        }
+        let g = &v["geometry"];
+        let lines: Vec<&Value> = match g["type"].as_str() {
+            Some("LineString") => vec![&g["coordinates"]],
+            Some("MultiLineString") => g["coordinates"].as_array().map_or(Vec::new(), |a| a.iter().collect()),
+            _ => continue,
+        };
+        for line in lines {
+            let pts: Vec<[f64; 2]> = line.as_array().map_or(Vec::new(), |a| a.iter().filter_map(|q| Some([q[0].as_f64()?, q[1].as_f64()?])).collect());
+            out.extend(pts.windows(2).map(|w| Seg(w[0], w[1])));
+        }
+    }
+    out
+}
+
+/// a city candidate for search.json: a place node, or a level-5 outline (with the name, rank and point of the best place inside it)
+struct Cand {
+    name: String,
+    en: String,
+    lon: f64,
+    lat: f64,
+    rank: i64,
+    pop: Option<u64>,
+    capital: bool,
+    n: usize,
+    outline: Option<(String, [f64; 4])>, // slug, box of a level-5 outline
+}
+
+/// most important first: rank, then population (larger first, none last), then capital, then n_stations (more first), then name
+fn importance(a: &Cand, b: &Cand) -> std::cmp::Ordering {
+    use std::cmp::Reverse as R;
+    (a.rank, R(a.pop), R(a.capital), R(a.n), &a.name).cmp(&(b.rank, R(b.pop), R(b.capital), R(b.n), &b.name))
+}
+
+fn km_between(a: (f64, f64), b: (f64, f64)) -> f64 {
+    let dlon = (a.0 - b.0 + 180.0).rem_euclid(360.0) - 180.0;
+    let k = ((a.1 + b.1) / 2.0).to_radians().cos().max(0.01);
+    (dlon * k).hypot(a.1 - b.1) * 111.2
+}
+
+/// one candidate per metro area: stable greedy in `importance` order, a candidate is dropped when an accepted one lies within `km`
+fn one_per_metro_area(mut cands: Vec<Cand>, km: f64) -> Vec<Cand> {
+    cands.sort_by(importance);
+    let mut kept: Vec<Cand> = Vec::new();
+    for c in cands {
+        if kept.iter().all(|k| km_between((k.lon, k.lat), (c.lon, c.lat)) > km) {
+            kept.push(c);
+        }
+    }
+    kept
 }
 
 struct Outline {
@@ -204,6 +314,10 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
             .count()
     };
 
+    // ---- open metro track of every region (for the cities of search.json)
+    let metro: RTree<Seg> = RTree::bulk_load(slugs.par_iter().flat_map(|s| metro_segments(&data.join(s).join("features.typed.geojsonl"))).collect::<Vec<_>>());
+    lap(&format!("{} metro segments", metro.size()));
+
     // a polygon (rings of (lat, lon) in 1e-7 degrees) that holds at least one station complex
     let has_station = |p: &Poly| -> bool {
         let (mut b, rings) = ([i32::MAX, i32::MAX, i32::MIN, i32::MIN], p.iter().map(|r| r.iter().map(|q| (q.1 as i64, q.0 as i64)).collect::<Vec<_>>()).collect::<Vec<_>>());
@@ -238,7 +352,7 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
             let en = crate::rules::english_name(&tags).map(txt).unwrap_or_else(|| name.clone());
             let pop = tags.get(b"population").and_then(|p| population(&txt(p)));
             let capital = tags.get(b"capital") == Some(b"yes");
-            (ni.id, Some(Place { city, lon, lat, rank: rank(city, pop, capital), name, en, n }))
+            (ni.id, Some(Place { city, lon, lat, rank: rank(city, pop, capital), name, en, n, pop, capital }))
         })
         .collect();
     let mut seen = HashSet::new();
@@ -360,7 +474,59 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
         })
         .collect();
     let n_prov = areas.iter().filter(|a| outlines[a.o].level == "4").count();
-    lap(&format!("{n_prov} provinces / states and {} level-5 cities with a station", areas.len() - n_prov));
+    lap(&format!("{n_prov} provinces / states and {} level-5 outlines with a station", areas.len() - n_prov));
+
+    // ---- cities of search.json: places and level-5 outlines with a station and metro track, one per metro area
+    let mut place_cands: Vec<Cand> = places
+        .iter()
+        .filter(|p| p.city && metro_near(&metro, p.lon, p.lat, METRO_KM))
+        .map(|p| Cand { name: p.name.clone(), en: p.en.clone(), lon: p.lon, lat: p.lat, rank: p.rank, pop: p.pop, capital: p.capital, n: p.n, outline: None })
+        .collect();
+    place_cands.sort_by(importance);
+    let n_place_metro = place_cands.len();
+    // a level-4 province named like one of those places is a city of its own (Hong Kong): its level-5 outlines are districts
+    let city_names: HashSet<&str> = place_cands.iter().flat_map(|c| [c.name.as_str(), c.en.as_str()]).collect();
+    let city_provinces: Vec<&Area> = areas.iter().filter(|a| outlines[a.o].level == "4" && [&outlines[a.o].name, &outlines[a.o].name_en].iter().any(|n| n.as_deref().map_or(false, |n| city_names.contains(n)))).collect();
+    // per level-5 outline: its candidate and the place it took the name from
+    let from_outlines: Vec<(Cand, Option<usize>)> = areas
+        .par_iter()
+        .filter(|a| outlines[a.o].level == "5")
+        .filter_map(|a| {
+            let o = &outlines[a.o];
+            let at = |lat: f64, lon: f64| ((lat * 1e7).round() as i32, (lon * 1e7).round() as i32);
+            let (la, lo) = at(a.pt.1, a.pt.0);
+            let district = city_provinces.iter().any(|q| {
+                let b = bbox_of.get(&outlines[q.o].osm_id).map_or(false, |b| b[0] <= la && la <= b[2] && b[1] <= lo && lo <= b[3]);
+                b && load_outline(outline_dir, &outlines[q.o].slug).map_or(false, |v| Region::new("", rings_of(&v)).contains(la, lo))
+            });
+            if district {
+                return None;
+            }
+            let reg = Region::new(&o.slug, rings_of(&load_outline(outline_dir, &o.slug)?));
+            let outline = Some((o.slug.clone(), a.bbox));
+            if let Some(i) = place_cands.iter().position(|c| {
+                let (la, lo) = at(c.lat, c.lon);
+                reg.contains(la, lo)
+            }) {
+                let c = &place_cands[i];
+                return Some((Cand { name: c.name.clone(), en: c.en.clone(), lon: c.lon, lat: c.lat, rank: c.rank, pop: c.pop, capital: c.capital, n: a.n, outline }, Some(i)));
+            }
+            metro_near(&metro, a.pt.0, a.pt.1, METRO_KM).then(|| {
+                let en = display(o);
+                (Cand { name: o.name.clone().unwrap_or(en.clone()), en, lon: a.pt.0, lat: a.pt.1, rank: rank(true, None, false), pop: None, capital: false, n: a.n, outline }, None)
+            })
+        })
+        .collect();
+    let taken: HashSet<usize> = from_outlines.iter().filter_map(|(_, i)| *i).collect();
+    let n_outline = from_outlines.len();
+    let cands: Vec<Cand> = place_cands.into_iter().enumerate().filter(|(i, _)| !taken.contains(i)).map(|(_, c)| c).chain(from_outlines.into_iter().map(|(c, _)| c)).collect();
+    let n_cands = cands.len();
+    let cities = one_per_metro_area(cands, MERGE_KM);
+    lap(&format!(
+        "{n_place_metro} city places with metro track, {n_outline} level-5 outlines with metro, {n_cands} candidates -> {} cities ({} from outlines)",
+        cities.len(),
+        cities.iter().filter(|c| c.outline.is_some()).count()
+    ));
 
     // ---- places.json
     let mut rows: Vec<Value> = Vec::new();
@@ -382,18 +548,23 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
         // the stations of a country's regions are not counted per country: n is 0 (the map shows no count for a country either)
         s.push(json!([ct.name, ct.en, local(&ct.local, &ct.name), "country", b3(ct.pt.0), b3(ct.pt.1), b3(ct.bbox[0]), b3(ct.bbox[1]), b3(ct.bbox[2]), b3(ct.bbox[3]), fit_zoom(&ct.bbox), ct.region, 0]));
     }
-    let mut prov: Vec<&Area> = areas.iter().collect();
+    let mut prov: Vec<&Area> = areas.iter().filter(|a| outlines[a.o].level == "4").collect();
     prov.sort_by(|a, b| (&outlines[a.o].level, std::cmp::Reverse(a.n)).cmp(&(&outlines[b.o].level, std::cmp::Reverse(b.n))));
     for a in prov {
         let o = &outlines[a.o];
         let name = display(o);
         s.push(json!([name, o.name_en, local(&o.name, &name), "province", b3(a.pt.0), b3(a.pt.1), b3(a.bbox[0]), b3(a.bbox[1]), b3(a.bbox[2]), b3(a.bbox[3]), fit_zoom(&a.bbox), o.slug, a.n]));
     }
-    for p in &places {
-        let zoom = if !p.city { 12.0 } else if p.rank <= 3 { 10.0 } else if p.rank <= 7 { 11.0 } else { 11.5 };
-        let kind = if p.city { "city" } else { "town" };
-        let en = (p.en != p.name).then(|| p.en.clone());
-        s.push(json!([p.en, en, local(&Some(p.name.clone()), &p.en), kind, r3(p.lon), r3(p.lat), null, null, null, null, zoom, null, p.n]));
+    for c in &cities {
+        let en = (c.en != c.name).then(|| c.en.clone());
+        let l = local(&Some(c.name.clone()), &c.en);
+        match &c.outline {
+            Some((slug, b)) => s.push(json!([c.en, en, l, "city", r3(c.lon), r3(c.lat), b3(b[0]), b3(b[1]), b3(b[2]), b3(b[3]), fit_zoom(b), slug, c.n])),
+            None => {
+                let zoom = if c.rank <= 3 { 10.0 } else if c.rank <= 7 { 11.0 } else { 11.5 };
+                s.push(json!([c.en, en, l, "city", r3(c.lon), r3(c.lat), null, null, null, null, zoom, null, c.n]));
+            }
+        }
     }
     write_json(&out.join("search.json"), &Value::Array(s));
     let size = |f: &str| std::fs::metadata(out.join(f)).map_or(0, |m| m.len());
@@ -423,6 +594,58 @@ mod tests {
         assert_eq!(rank(false, None, false), 12);
         assert_eq!(rank(false, Some(900_000), false), 8); // a town is never better than 8
         assert_eq!(rank(true, Some(3_000), false), 12);
+    }
+
+    fn cand(name: &str, lon: f64, lat: f64, rank: i64, pop: Option<u64>, capital: bool, n: usize) -> Cand {
+        Cand { name: name.into(), en: name.into(), lon, lat, rank, pop, capital, n, outline: None }
+    }
+
+    #[test]
+    fn metro_test_is_exact_distance_to_track() {
+        // one metro line along the equator from lon 0 to lon 1 (111 km), one far away
+        let t = RTree::bulk_load(vec![Seg([0.0, 0.0], [1.0, 0.0]), Seg([50.0, 50.0], [50.1, 50.0])]);
+        assert!(metro_near(&t, 0.5, 0.0, 12.0)); // on the line
+        assert!(metro_near(&t, 0.5, 0.1, 12.0)); // 11.1 km north of the middle of a long segment (no vertex near)
+        assert!(!metro_near(&t, 0.5, 0.11, 12.0)); // 12.2 km
+        assert!(metro_near(&t, 1.1, 0.0, 12.0)); // 11.1 km past the end
+        assert!(!metro_near(&t, 1.11, 0.0, 12.0)); // 12.2 km past the end
+        assert!(!metro_near(&t, 20.0, 20.0, 12.0));
+        // the longitude shrinks with the latitude: 0.2 degrees at 50 N is 14.3 km, 0.15 is 10.7 km
+        assert!(!metro_near(&t, 49.8, 50.0, 12.0));
+        assert!(metro_near(&t, 49.85, 50.0, 12.0));
+    }
+
+    #[test]
+    fn one_entry_per_metro_area_most_important_wins() {
+        // Tokyo has fewer stations than its wards but the best rank; Shinjuku and Chiyoda are within 20 km
+        let tokyo = cand("Tokyo", 139.69, 35.69, 1, Some(14_000_000), true, 40);
+        let shinjuku = cand("Shinjuku", 139.70, 35.69, 5, Some(340_000), false, 90);
+        let chiyoda = cand("Chiyoda", 139.75, 35.69, 1, Some(14_000_000), false, 120);
+        let yokohama = cand("Yokohama", 139.64, 35.44, 3, Some(3_700_000), false, 70); // 28 km away: its own entry
+        let kept = one_per_metro_area(vec![shinjuku, chiyoda, yokohama, tokyo], 20.0);
+        // same rank and population: the capital flag decides, so Tokyo beats Chiyoda
+        assert_eq!(kept.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Tokyo", "Yokohama"]);
+    }
+
+    #[test]
+    fn importance_order_rank_population_capital_stations() {
+        let o = |a: &Cand, b: &Cand| importance(a, b);
+        let base = cand("A", 0.0, 0.0, 3, Some(4_000_000), false, 10);
+        assert!(o(&cand("B", 0.0, 0.0, 2, Some(1), false, 1), &base).is_lt()); // rank first
+        assert!(o(&cand("B", 0.0, 0.0, 3, Some(5_000_000), false, 1), &base).is_lt()); // then population
+        assert!(o(&cand("B", 0.0, 0.0, 3, None, true, 99), &base).is_gt()); // no population is last
+        assert!(o(&cand("B", 0.0, 0.0, 3, Some(4_000_000), true, 1), &base).is_lt()); // then capital
+        assert!(o(&cand("B", 0.0, 0.0, 3, Some(4_000_000), false, 11), &base).is_lt()); // then stations
+    }
+
+    #[test]
+    fn metro_area_merge_distance_is_exact_and_wraps_the_antimeridian() {
+        let a = cand("A", 0.0, 0.0, 1, Some(2), false, 1);
+        let near = cand("B", 0.17, 0.0, 2, Some(1), false, 1); // 18.9 km
+        let far = cand("C", 0.19, 0.0, 2, Some(1), false, 1); // 21.1 km
+        let kept = one_per_metro_area(vec![far, near, a], 20.0);
+        assert_eq!(kept.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["A", "C"]);
+        assert!(km_between((179.95, 0.0), (-179.95, 0.0)) < 12.0);
     }
 
     #[test]
