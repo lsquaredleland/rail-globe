@@ -55,7 +55,7 @@ function Collapse({ open, children }: { open: boolean; children: React.ReactNode
 
 /** Freight at the same scale as the grid above: plain outlined squares, one per unit, outside the total. */
 function FreightSquares({ n, unit, color }: { n: number; unit: number; color: string }) {
-  const count = Math.min(100, Math.max(1, Math.ceil(n / unit - 1e-9)))
+  const count = Math.min(2000, Math.max(1, Math.ceil(n / unit - 1e-9)))   // one square per unit, however much freight there is (the US has 165,000 km: 830 squares)
   return <div className="sq-grid frt" aria-hidden="true">{Array.from({ length: count }, (_, i) => <i key={i} style={{ borderColor: color }} />)}</div>
 }
 

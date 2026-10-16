@@ -231,3 +231,38 @@ fn short_piece_is_smoothed_past_a_siding() {
     assert_eq!(ty(1), ("regional".to_string(), "neighbour".to_string()), "{typed:?}");
     assert_eq!(ty(3).0, "yard");
 }
+
+/// a loop of Intercity track (pieces that only touch each other) joined to Regional track at its ends is part of the Regional line
+#[test]
+fn intercity_chain_between_regional_track_becomes_regional() {
+    let main = |u: &'static [u8]| vec![(b"usage" as &[u8], u), (b"railway:traffic_mode", b"mixed")];
+    let seg = |a: i32, b: i32| vec![(0, a), (0, b)];
+    let ways = vec![
+        (seg(0, 100_000), main(b"branch")),         // way/1 Regional
+        (seg(100_000, 200_000), main(b"main")),     // way/2 Intercity
+        (seg(200_000, 300_000), main(b"main")),     // way/3 Intercity: a chain of two
+        (seg(300_000, 400_000), main(b"branch")),   // way/4 Regional
+        (seg(1_000_000, 1_100_000), main(b"main")), // way/5 Intercity, touching nothing
+    ];
+    let mut feats = Vec::new();
+    let mut spans = Vec::new();
+    for i in 0..ways.len() {
+        let l = format!("{{\"type\":\"Feature\",\"properties\":{{\"osm_id\":\"way/{}\"}},\"geometry\":null}}\n", i + 1);
+        spans.push((feats.len(), feats.len() + l.len(), feats.len() + l.find("},\"geometry\"").unwrap()));
+        feats.extend_from_slice(l.as_bytes());
+    }
+    let tracks: Vec<TrackIn> = ways
+        .iter()
+        .enumerate()
+        .map(|(i, (ll, kv))| {
+            let mut t: Vec<(&[u8], &[u8])> = vec![(b"railway", b"rail")];
+            t.extend(kv.iter().copied());
+            TrackIn { start: spans[i].0, end: spans[i].1, pos: spans[i].2, props: FeatProps { tags: List(t), osm_id: format!("way/{}", i + 1) }, routes: Vec::new(), first: ll[0], ll: ll.clone() }
+        })
+        .collect();
+    let out = classify("t", &cfg_json(json!({})), &[], &feats, &tracks, &FxHashSet::default(), &[]);
+    let typed: Vec<Value> = String::from_utf8(out.typed).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let ty = |i: usize| typed[i]["properties"]["type"].as_str().unwrap().to_string();
+    assert_eq!((ty(1), ty(2)), ("regional".to_string(), "regional".to_string()), "{typed:?}");
+    assert_eq!(ty(4), "intercity", "an isolated piece is not part of a line: {typed:?}");
+}
