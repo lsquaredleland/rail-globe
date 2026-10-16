@@ -21,4 +21,6 @@ export const DATA_BASE = TILE_SOURCE === 'world' ? `${dataRoot}world/` : dataRoo
 
 /** Map label glyphs (SDF fonts, only the characters the map can draw): the app's own glyphs/ folder, written by pipeline/glyphs. MapLibre
  *  wants an absolute URL with its {fontstack} and {range} placeholders left as they are. */
+/** Operator logos (pipeline/logos): one PNG per operator Wikidata id, in the app's own logos/ folder. */
+export const logoUrl = (qid: string) => `${new URL('logos/', document.baseURI).href}${qid}.png`
 export const GLYPHS_URL = `${new URL('glyphs/', document.baseURI).href}{fontstack}/{range}.pbf`

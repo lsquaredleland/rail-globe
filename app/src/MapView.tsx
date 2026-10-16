@@ -3,7 +3,7 @@ import * as maplibregl from 'maplibre-gl'   // MapLibre 6 is ESM-only: no defaul
 import type { GeoJSONSource, Map as MLMap, MapGeoJSONFeature } from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { addAirportIcon, addBoundary, addPlaceLabels, placesGeoJSON, addOutline, setOutline, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayers, prefetchHighlights, setFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
+import { addAirportIcon, addBadgeImages, addBoundary, addPlaceLabels, placesGeoJSON, addOutline, setOutline, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayers, prefetchHighlights, setFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
 import { loadParts, regionOf, warmParts, REGIONS, TILES } from './regions'
 import { DATA_BASE } from './config'
 
@@ -151,6 +151,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       map.addLayer({ id: 'selection', type: 'circle', source: 'selection',
         paint: { 'circle-radius': 15, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#1E1E1C', 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.55 } })
       addAirportIcon(map)
+      addBadgeImages(map)
       const places = await fetch(`${DATA_BASE}places.json`).then((r) => (r.ok ? r.json() : [])).catch(() => [])   // names only where there is rail
       if (mapRef.current !== map) return
       addPlaceLabels(map, placesGeoJSON(places))

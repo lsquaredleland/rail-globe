@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { logoUrl } from '../config'
 import { loadLine, loadStation, type LineIndex, type LineRecord, type NamedLine, type StationRecord } from '../data'
 import { km, tierLabel, UNKNOWN } from '../format'
 import { TYPE_COLOR, TYPE_LABEL, TYPE_ORDER, TYPE_WIDTH, type RailType } from '../palette'
@@ -38,7 +39,10 @@ export function StationPanel({ slug, id, index, onClose, onLine, onStation }: {
   const link = osmUrl(s.osm)
   return (
     <PanelFrame onClose={onClose} label="Station">
-      <h2 className="p-title">{sMain || 'Unnamed station'}</h2>
+      <div className="row gap8 title-row">
+        {s.logo && <img key={s.logo} className="op-logo" src={logoUrl(s.logo)} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none' }} />}
+        <h2 className="p-title">{sMain || 'Unnamed station'}</h2>
+      </div>
       {en && <div className="p-sub">{en}</div>}
       <div className="row gap8 wrap">
         <span className={`pill tier${s.tier}`}>{s.construction ? 'Station under construction' : tierLabel(s.tier, s.hsr)}</span>

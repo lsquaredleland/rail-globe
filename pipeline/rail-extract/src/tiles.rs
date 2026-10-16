@@ -75,6 +75,32 @@ fn label_of(name: Option<&str>, r: Option<&str>) -> String {
     v.chars().take(30).collect()
 }
 
+/// the line's number for its on-map badge: a ref with a digit (4 characters at most: 2, S5, RE1) or a one or two letter code (M, NS).
+/// Longer letter-only codes (Hong Kong's TCL, AEL) are abbreviations, not numbers: those lines show their name instead.
+fn badge_of(r: Option<&str>) -> Option<String> {
+    let r = r?.trim();
+    let n = r.chars().count();
+    let ok = !r.contains(';') && n > 0 && (n <= 2 || (n <= 4 && r.chars().any(|c| c.is_ascii_digit())));
+    ok.then(|| r.to_string())
+}
+
+/// true when a #rgb / #rrggbb colour is light enough that a badge needs dark text on it
+fn is_light(c: &str) -> bool {
+    if ["white", "yellow", "lime", "cyan", "aqua", "gold", "silver", "lightgreen", "skyblue", "lightblue", "pink", "orange", "beige", "ivory", "khaki", "lightgray", "lightgrey"].contains(&c) {
+        return true;
+    }
+    let h = c.trim_start_matches('#');
+    if !h.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return false;
+    }
+    let v = |i: usize, w: usize| u32::from_str_radix(&h[i..i + w], 16).ok().map(|x| if w == 1 { x * 17 } else { x } as f64);
+    let (r, g, b) = if h.len() == 3 { (v(0, 1), v(1, 1), v(2, 1)) } else if h.len() == 6 { (v(0, 2), v(2, 2), v(4, 2)) } else { return false };
+    match (r, g, b) {
+        (Some(r), Some(g), Some(b)) => 0.299 * r + 0.587 * g + 0.114 * b > 160.0,
+        _ => false,
+    }
+}
+
 fn short(rid: &str) -> i64 {
     rid.split_once('/').and_then(|(_, n)| n.parse().ok()).unwrap_or(0)
 }
@@ -359,6 +385,35 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
     let rels: FxHashMap<&str, &Value> = inp.rels.iter().map(|r| (r["id"].as_str().unwrap_or(""), r)).collect();
     let ls = |l: &str, k: &str| line_by.get(l).and_then(|v| v[k].as_str());
 
+    // ------------------------------------------------------------ operator logos (pipeline/logos): the Wikidata id of a station's operator, when we have its logo
+    let logo_ids: std::collections::HashSet<String> = std::fs::read_to_string(out.join("../logos/logos.json")).ok()
+        .and_then(|t| serde_json::from_str::<Map<String, Value>>(&t).ok()).map(|m| m.into_iter().map(|(k, _)| k).collect()).unwrap_or_default();
+    if logo_ids.is_empty() {
+        eprintln!("warning: no logos: {} not found (expected beside the data folder); stations get no logo", out.join("../logos/logos.json").display());
+    }
+    let china = inp.cfg.get("china").map_or(false, |v| match v { Value::Bool(b) => *b, Value::String(s) => !s.is_empty() && s != "false", Value::Number(n) => n.as_f64() != Some(0.0), _ => false });
+    // the station's own operator:wikidata, else the commonest one of the lines serving it, else China Railway for a train station in China
+    let logo_for = |p: &Value| -> Option<String> {
+        let first = |v: &str| v.split(';').next().unwrap_or("").trim().to_string();
+        if let Some(q) = p["operator_wd"].as_str().map(first).filter(|q| logo_ids.contains(q)) {
+            return Some(q);
+        }
+        let mut n: Vec<(String, usize)> = Vec::new();
+        for lid in p["line_ids"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+            if let Some(q) = ls(lid, "operator_wd").map(first).filter(|q| logo_ids.contains(q)) {
+                match n.iter_mut().find(|e| e.0 == q) {
+                    Some(e) => e.1 += 1,
+                    None => n.push((q, 1)),
+                }
+            }
+        }
+        if let Some(best) = n.into_iter().max_by_key(|e| e.1) {
+            return Some(best.0);
+        }
+        (china && p["modes"].as_array().map_or(false, |m| m.iter().any(|x| x.as_str() == Some("train"))) && logo_ids.contains("Q1073489"))
+            .then(|| "Q1073489".to_string())
+    };
+
     // ------------------------------------------------------------ track + strands
     let (mut track, mut strands, mut areas, mut buildings, mut plats) = (String::new(), String::new(), String::new(), String::new(), String::new());
     let mut overview: Vec<(String, Map<String, Value>, &str, i64, i64)> = Vec::new(); // (sort key, props, geometry, minzoom, maxzoom)
@@ -537,6 +592,12 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
                         sp.insert("lbe".into(), json!(label_of(Some(en), ls(l, "ref"))));
                     }
                     if let Some(c) = colour(ls(l, "colour")) {
+                        if let Some(rf) = badge_of(ls(l, "ref")) {
+                            sp.insert("rf".into(), json!(rf));
+                            if is_light(&c) {
+                                sp.insert("rl".into(), json!(1));
+                            }
+                        }
                         sp.insert("c".into(), json!(c));
                     }
                     feat(&mut strands, &sp, &fe.graw, Some(11), None);
@@ -742,6 +803,9 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
         m.insert("lct".into(), json!(lct));
         m.insert("ty".into(), json!(if ty.is_empty() { String::new() } else { format!(",{},", ty.iter().cloned().collect::<Vec<_>>().join(",")) }));
         m.insert("modes".into(), json!(p["modes"].as_array().into_iter().flatten().filter_map(Value::as_str).collect::<Vec<_>>().join(",")));
+        if let Some(q) = logo_for(p) {
+            m.insert("lg".into(), json!(q));
+        }
         if let Some(a) = &ap {
             m.insert("ap".into(), json!(a));
         }
@@ -886,7 +950,7 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
             "line_count": p["line_count"], "lines": Value::Object(groups.into_iter().map(|(t, mut v)| { v.sort(); (t, json!(v)) }).collect()),
             "complex": if others.is_empty() { Value::Null } else { json!({"id": p["complex"], "name": cx_name_of.get(p["complex"].as_str().unwrap_or("")).copied().cloned().unwrap_or(Value::Null), "others": others}) },
             "construction": p["construction"].as_bool().unwrap_or(false), "airport": airport_cache[k],
-            "osm": sources.first().copied(), "wikidata": p["wikidata"], "pt": stv["geometry"]["coordinates"],
+            "osm": sources.first().copied(), "wikidata": p["wikidata"], "pt": stv["geometry"]["coordinates"], "logo": logo_for(p),
             "tags": tags, "model": Value::Object(model),
         });
         write_json(&side.join("stations").join(format!("{}.json", safe(p["id"].as_str().unwrap_or("")))), &rec);

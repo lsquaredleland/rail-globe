@@ -732,6 +732,9 @@ pub fn run(slug: &str, inp: &Input) -> Out {
         }
     }
     let wd: Vec<BTreeSet<String>> = st.iter().map(|x| x.feats.iter().filter_map(|&k| station_feats[k].p("wikidata").filter(|v| !v.is_empty()).map(String::from)).collect()).collect();
+    // the operator's Wikidata id (operator:wikidata, else brand:wikidata) of the station's features: the logo key
+    let op_wd: Vec<Option<String>> = st.iter().map(|x| ["operator:wikidata", "brand:wikidata"].iter().find_map(|key|
+        x.feats.iter().find_map(|&k| station_feats[k].p(key).filter(|v| !v.is_empty()).map(String::from)))).collect();
     // inferred: different modes, and shared wikidata, or the same normalised name within 300 m, or the same station building
     let mut by_bld: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for (i, x) in st.iter().enumerate() {
@@ -851,7 +854,7 @@ pub fn run(slug: &str, inp: &Input) -> Out {
             "dead_ends": z.dead_ends, "hsr": z.hsr, "major": z.major,
             "rail_lines": rail, "platform_refs": refs(true), "platform_refs_other": refs(false),
             "line_count": lids.len(), "line_counts": Value::Object(by_type.into_iter().map(|(k, n)| (k, json!(n))).collect()), "line_ids": lids,
-            "wikidata": if wd[i].is_empty() { Value::Null } else { json!([wd[i].iter().next().unwrap()]) }, "grouping": x.grouping,
+            "operator_wd": op_wd[i], "wikidata": if wd[i].is_empty() { Value::Null } else { json!([wd[i].iter().next().unwrap()]) }, "grouping": x.grouping,
             "source_ids": sources,
         });
         stations_out.push(json!({"type": "Feature", "properties": props, "geometry": {"type": "Point", "coordinates": unproj(&x.pt)}}));

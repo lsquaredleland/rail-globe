@@ -1,5 +1,5 @@
 import type { ExpressionSpecification, GeoJSONSource, LayerSpecification, Map as MLMap, StyleSpecification } from 'maplibre-gl'
-import { STATION_ZOOM, GLYPHS_URL } from './config'
+import { STATION_ZOOM, GLYPHS_URL, logoUrl } from './config'
 import { FILL, INK, THEME_COLORS, TYPE_COLOR, TYPE_WIDTH, TYPE_ORDER, type RailType, type Theme } from './palette'
 import { regionOf, TILES } from './regions'
 import { boundaryUrl, loadLineHighlight, loadNameHighlight, pmtilesUrl, type Highlight } from './data'
@@ -389,6 +389,15 @@ export function addRailSource(map: MLMap, source: string) {
       'text-size': ['interpolate', ['linear'], ['zoom'], 11.5, 10, 15, 12], 'symbol-spacing': 320, 'text-max-angle': 30,
       'text-padding': 3, 'symbol-sort-key': get('i'), 'text-letter-spacing': 0.02 },
     paint: lblPaint })
+  // line number badges (operator colour mode only): the line's ref in a badge of its colour, upright, repeated along the strand.
+  // The badge image comes from the styleimagemissing handler (addBadgeImages), one per colour and text shade.
+  add({ id: L(source, 'badge'), type: 'symbol', ...src, 'source-layer': 'lines', minzoom: 12.5, filter: ['has', 'rf'],
+    layout: { visibility: 'none', 'symbol-placement': 'line', 'symbol-spacing': 300, 'symbol-sort-key': get('i'),
+      'icon-image': ['concat', 'badge|', get('c'), '|', ['case', ['has', 'rl'], 'd', 'l']], 'icon-text-fit': 'both', 'icon-text-fit-padding': [1, 3, 1, 3],
+      'icon-rotation-alignment': 'viewport', 'icon-pitch-alignment': 'viewport', 'icon-padding': 4,
+      'text-field': get('rf'), 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 12.5, 10, 16, 13],
+      'text-rotation-alignment': 'viewport', 'text-pitch-alignment': 'viewport' },
+    paint: { 'text-color': ['case', ['has', 'rl'], '#1E1E1C', '#FFFFFF'] } })
   add({ id: L(source, 'lbl-track'), type: 'symbol', ...src, 'source-layer': 'track', minzoom: 11.5,
     filter: ['all', ['has', 'n'], ['!', ['has', 'nl']], ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight']],
     layout: { 'symbol-placement': 'line', 'text-field': get('n'), 'text-font': ['Noto Sans Regular'],
@@ -451,6 +460,10 @@ export function addRailSource(map: MLMap, source: string) {
   label('lbl1', 1, STATION_ZOOM[1].label, [13, 16], true)
   label('lbl2', 2, STATION_ZOOM[2].label, [12, 13], true)
   label('lbl3', 3, STATION_ZOOM[3].label, [10.5, 11.5], false)
+  // operator logo above the dots of the bigger stations (tier 1 and 2); the image is fetched when the layer first asks for it (addBadgeImages)
+  add({ id: L(source, 'logo'), type: 'symbol', ...src, 'source-layer': 'stations', minzoom: 9, filter: ['all', ['has', 'lg'], ['<=', get('tier'), 2], ['!', ['has', 'con']]],
+    layout: { 'icon-image': ['concat', 'logo|', get('lg')], 'icon-anchor': 'bottom', 'icon-offset': [0, -9], 'symbol-sort-key': get('tier'),
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.28, 14, 0.4], 'icon-padding': 3 } })
   const conLabel = (tier: 1 | 2 | 3, size: [number, number]) =>
     add({ id: L(source, `lblcon${tier}`), type: 'symbol', ...src, 'source-layer': 'complexes', minzoom: STATION_ZOOM[tier].label,
       filter: ['all', ['has', 'con'], ['==', get('tier'), tier]],
@@ -504,7 +517,7 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     }
     // construction and proposed track are separate layers (flag `prop`); a switch flips their visibility
     setVis('construction', vis(s.construction)); setVis('proposed', vis(s.proposed))
-    setVis('strand', vis(operator)); setVis('strand-casing', vis(operator))
+    setVis('strand', vis(operator)); setVis('strand-casing', vis(operator)); setVis('badge', vis(operator))
     const has = ['has', 'oc'] as Expr
     const tun: Expr = ['step', ['zoom'], 1, 13, ['case', ['has', 'tun'], 0.45, 1]]
     // each colour mode sets its own colour and width; "HSR only" then greys and thins everything that is not high-speed, in any mode
@@ -560,8 +573,10 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
       map.setFilter(L(slug, n), ['all', ['==', get('tier'), tier], ['!', ['has', 'con']], ...served] as Expr))
     ;([['stcon1', 1], ['stcon2', 2], ['stcon3', 3], ['lblcon1', 1], ['lblcon2', 2], ['lblcon3', 3]] as const).forEach(([n, tier]) =>
       map.setFilter(L(slug, n), ['all', ['has', 'con'], ['==', get('tier'), tier], ...served] as Expr))
+    map.setFilter(L(slug, 'logo'), ['all', ['has', 'lg'], ['<=', get('tier'), 2], ['!', ['has', 'con']], ...served] as Expr)
     for (const n of ['stcon1', 'stcon2', 'stcon3', 'lblcon1', 'lblcon2', 'lblcon3']) map.setLayoutProperty(L(slug, n), 'visibility', vis(s.construction))
     for (const n of ['strand', 'strand-casing']) setFilt(n, hiddenT ? (['all', ...notHiddenT('t')] as Expr) : null, 't')
+    map.setFilter(L(slug, 'badge'), ['all', ['has', 'rf'], ...(greyOut ? [strandActive] : []), ...notHiddenT('t')] as Expr)
     map.setFilter(L(slug, 'lbl-lines'), hiddenT || greyOut ? (['all', ...(greyOut ? [strandActive] : []), ...notHiddenT('t')] as Expr) : null)
     map.setFilter(L(slug, 'lbl-track'), ['all', ...(greyOut ? [activeTrack] : []), ['has', 'n'], ['!', ['has', 'nl']], ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight'], ...notHiddenT('type'), ...noSpeed] as Expr)
     const hide: Expr[] = [...notHiddenT('type')]
@@ -639,6 +654,30 @@ export function prefetchHighlights(map: MLMap) {
   const jobs = [...todo.values()]
   const run = async () => { for (let j = jobs.shift(); j; j = jobs.shift()) await j().catch(() => null) }
   for (let i = 0; i < 3; i++) void run()   // three at a time
+}
+
+/** Line number badges: a rounded rectangle in the line's colour with a white outline, stretchable so icon-text-fit can size it to the number.
+ *  Made on demand: a layer asks for `badge|<colour>|<d or l>` and the styleimagemissing event draws it. */
+export function addBadgeImages(map: MLMap) {
+  map.on('styleimagemissing', (e) => {
+    const [kind, colour] = e.id.split('|')
+    if (kind === 'logo' && colour && !map.hasImage(e.id)) {
+      // operator logo: fetched on first use; a missing file gets a transparent pixel so it is not asked for again
+      map.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) })
+      map.loadImage(logoUrl(colour)).then((r) => { if (map.hasImage(e.id)) map.removeImage(e.id); map.addImage(e.id, r.data, { pixelRatio: 2 }) }).catch(() => {})
+      return
+    }
+    if (kind !== 'badge' || !colour || map.hasImage(e.id)) return
+    const px = 2, size = 20 * px
+    const c = document.createElement('canvas')
+    c.width = c.height = size
+    const g = c.getContext('2d')!
+    g.scale(px, px)
+    g.beginPath(); g.roundRect(1, 1, 18, 18, 5)
+    g.fillStyle = colour; g.fill()
+    g.lineWidth = 1.5; g.strokeStyle = '#FFFFFF'; g.stroke()
+    map.addImage(e.id, g.getImageData(0, 0, size, size), { pixelRatio: px, stretchX: [[12, 28]], stretchY: [[12, 28]], content: [8, 6, 32, 34] })
+  })
 }
 
 /** Material "flight" glyph, 24x24 */

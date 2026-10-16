@@ -860,6 +860,8 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         py_str(o, ts);
         o.extend_from_slice(b", \"operator\": ");
         opt(o, or(tags.g("operator"), first.g("operator")));
+        o.extend_from_slice(b", \"operator_wd\": ");
+        opt(o, or(or(tags.g("operator:wikidata"), first.g("operator:wikidata")), or(tags.g("brand:wikidata"), first.g("brand:wikidata"))));
         o.extend_from_slice(b", \"network\": ");
         opt(o, or(tags.g("network"), first.g("network")));
         o.extend_from_slice(b", \"from\": ");

@@ -6,7 +6,7 @@
 //   --tiles NAMES: the <name>.pmtiles files of --data to read (default pilot,americas). For the world build:
 //       node build-glyphs.mjs --data ../../app/public/data/world --tiles world --out <dir>/glyphs     (reads world.pmtiles and world/places.json)
 //
-// 1. Character set: every code point in the label properties (n, ne, lb, lbe) of every tile of the --tiles files,
+// 1. Character set: every code point in the label properties (n, ne, lb, lbe, rf) of every tile of the --tiles files,
 //    the names in places.json (written by `rail-extract places`, which `build` and `world` run last), printable ASCII,
 //    and the upper-case form of each (country names are drawn in capitals).
 //    Rerun after any rebuild that adds regions or names; the tile glyph files are tied to the tile data.
@@ -52,7 +52,7 @@ const STACKS = {
   'Noto Sans Bold': ['NotoSans-Bold.ttf', 'NotoSansCJKsc-Bold.otf'],
 }
 const OFM_FONTS = 'https://tiles.openfreemap.org/fonts'
-const LABEL_KEYS = ['n', 'ne', 'lb', 'lbe']
+const LABEL_KEYS = ['n', 'ne', 'lb', 'lbe', 'rf']
 
 async function ensureFonts() {
   fs.mkdirSync(FONTS, { recursive: true })

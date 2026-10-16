@@ -33,17 +33,17 @@ pub const SERVICE_KEEP: [&[u8]; 4] = [b"yard", b"siding", b"spur", b"crossover"]
 pub const ROUTE_MODES: [&[u8]; 6] = [b"train", b"subway", b"light_rail", b"tram", b"monorail", b"funicular"];
 
 /// feature properties, in this order, then every name:* tag (filter.cpp KEEP)
-pub const KEEP: [&str; 37] = [
+pub const KEEP: [&str; 39] = [
     "railway", "public_transport", "building", "landuse", "station", "service", "usage", "railway:traffic_mode",
     "highspeed", "name", "official_name", "int_name", "ref", "wikidata", "uic_ref", "railway:ref",
     "operator", "operator:short", "network", "gauge", "electrified", "voltage", "frequency", "tracks",
     "maxspeed", "maxspeed:freight", "construction", "proposed", "bridge", "tunnel", "light_rail", "subway", "train", "start_date",
-    "construction:railway", "construction:public_transport", "construction:station",
+    "construction:railway", "construction:public_transport", "construction:station", "operator:wikidata", "brand:wikidata",
 ];
 
 /// relation side-table tags, in this order, then every name:* tag (filter.cpp REL_TAGS)
-pub const REL_TAGS: [&str; 13] =
-    ["name", "ref", "colour", "operator", "network", "route", "service", "from", "to", "wikidata", "public_transport", "type", "route_master"];
+pub const REL_TAGS: [&str; 15] =
+    ["name", "ref", "colour", "operator", "operator:wikidata", "brand:wikidata", "network", "route", "service", "from", "to", "wikidata", "public_transport", "type", "route_master"];
 
 /// Tags stored in the cache: everything any rule or output reads. Anything else is dropped at cache time, so a new output tag
 /// means rebuilding the cache (one planet read).
@@ -56,7 +56,7 @@ pub fn cache_key(k: &[u8]) -> bool {
         k,
         b"railway" | b"public_transport" | b"building" | b"landuse" | b"station" | b"service" | b"usage" | b"railway:traffic_mode"
             | b"highspeed" | b"name" | b"official_name" | b"int_name" | b"ref" | b"wikidata" | b"uic_ref" | b"railway:ref"
-            | b"operator" | b"operator:short" | b"network" | b"gauge" | b"electrified" | b"voltage" | b"frequency" | b"tracks"
+            | b"operator" | b"operator:short" | b"operator:wikidata" | b"brand:wikidata" | b"network" | b"gauge" | b"electrified" | b"voltage" | b"frequency" | b"tracks"
             | b"maxspeed" | b"maxspeed:freight" | b"construction" | b"proposed" | b"bridge" | b"tunnel" | b"light_rail"
             | b"subway" | b"train" | b"tram" | b"monorail" | b"funicular" | b"start_date" | b"construction:railway"
             | b"construction:public_transport" | b"construction:station" | b"entrance" | b"area" | b"aeroway" | b"iata"

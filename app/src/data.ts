@@ -11,6 +11,8 @@ export interface StationRecord {
   complex: { id: string; name: string | null; others: { id: string; name: string | null; name_en: string | null; modes: string[] }[] } | null
   airport?: string | null
   osm: string | null; wikidata: string[] | null; pt: [number, number]
+  /** Wikidata id of the operator whose logo (logos/<id>.png) the card shows; null when we have none */
+  logo?: string | null
   tags: { id: string; tags: Record<string, string> }[]; model: Record<string, string | number | boolean | null>
 }
 export interface LineRecord {
