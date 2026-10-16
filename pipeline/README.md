@@ -1,19 +1,21 @@
 # Pipeline
 
-Run from `pipeline/`. Needs Rust 1.99 (extraction and MLT tiles) and Python 3 with shapely and numpy. No tippecanoe or tile-join.
+Reference for the pipeline commands. For the first-time sequence from a fresh clone (in the right order, with the prerequisites) see `Run it` in the root `README.md`; run `rail-extract outlines --level 2`, `4` and `5 --country CN` before the first cut (see 'Region outlines' below).
+Needs stable Rust (extraction and MLT tiles; tested with 1.99.0). Python 3 is needed only for `places.py` (`mapbox-vector-tile`, which pulls in shapely); `check.py` and `top.py` use the standard library only, `measure_views.py` needs `pmtiles`, `build_regions.py` and `outline_cn.py` need shapely. No tippecanoe or tile-join.
+The commands below are written for running from `pipeline/`; `rail-extract`, `places.py`, `check.py` and the glyph script find the repository from their own location, so they also work from the repository root (`top.py` and `measure_views.py` use relative paths).
 Timings below were measured on 2026-10-12 (14-core Mac, planet-260928).
 
 ```
 cd rail-extract && cargo build --release && cd ..        # once, and after changing the Rust code (5 s after a change)
 rail-extract/target/release/rail-extract cache --planet ../planet-260928.osm.pbf
 #   once per planet: 51 s, 4.5 GB peak memory -> ../data/cache/planet-260928.railcache (1.1 GB; blob index cached beside it)
-rail-extract/target/release/rail-extract cut sf-bay-area paris chengdu greater-bay-area
+rail-extract/target/release/rail-extract cut sf-bay-area china de fr ch it paris chengdu greater-bay-area cn-beijing
 #   regions cut in parallel from the cache, by their outline regions/<slug>.geojson, and classified (rail types) with the
-#   rules in config/<slug>.json: all six regions including all of China in 1.6 s
+#   rules in config/<slug>.json: ten regions including all of China in 2.4 s (4.8 GB peak)
 #   writes ../data/<slug>/{features.geojsonl, relations.jsonl, stop_positions.jsonl, qa.json, airports.geojsonl,
 #                          features.typed.geojsonl, lines.json, classify_report.json}
 #   rail type rules: rail-extract/src/classify.rs (ported from classify.py 2026-10-12, same output byte for byte)
-rail-extract/target/release/rail-extract build sf-bay-area paris china
+rail-extract/target/release/rail-extract build sf-bay-area china de fr ch it
 #   per region, in parallel: station model (stations, complexes, size tiers), stations under construction, tile input and side files
 #   into ../app/public/data; then the Rust MLT tile writer (tilewriter.rs) for each region in turn -> <slug>.pmtiles (it holds a whole region in memory); skipped for the pilot sources when the pilot join runs (the app reads only pilot.pmtiles)
 #   timings 2026-10-14 (earlier run, per-region files plus the pilot join): sf-bay-area, paris, china, de, fr, ch, it together 40.4 s wall, 14.1 GB peak RSS; in the orig-vs-mlt benchmark (pilot file only) the same seven slugs took 27.4 s. Tile step per region (earlier single runs): SF 0.1 s, Paris 0.3 s,
@@ -27,21 +29,22 @@ rail-extract/target/release/rail-extract build sf-bay-area paris china
 rail-extract/target/release/rail-extract build ch it fr --combined europe-test
 #   combined build: per-slug work without tiles, then ONE tile writer run over every slug's tiles_tmp -> ../app/public/data/europe-test.pmtiles
 #   plus europe-test.parts.json (slug and outline bounds). Does not write per-region .pmtiles or touch pilot.pmtiles
-#   TIMING ONLY, not reproducible from a fresh clone (the Americas configs pipeline/config/{ar,...,ve}.json are not committed; the Americas rule work was reverted, docs/00-overview.md 2026-10-15): 27 American countries (ar bb bo br ca cl co cr cu do ec gt hn ht jm kn mx ni pa pe py sv tc tt us uy ve --combined americas): 15.3 s wall, 11.4 GB peak, 207.9 MB
+#   TIMING ONLY (the Americas run used per-country config files, now replaced by config/_default.json; ca, mx and us had hand-written configs that are not committed; the Americas rule work was reverted, docs/00-overview.md 2026-10-15): 27 American countries (ar bb bo br ca cl co cr cu do ec gt hn ht jm kn mx ni pa pe py sv tc tt us uy ve --combined americas): 15.3 s wall, 11.4 GB peak, 207.9 MB
 #   (tile writer 7.9 s; tippecanoe took 276 s, 222 MB)
 rail-extract/target/release/rail-extract tiles ch it --name x --out ../data/tiles
 #   the tile writer alone over existing tiles_tmp (no station model, no side files); slices one region at a time, so do not run several in parallel
-rail-extract/target/release/rail-extract build greater-bay-area chengdu cn-beijing --no-tiles
+rail-extract/target/release/rail-extract build paris chengdu greater-bay-area cn-beijing --no-tiles
 #   side files only: the app draws these regions from China's tiles (0.5 s for all three)
 #   also writes ../app/public/data/<slug>/stats.json (region card); areas inside a region: "stat_areas" (a list) or "stat_auto" (all provinces and cities of a country) in config/<slug>.json;
 #   run `outlines --level 4` and `--level 5` first; also writes shapes.json (outlines for finding the area under the view)
 #   or: rail-extract cut <slugs> --build   (cut, then build straight away; --no-tiles applies to every slug)
+python3 places.py                                # city and town names -> ../app/public/data/places.json; run after `build` (reads pilot.parts.json and data/<slug>/complexes.geojsonl), before the glyph step; fetches 517 OpenFreeMap tiles (15 min on 2026-10-15)
 python3 check.py                                 # phase 2 "Done when": answer lists in answers/
 python3 measure_views.py                         # compressed tile bytes per view vs the 600 KB budget
 python3 top.py <slug> [n]                        # dev helper: biggest stations
 ```
 
-Map glyphs (label fonts; the app draws every label from its own files, not OpenFreeMap's font server). `app/public/glyphs/` is git-ignored and must be generated before `npm run dev` or `npm run build`, or every label fails to load (the app logs 'glyphs missing' to the console). Run it once on a fresh clone and after any rebuild that changes names:
+Map glyphs (label fonts; the app draws every label from its own files, not OpenFreeMap's font server). `app/public/glyphs/` is git-ignored and must be generated before `npm run dev` or `npm run build`, or every label fails to load (the app logs 'glyphs missing' to the console). Run it once on a fresh clone (after `places.py`, which writes the `places.json` it reads) and after any rebuild that changes names. The first run downloads about 34 MB of fonts (8 min on a slow connection, 40 s with the fonts cached):
 ```
 cd glyphs && npm install && node build-glyphs.mjs    # 45 s; writes ../../app/public/glyphs/<fontstack>/<start>-<end>.pbf
 ```
@@ -85,6 +88,23 @@ Older per-step Python timings, before classify moved into the cut:
 | Chengdu | 0.15 s | 0.35 s | 0.13 s | 1.07 s |
 | Greater Bay Area | 0.55 s | 1.21 s | 0.36 s | 3.28 s |
 
+World build (every country with passenger rail, one file; 2026-10-15, 14-core Mac, planet-260928). Full reference, the memory-bounded writer and verification: `../docs/10-world-build.md`. Run from the repository root with `RE=pipeline/rail-extract/target/release/rail-extract`:
+
+```
+$RE outlines --level 2 && $RE outlines --level 4            # data/regions: 216 countries, provinces and states (index.json is read by stat_auto)
+mkdir -p data/world && ls data/regions | grep -E '^[a-z]{2}\.geojson$' | sed 's/.geojson//' > data/world/slugs.txt
+$RE cut --regions data/regions --data data/world $(cat data/world/slugs.txt)     # 7 s, 7.2 GB peak; classified with config/<cc>.json, else config/_default.json
+$RE world-list --data data/world --slugs-file data/world/slugs.txt               # kept.txt / dropped.txt: >= 1 km of open track typed anything but freight or yard (--min-km N); 146 kept, 70 dropped
+$RE build $(cat data/world/kept.txt) --no-tiles --threads 5 --data data/world --out app/public/data/world   # side files: 37 s, 12 GB peak RSS
+$RE world --slugs-file data/world/kept.txt     # tiles: 55 to 59 s, 10.5 GB peak RSS, 1.15 GB -> app/public/data/world/world.pmtiles, world.parts.json
+$RE pminfo app/public/data/world/world.pmtiles [--tsv FILE] [--top N]
+VITE_TILE_SOURCE=world npm --prefix app run dev                                   # the app reads only pilot unless this is set
+```
+
+`world` writes tiles in passes (`--deep-zoom N`, default 6; 5 and 6 give a byte-identical file) so memory stays at about 10 GB; `tiles` and `build` (the pilot path) hold a whole region. `places.py` (city names) is the current step but only covers the pilot, and it will be replaced by a Rust step. Not in the repo: `data/`, the planet, `app/public/data/`, `app/public/glyphs/`, the world outputs.
+
+Default config. A region with no `config/<slug>.json` uses the committed template `config/_default.json` (generic rules, a 200 km/h high-speed floor, `stat_auto` for admin level 4); `build` fills `stat_name` (outline `name_en`), `stat_local` (`name`) and `stat_auto.country` (`country`) from the region's outline, and `cut` and `build` log that the template is in use. Add a `config/<slug>.json` only when a region needs its own rules; it wins.
+
 Region outlines. Countries and provinces / states come from the planet (admin levels 2 and 4, kept in the cache, simplified
 to about 20 m):
 
@@ -102,8 +122,8 @@ in `regions/` win over generated ones with the same slug: `sf-bay-area` (9 count
 and `china` (mainland + Hong Kong + Macao) came from Nominatim (`build_regions.py` unions the boundary dumps in `regions/*.json`;
 `outline_cn.py` looks up the China ones, 47 s). Cities and counties (levels 5 to 8) are not in the cache yet.
 
-New region: an outline (generated, or a hand-made GeoJSON Feature in `regions/<slug>.geojson`) and `config/<slug>.json`
-(classify needs it), then `cut <slug>`; the planet is not read again.
+New region: an outline (generated, or a hand-made GeoJSON Feature in `regions/<slug>.geojson`) and, if it needs its own rules,
+`config/<slug>.json` (otherwise `config/_default.json` is used), then `cut <slug>`; the planet is not read again.
 Changing which tags are kept (`rail-extract/src/rules.rs`, `cache_key`) needs a new cache; changing the rules for what is cut
 only needs a rebuild of the binary and a new cut.
 
