@@ -1,6 +1,6 @@
 # Freight or passenger in the US, Canada and Mexico (study, 2026-10-16)
 
-Question (user): in the US passenger rail is probably well labelled, so should anything without passenger service be freight? This file holds the measurement, the rule that came out of it and what it costs. Nothing here is in `classify.rs` yet: it is a proposal with numbers, to be switched on by a decision. Background and the older, reverted attempt: `docs/07-freight-detection.md` ("Americas: correct freight labelling"), `docs/08-americas-passenger-qa.md`.
+Question (user): in the US passenger rail is probably well labelled, so should anything without passenger service be freight? This file holds the measurement, the rule that came out of it and what it costs. **Implemented 2026-10-16** (user decisions: yes for US, Canada and Mexico; Canada's suspended services stay passenger): config key `passenger_needs_evidence` in `_north-america.json` and `mx.json`, code in `classify.rs` (`beside_routed`). Background and the older, reverted attempt: `docs/07-freight-detection.md` ("Americas: correct freight labelling"), `docs/08-americas-passenger-qa.md`.
 
 ## Answer
 
@@ -56,22 +56,24 @@ No NARN. Today 15,400 km of Intercity and Regional; with the route/beside rule 1
 
 OSM mappers in the US, Canada and Mexico map passenger services as route relations with operators (Amtrak, commuter agencies, VIA, GO), and freight lines as plain `usage=main|branch` track. That is the opposite of the situation in China, where passenger routes are rarely mapped (docs/07). The rule is only as good as route mapping: for any other country, first measure "share of passenger stations served by a mapped route" and "km of track on routes against km of the national passenger network" before using it. South America, Cuba and the Dominican Republic look like the same problem (freight drawn as passenger) but have thin route mapping, so the rule can drop real services; they need a per-country look (the list of real services in docs/07).
 
-## Proposed implementation
+## Implementation (done)
 
-In `classify.rs`, after rules 1 to 3 (tags, service track, route relations), behind a config key in `_north-america.json` (`"passenger_needs_evidence": true`; Mexico adds its agency names):
+In `classify.rs`, after the per-track rules (tags, service track, route relations, name share, station evidence) and before neighbour smoothing, behind `"passenger_needs_evidence": true` (off elsewhere, so the pilot regions are byte-identical; checked):
 
-- A way whose type came from tags alone (`usage=main` or `branch`, no route) and whose type is Intercity, Regional or High-speed becomes Freight unless (a) at least 50% of its length is within 25 m of a way on a passenger route (the existing neighbour index in `classify.rs` can be reused; mind that two parallel freight tracks beside one passenger track are all "beside"), or (b) an operator tag matches `passenger_operator_re`.
-- Exemptions (`docs/12-config-and-exemptions.md`) fix the 400 km of US trackage rights and anything found later; `expect_min` and stale reporting already guard them.
-- High-speed stays judged by speed (rule 1), not by this rule.
-- Rules 6 to 8 (branches, spurs, neighbours) run after it and keep working; the older `freight_name_re` and `freight_operator_exempt_re` become redundant for these countries and can stay.
-- Pilot regions must stay byte-identical (the key is off elsewhere). Then re-cut `us`, `ca`, `mx`, rebuild, re-run `eval_rules.py` on the real output (expect the figures above), run the data checker, and look at the Plains, Texas, Northeast and Southern California views.
-- Cost of a world rebuild: cut 7 s, side files 37 s, tiles about 1 minute. Tiles for the three countries get lighter (about 195,000 km of track moves from the passenger layers to Freight, hidden by default).
+- A rail way whose type came from its own tags alone (`type_source` tags or default: `usage=main|branch`, or no `usage` at all), typed Intercity or Regional, becomes **Freight** (`type_source = no-evidence`) unless (a) at least 50% of its length is within 25 m of a `railway=rail` way that is on a passenger route and typed Intercity, Regional or High-speed (metro, light rail and the others do not count as evidence: the study counted them, so a freight track beside a tram is now freight), or (b) its `operator` tag matches `passenger_operator_re`, or (c) its tags say `railway:traffic_mode=passenger|mixed`.
+- Tagged High-speed, construction and proposed track are not touched. Short `no-evidence` pieces between agreeing neighbours are smoothed like the other freight rules.
+- `passenger_operator_re` (`_north-america.json`): the US and Canadian agencies; `mx.json` lists Tren Maya, FONADIN, Suburbano, Interurbano, El Insurgente, Felipe Angeles, Chepe.
+- Exemptions fix what is left, and can now say `"type_source": "no-evidence"` in `match` (new, `docs/12-config-and-exemptions.md`) so they touch only ways that this rule demoted, not ways mapped as industrial or freight: `us.json` `amtrak-over-freight-railroads` (UP Beaumont, Dallas, Coast and Oakland, BNSF Spokane, Seligman, Merchants, CN Yazoo, CPKC Canadian Subdivisions: 315 km), `ca.json` `canada-regional-passenger-services` (Algoma Central, Ontario Northland, Gaspe, QNS&L, CN Soo: 1,456 km, kept as passenger by the user's decision) and `via-rail-over-freight-subdivisions` (76 km). `expect_min` guards them against going stale.
 
-## Decisions for the user
+**Result on the real output** (`eval_rules.py` on the rebuilt tables, same method as above):
 
-1. Switch the rule on for US and Canada (and Mexico with the agency list)? It reverses the "assume passenger" default for these three countries only.
-2. Canada's suspended services (Algoma, Ontario Northland, Gaspé): Freight (recommended) or exemptions to keep them as passenger.
-3. Tourist railways: Other (current) or keep them with their routes.
+| | passenger km before | after | precision before | after | recall before | after |
+| --- | --- | --- | --- | --- | --- | --- |
+| United States | 222,892 | 60,500 | 26.0% | 95.2% | 98.2% | 97.7% |
+| Canada | 38,119 | 18,391 | 45.7% | 92.9% | 99.1% | 97.1% |
+| Mexico (no NARN) | 15,400 | 3,013 | | | | |
+
+Canada's precision is lower than in the table above because its suspended services are kept on purpose (about 1,500 km that BTS still codes as passenger but that are no timetable service). World tiles rebuilt (`world.pmtiles` 1,149 MB, was 1,150 MB: the freight is still in the tiles, drawn only when the freight switch is on). The pilot data checker has one failure, the Chengdu station tier that failed before this change.
 
 ## Reproduce
 

@@ -95,6 +95,20 @@
       "source": "https://en.wikipedia.org/wiki/Atlantic_City_Line_(NJ_Transit)",
       "added": "2026-10-15",
       "expect_min": 10
+    },
+    {
+      "id": "amtrak-over-freight-railroads",
+      "match": {
+        "name_re": "^(UP (Beaumont|Dallas|Coast|Oakland) Subdivision|BNSF Spokane Subdivision|Seligman Subdivision|Merchants Subdivision|CN Yazoo Subdivision|CPKC Canadian Subdivision)$",
+        "type_source": "no-evidence"
+      },
+      "action": {
+        "freight": false
+      },
+      "reason": "Amtrak trains (Sunset Limited, Texas Eagle, Coast Starlight, Empire Builder, Southwest Chief, Capitol Corridor, City of New Orleans, Hiawatha) run on these freight railroads' subdivisions, but OSM has no passenger route relation on them and Amtrak is not the operator tag. BTS NARN codes 82 to 100% of each as passenger (docs/13-freight-north-america.md).",
+      "source": "https://www.bts.gov/browse-statistical-products-and-data/ntad-datasets (North American Rail Network Lines, PASSNGR)",
+      "added": "2026-10-16",
+      "expect_min": 20
     }
   ],
   "+track_type_overrides": [

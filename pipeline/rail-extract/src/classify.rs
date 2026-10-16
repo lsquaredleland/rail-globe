@@ -165,6 +165,8 @@ pub struct Exemption {
     action: Action,
     /// `match.type`: only features that the rules above have typed this way
     was_type: Option<String>,
+    /// `match.type_source`: only features whose type came from this rule (`no-evidence`, `no-station`, `tags`, `route`, ...); tracks only
+    was_source: Option<String>,
     expect_min: u64,
 }
 
@@ -188,8 +190,13 @@ impl Exemption {
             Some(Value::String(t)) if ORDER.contains(&t.as_str()) || t == "freight" || t == "yard" => Some(t),
             Some(_) => bad("match.type must be a rail type (freight, regional, ...)"),
         };
+        let was_source = match m.remove("type_source") {
+            None => None,
+            Some(Value::String(t)) if !t.is_empty() => Some(t),
+            Some(_) => bad("match.type_source must be a rule name (no-evidence, no-station, tags, route, ...)"),
+        };
         if m.is_empty() {
-            bad("match.type is a condition, not a selector: add name_re, operator_re, ref, network_re or osm_id");
+            bad("match.type and match.type_source are conditions, not a selector: add name_re, operator_re, ref, network_re or osm_id");
         }
         let rule = Rule::parse(&Value::Object(m));
         for i in rule.osm_id.iter().flatten() {
@@ -209,7 +216,7 @@ impl Exemption {
             None => 1,
             Some(v) => v.as_u64().unwrap_or_else(|| bad("expect_min must be a whole number")),
         };
-        Exemption { id, rule, action, was_type, expect_min }
+        Exemption { id, rule, action, was_type, was_source, expect_min }
     }
 }
 
@@ -225,6 +232,10 @@ pub struct Cfg {
     proposed: Option<Region>,
     /// names of the stations that carry passengers (China: the 12306 ticketing list); None: judge a station by its tags
     passenger_names: Option<std::collections::HashSet<String>>,
+    /// `passenger_needs_evidence` (docs/13-freight-north-america.md): unrouted main-line track typed from its tags alone is Freight unless it
+    /// runs beside passenger-routed track or its operator is one of `passenger_operator_re`
+    needs_evidence: bool,
+    passenger_operators: Vec<Regex>,
 }
 
 impl Cfg {
@@ -278,6 +289,10 @@ impl Cfg {
             hs_track_overrides: v.get("high_speed_track_overrides").and_then(Value::as_array).map_or(Vec::new(), |a| a.iter().map(Rule::parse).collect()),
             hs_networks: v.get("high_speed_networks_re").and_then(Value::as_array).map_or(Vec::new(), |a| {
                 a.iter().map(|p| Regex::new(p.as_str().expect("pattern")).expect("high_speed_networks_re")).collect()
+            }),
+            needs_evidence: v.get("passenger_needs_evidence").map_or(false, truthy),
+            passenger_operators: v.get("passenger_operator_re").and_then(Value::as_array).map_or(Vec::new(), |a| {
+                a.iter().map(|p| Regex::new(p.as_str().expect("pattern")).expect("passenger_operator_re")).collect()
             }),
             unrouted_main_type: v.get("unrouted_main_type").and_then(Value::as_str).unwrap_or("intercity").to_string(),
             proposed,
@@ -423,6 +438,69 @@ const SNIPPET_KM: f64 = 2.0; // a piece of track shorter than this that differs 
 fn ll_km(ll: &[(i32, i32)]) -> f64 {
     let pts: Vec<(f64, f64)> = ll.iter().filter(|p| p.0 != i32::MIN).map(|p| (p.1 as f64 / 1e7, p.0 as f64 / 1e7)).collect();
     crate::tiles::haversine_len(&pts)
+}
+
+const BESIDE_M: f64 = 25.0; // track this close to passenger-routed track for BESIDE_SHARE of its length is part of the same passenger corridor
+const BESIDE_SHARE: f64 = 0.5;
+
+struct RSeg {
+    a: [f64; 2],
+    b: [f64; 2],
+}
+impl rstar::RTreeObject for RSeg {
+    type Envelope = rstar::AABB<[f64; 2]>;
+    fn envelope(&self) -> Self::Envelope {
+        rstar::AABB::from_corners(self.a, self.b)
+    }
+}
+
+/// Which `targets` (track indices) run beside track that is on a passenger route: second tracks, crossovers and connectors that no
+/// route relation lists. A way is beside when at least BESIDE_SHARE of its length (sampled about every 20 m) lies within BESIDE_M of a
+/// routed way of `routed` (indices). Distances are metres on a local plane.
+fn beside_routed(tracks: &[TrackIn], routed: &[usize], targets: &[usize]) -> FxHashSet<usize> {
+    use rayon::prelude::*;
+    let deg = |p: &(i32, i32)| [p.1 as f64 / 1e7, p.0 as f64 / 1e7]; // (lon, lat)
+    let segs: Vec<RSeg> = routed
+        .iter()
+        .flat_map(|&i| {
+            let pts: Vec<[f64; 2]> = tracks[i].ll.iter().filter(|p| p.0 != i32::MIN).map(deg).collect();
+            pts.windows(2).map(|w| RSeg { a: w[0], b: w[1] }).collect::<Vec<_>>()
+        })
+        .collect();
+    let tree = rstar::RTree::bulk_load(segs);
+    let near = |p: [f64; 2]| -> bool {
+        let k = p[1].to_radians().cos().max(0.01);
+        let (dy, dx) = (BESIDE_M / 110_540.0, BESIDE_M / (111_320.0 * k));
+        tree.locate_in_envelope_intersecting(rstar::AABB::from_corners([p[0] - dx, p[1] - dy], [p[0] + dx, p[1] + dy])).any(|s| {
+            let xy = |q: [f64; 2]| [(q[0] - p[0]) * 111_320.0 * k, (q[1] - p[1]) * 110_540.0];
+            let (a, b) = (xy(s.a), xy(s.b));
+            let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+            let len2 = dx * dx + dy * dy;
+            let t = if len2 == 0.0 { 0.0 } else { ((-a[0] * dx - a[1] * dy) / len2).clamp(0.0, 1.0) };
+            (a[0] + t * dx).hypot(a[1] + t * dy) <= BESIDE_M
+        })
+    };
+    targets
+        .par_iter()
+        .filter(|&&i| {
+            let pts: Vec<[f64; 2]> = tracks[i].ll.iter().filter(|p| p.0 != i32::MIN).map(deg).collect();
+            let (mut n, mut hit) = (0.0f64, 0.0f64);   // metres sampled, metres beside
+            for w in pts.windows(2) {
+                let k = ((w[0][1] + w[1][1]) / 2.0).to_radians().cos();
+                let m = ((w[1][0] - w[0][0]) * 111_320.0 * k).hypot((w[1][1] - w[0][1]) * 110_540.0);
+                let steps = ((m / 20.0).ceil() as u32).max(1);
+                for s in 0..steps {
+                    let f = (s as f64 + 0.5) / steps as f64;
+                    n += m / steps as f64;
+                    if near([w[0][0] + (w[1][0] - w[0][0]) * f, w[0][1] + (w[1][1] - w[0][1]) * f]) {
+                        hit += m / steps as f64;
+                    }
+                }
+            }
+            n > 0.0 && hit >= BESIDE_SHARE * n
+        })
+        .copied()
+        .collect()
 }
 
 const PAX_NEAR_M: f64 = 200.0; // a passenger station this close to a track (to the line between its points, not just its points) serves it
@@ -691,7 +769,7 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         // exemptions beat every rule above (a later one beats an earlier one)
         for (xi, x) in cfg.exemptions.iter().enumerate() {
             if let Action::Type(ty) = &x.action {
-                if x.was_type.as_deref().map_or(true, |w| w == t) && x.rule.matches(&LineTags(&merged, lid)) {
+                if x.was_source.is_none() && x.was_type.as_deref().map_or(true, |w| w == t) && x.rule.matches(&LineTags(&merged, lid)) {
                     t = ty.clone();
                     ts = "exemption";
                     ex_stats[xi].lines += 1;
@@ -827,6 +905,34 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         };
         decided.push(Some(Decided { t, s, own }));
     }
+    // Passenger needs evidence (config `passenger_needs_evidence`): main-line track typed from its own tags alone (no passenger route, not an
+    // exemption) is Freight unless it runs beside passenger-routed track or its operator is a passenger agency. Measured against the BTS
+    // passenger inventory in docs/13-freight-north-america.md (US precision 26% -> 95%, recall 98% -> 98% on the real output).
+    if cfg.needs_evidence {
+        let passenger = |t: &str| matches!(t, "intercity" | "regional" | "high_speed");
+        let routed: Vec<usize> = (0..tracks.len())
+            .filter(|&i| tracks[i].props.g("railway") == Some("rail") && tracks[i].ll.len() >= 2 && decided[i].as_ref().map_or(false, |d| d.s == "route" && passenger(&d.t)))
+            .collect();
+        let targets: Vec<usize> = (0..tracks.len())
+            .filter(|&i| {
+                let p = &tracks[i].props;
+                tracks[i].ll.iter().filter(|q| q.0 != i32::MIN).count() >= 2   // a way with no usable geometry keeps its type
+                    && p.g("railway") == Some("rail")
+                    && !matches!(p.g("railway:traffic_mode"), Some("passenger" | "mixed"))
+                    && decided[i].as_ref().map_or(false, |d| matches!(d.s, "tags" | "default") && matches!(d.t.as_str(), "intercity" | "regional"))
+                    && !p.g("operator").map_or(false, |o| cfg.passenger_operators.iter().any(|r| r.is_match(o)))
+            })
+            .collect();
+        let beside = beside_routed(tracks, &routed, &targets);
+        for ti in targets {
+            if !beside.contains(&ti) {
+                if let Some(d) = decided[ti].as_mut() {
+                    d.t = "freight".into();
+                    d.s = "no-evidence";
+                }
+            }
+        }
+    }
     // A short piece of track whose type differs from all the track it joins, when those agree, takes their type: a few metres of
     // "Regional" in the middle of a freight line is a tagging gap, not a service.
     let mut at_end: rustc_hash::FxHashMap<(i32, i32), Vec<usize>> = rustc_hash::FxHashMap::default();
@@ -837,7 +943,7 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
             }
         }
     }
-    let smoothable = |d: &Decided| matches!(d.s, "tags" | "default" | "name" | "no-station" | "short-spur") && matches!(d.t.as_str(), "intercity" | "regional" | "freight");
+    let smoothable = |d: &Decided| matches!(d.s, "tags" | "default" | "name" | "no-station" | "short-spur" | "no-evidence") && matches!(d.t.as_str(), "intercity" | "regional" | "freight");
     for _ in 0..2 {
         let mut changes: Vec<(usize, String)> = Vec::new();
         for (i, tr) in tracks.iter().enumerate() {
@@ -875,7 +981,7 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         for (ti, tr) in tracks.iter().enumerate() {
             let Some(d) = decided[ti].as_mut() else { continue };
             for (xi, x) in cfg.exemptions.iter().enumerate() {
-                if x.was_type.as_deref().map_or(false, |w| w != d.t) || !x.rule.matches(&tr.props) {
+                if x.was_type.as_deref().map_or(false, |w| w != d.t) || x.was_source.as_deref().map_or(false, |w| w != d.s) || !x.rule.matches(&tr.props) {
                     continue;
                 }
                 ex_stats[xi].tracks += 1;

@@ -53,7 +53,7 @@ An exemption is one named, justified exception to the generic rules, kept in the
 | Key | Meaning |
 | --- | --- |
 | `id` | Short, unique in the file. Shows up in the report and the warnings. Required |
-| `match` | At least one of `osm_id` (one id or a list), `osm_ids` (list), `name_re`, `operator_re`, `network_re`, `ref` (exact), `network` (exact). All given keys must match. Optional `type`: only features the rules have already typed this way (`freight`, `regional`, ...). `type` alone is not enough |
+| `match` | At least one of `osm_id` (one id or a list), `osm_ids` (list), `name_re`, `operator_re`, `network_re`, `ref` (exact), `network` (exact). All given keys must match. Optional `type`: only features the rules have already typed this way (`freight`, `regional`, ...). Optional `type_source`: only tracks whose type came from this rule (`no-evidence`, `no-station`, `tags`, `route`, `name`, ...; lines are never matched), to touch the ways a rule demoted and not ways mapped as freight. `type` and `type_source` alone are not enough |
 | `action` | Exactly one of `{"type": "<rail type>"}` (`high_speed`, `intercity`, `regional`, `metro`, `light_rail`, `monorail`, `funicular`, `other`, `freight`), `{"freight": true}` (type Freight), `{"freight": false}` (a Freight way goes back to the type its own tags give, Regional if they also say freight; other ways are untouched), `{"drop": true}` (the way is left out of `features.typed.geojsonl`) |
 | `reason` | Required. Why the generic rules are wrong here |
 | `source` | Optional URL, issue or note |

@@ -111,3 +111,81 @@ fn exemption_ids_are_unique() {
     let e = json!({ "id": "x", "match": { "name_re": "a" }, "action": { "drop": true }, "reason": "r" });
     cfg_with(json!([e.clone(), e]));
 }
+
+fn cfg_json(v: Value) -> Cfg {
+    let dir = std::env::temp_dir().join(format!("rail-classify-test-ev-{}-{:?}", std::process::id(), std::thread::current().id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = dir.join("t.json");
+    std::fs::write(&p, v.to_string()).unwrap();
+    Cfg::load(&p, &dir)
+}
+
+/// `passenger_needs_evidence`: unrouted main-line track is Freight unless it runs beside passenger-routed track or its operator is an agency
+#[test]
+fn passenger_needs_evidence_beside_route_or_agency() {
+    // way/1 is on a train route; way/2 runs 11 m beside it; way/3 is 1 km away; way/4 is 1 km away too, operated by Amtrak; way/5 is far and has no usage
+    let at = |dlat: i32| vec![(400_000_000 + dlat, -1_200_000_000), (400_000_000 + dlat, -1_197_000_000)]; // 25 km long: too long for the branch-without-station test;
+    let ways: Vec<(Vec<&[u8]>, Vec<(i32, i32)>, bool)> = vec![
+        (vec![b"usage" as &[u8], b"main"], at(0), true),
+        (vec![b"usage", b"main"], at(1_000), false),
+        (vec![b"usage", b"main"], at(100_000), false),
+        (vec![b"usage", b"main", b"operator", b"Amtrak"], at(200_000), false),
+        (vec![b"usage", b"branch"], at(300_000), false),
+        (vec![b"usage", b"main"], at(2_700), false), // 30 m beside: outside the 25 m
+    ];
+    let mut feats = Vec::new();
+    let mut spans = Vec::new();
+    for i in 0..ways.len() {
+        let line = format!("{{\"type\":\"Feature\",\"properties\":{{\"osm_id\":\"way/{}\"}},\"geometry\":null}}\n", i + 1);
+        spans.push((feats.len(), feats.len() + line.len(), feats.len() + line.find("},\"geometry\"").unwrap()));
+        feats.extend_from_slice(line.as_bytes());
+    }
+    let tracks: Vec<TrackIn> = ways
+        .iter()
+        .enumerate()
+        .map(|(i, (kv, ll, routed))| {
+            let mut t: Vec<(&[u8], &[u8])> = vec![(b"railway", b"rail")];
+            t.extend(kv.chunks(2).map(|c| (c[0], c[1])));
+            TrackIn {
+                start: spans[i].0,
+                end: spans[i].1,
+                pos: spans[i].2,
+                props: FeatProps { tags: List(t), osm_id: format!("way/{}", i + 1) },
+                routes: if *routed { vec!["relation/9".to_string()] } else { Vec::new() },
+                first: ll[0],
+                ll: ll.clone(),
+            }
+        })
+        .collect();
+    let rows = [RelRow {
+        id: "relation/9".into(),
+        route: true,
+        master: false,
+        tags: Owned(vec![("route".into(), "train".into())]),
+        rel_members: vec![],
+    }];
+    let kinds = |cfg: &Cfg| -> Vec<(String, String)> {
+        let out = classify("t", cfg, &rows, &feats, &tracks, &FxHashSet::default(), &[]);
+        String::from_utf8(out.typed).unwrap().lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).map(|v| (v["properties"]["type"].as_str().unwrap().to_string(), v["properties"]["type_source"].as_str().unwrap().to_string())).collect()
+    };
+    let off = kinds(&cfg_json(json!({})));
+    assert!(off.iter().all(|(_, s)| s != "no-evidence"), "off by default: {off:?}");
+    let on = kinds(&cfg_json(json!({ "passenger_needs_evidence": true, "passenger_operator_re": ["(?i)\\bAmtrak\\b"] })));
+    assert_eq!(on[0].1, "route");
+    assert_eq!(on[1].0, "intercity", "beside the routed way stays passenger: {on:?}");
+    assert_eq!(on[2], ("freight".to_string(), "no-evidence".to_string()));
+    assert_eq!(on[3].0, "intercity", "an agency operator stays passenger: {on:?}");
+    assert_eq!(on[4], ("freight".to_string(), "no-evidence".to_string()));
+    assert_eq!(on[5], ("freight".to_string(), "no-evidence".to_string()), "30 m away is not beside: {on:?}");
+    // an exemption on `type_source: no-evidence` restores the demoted way to what its tags say, and only those
+    let ex = kinds(&cfg_json(json!({
+        "passenger_needs_evidence": true,
+        "exemptions": [
+            { "id": "keep-3", "match": { "osm_id": "way/3", "type_source": "no-evidence" }, "action": { "freight": false }, "reason": "test" },
+            { "id": "not-route", "match": { "osm_id": "way/1", "type_source": "no-evidence" }, "action": { "freight": true }, "reason": "test", "expect_min": 0 }
+        ]
+    })));
+    assert_eq!(ex[2], ("intercity".to_string(), "exemption".to_string()));
+    assert_eq!(ex[0].1, "route", "type_source decides which ways an exemption touches");
+    assert_eq!(ex[4].1, "no-evidence");
+}

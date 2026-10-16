@@ -1,6 +1,6 @@
 {
   "extends": "_default",
-  "_comment": "Shared by us.json and ca.json (\"extends\": \"_north-america\"): the generic North American freight and tourist-line rules. See docs/12-config-and-exemptions.md.",
+  "_comment": "Shared by us.json and ca.json (\"extends\": \"_north-america\"): the generic North American freight and tourist-line rules. passenger_needs_evidence (2026-10-16, docs/13-freight-north-america.md): main-line track typed from its tags alone is Freight unless it runs beside passenger-routed track or its operator matches passenger_operator_re. See docs/12-config-and-exemptions.md.",
   "high_speed_min_kmh": 200,
   "type_overrides": [
     {
@@ -25,5 +25,9 @@
       "type": "other"
     }
   ],
-  "freight_operator_exempt_re": "(?i)Metra|Metro-North|Long Island Rail|SEPTA|NJ ?Transit|New Jersey Transit|MARC|Maryland Area|Caltrain|Peninsula Corridor|Virginia Railway Express|Amtrak|Metrolink|Southern California Regional|Sound Transit|North County Transit|Brightline|MBTA|Massachusetts Bay|Tri-Rail|South Florida Regional|Northern Indiana Commuter|Trinity Railway|GO Transit|Metrolinx|VIA Rail|Capital Metro|Utah Transit|Rio Metro|SMART|Altamont|Connecticut Department of Transportation|CTrail|Shore Line East|New Mexico Rail Runner|Denton County|Scenic|Excursion|Historical|Wine Train|Heritage|Tourist"
+  "freight_operator_exempt_re": "(?i)Metra|Metro-North|Long Island Rail|SEPTA|NJ ?Transit|New Jersey Transit|MARC|Maryland Area|Caltrain|Peninsula Corridor|Virginia Railway Express|Amtrak|Metrolink|Southern California Regional|Sound Transit|North County Transit|Brightline|MBTA|Massachusetts Bay|Tri-Rail|South Florida Regional|Northern Indiana Commuter|Trinity Railway|GO Transit|Metrolinx|VIA Rail|Capital Metro|Utah Transit|Rio Metro|SMART|Altamont|Connecticut Department of Transportation|CTrail|Shore Line East|New Mexico Rail Runner|Denton County|Scenic|Excursion|Historical|Wine Train|Heritage|Tourist",
+  "passenger_needs_evidence": true,
+  "passenger_operator_re": [
+    "(?i)\\b(Amtrak|Metra|Metro-North|Long Island Rail Road|SEPTA|NJ ?Transit|New Jersey Transit|MARC|Maryland Area Regional|Caltrain|Peninsula Corridor|Virginia Railway Express|Metrolink|Southern California Regional Rail|Sound Transit|North County Transit|Brightline|MBTA|Massachusetts Bay Transportation|Tri-Rail|South Florida Regional|Northern Indiana Commuter|NICTD|Trinity Railway|GO Transit|Metrolinx|VIA Rail|Capital Metro|Utah Transit|Rio Metro|Altamont Corridor|CTrail|Connecticut Department of Transportation|Shore Line East|Denton County|exo|West Coast Express|Alaska Railroad|Northstar|Sounder|Coaster|FrontRunner)\\b"
+  ]
 }
