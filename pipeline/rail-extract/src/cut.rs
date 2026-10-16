@@ -284,6 +284,8 @@ fn airport_feature(t: &List, kind_id: String, polys: &[Poly]) -> Option<Vec<u8>>
 
 pub struct Summary {
     pub line: String,
+    /// exemptions that matched fewer features than their expect_min
+    pub stale: Vec<String>,
 }
 
 pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) -> Summary {
@@ -601,6 +603,8 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
                 }
                 if is_track && cfg.is_some() {
                     tracks.push(classify::TrackIn {
+                        start: feats.len(),
+                        end: feats.len() + f.line.len(),
                         pos: feats.len() + f.props_end,
                         props: classify::FeatProps { tags: tl, osm_id: format!("way/{id}") },
                         routes,
@@ -781,6 +785,7 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
 
     // ---- rail types (was classify.py): features.typed.geojsonl, lines.json, classify_report.json
     let t_class = std::time::Instant::now();
+    let mut stale: Vec<String> = Vec::new();
     let class_note = match cfg {
         Some(cfg) => {
             let rel_rows: Vec<classify::RelRow> = kept
@@ -797,6 +802,7 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
             wr("features.typed.geojsonl", &out.typed);
             wr("lines.json", &out.lines);
             wr("classify_report.json", &out.report);
+            stale = out.stale.iter().map(|w| format!("{}: {w}", reg.slug)).collect();
             format!("; classified {} track pieces, {} lines in {:.2}s", tracks.len(), out.n_lines, t_class.elapsed().as_secs_f64())
         }
         None => "; not classified (no pipeline/config/<slug>.json)".to_string(),
@@ -819,5 +825,6 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
             t0.elapsed().as_secs_f64(),
             class_note
         ),
+        stale,
     }
 }

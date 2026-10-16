@@ -21,6 +21,7 @@ mod assemble;
 mod build;
 mod cache;
 mod classify;
+mod config;
 mod construction;
 mod cut;
 mod out;
@@ -49,7 +50,7 @@ fn repo() -> PathBuf {
 fn usage() -> ! {
     eprintln!(
         "usage:\n  rail-extract cache --planet PLANET.osm.pbf [--out data/cache/<planet>.railcache] [--threads N]\n  \
-         rail-extract cut [--cache FILE] [--regions DIR] [--data DIR] [--threads N] <slug>...\n  \
+         rail-extract cut [--cache FILE] [--regions DIR] [--data DIR] [--threads N] [--strict-exemptions] <slug>...\n  \
          rail-extract outlines --level 2|4 [--country CC] [--cache FILE] [--out data/regions]\n  \
          rail-extract build <slug>... [--no-tiles | --combined NAME]      (cut ... --build: build straight after the cut)\n  \
          rail-extract tiles <slug>... [--name NAME] [--out DIR] [--data DIR]\n  \
@@ -200,7 +201,7 @@ fn main() {
                 i += 2;
             }
             "-h" | "--help" => usage(),
-            k @ ("--build" | "--no-tiles") => {
+            k @ ("--build" | "--no-tiles" | "--strict-exemptions") => {
                 opt.insert(k, String::new());
                 i += 1;
             }
@@ -247,7 +248,7 @@ fn main() {
                 c.rel_idx().len()
             );
             // regions are independent: cut them in parallel
-            let lines: Vec<String> = rest
+            let sums: Vec<cut::Summary> = rest
                 .par_iter()
                 .map(|slug| {
                     let path = dirs
@@ -259,11 +260,19 @@ fn main() {
                     // rail types need the region's rules: its own config, else the template
                     let (cfg_path, _) = site::config_path(&root.join("pipeline/config"), slug);
                     let cfg = Some(classify::Cfg::load(&cfg_path, &root.join("pipeline/regions")));
-                    cut::cut(&c, &reg, &data.join(slug), cfg.as_ref()).line
+                    cut::cut(&c, &reg, &data.join(slug), cfg.as_ref())
                 })
                 .collect();
-            for l in lines {
-                eprintln!("  {l}");
+            for s in &sums {
+                eprintln!("  {}", s.line);
+            }
+            let stale: Vec<&String> = sums.iter().flat_map(|s| &s.stale).collect();
+            for w in &stale {
+                eprintln!("  WARNING: {w}");
+            }
+            if !stale.is_empty() && opt.contains_key("--strict-exemptions") {
+                eprintln!("{} stale exemption(s) and --strict-exemptions: failing", stale.len());
+                std::process::exit(1);
             }
             let n_default = rest.iter().filter(|s| site::config_path(&root.join("pipeline/config"), s).1).count();
             if n_default > 0 {

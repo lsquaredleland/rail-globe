@@ -1,5 +1,8 @@
 """Phase 2 'Done when' check: run the hand-made answer list against a region's output.
-Usage: python3 check.py [slug ...]   (default: all three). Exit code 1 if anything fails."""
+Usage: python3 check.py [slug ...]   (default: all three). Exit code 1 if anything fails.
+       python3 check.py --exemptions [--data DIR] [slug ...]   only the stale-exemption check (default: every region in DIR with a
+       classify_report.json): fails when an exemption in pipeline/config matched fewer features than its expect_min.
+       See docs/12-config-and-exemptions.md."""
 import json, re, sys
 from pathlib import Path
 
@@ -42,6 +45,33 @@ def check_line(rule, lines):
     return not bad, f'{c[0]["name"]} -> {c[0]["type"]}' + (f' | {len(bad)} of {len(c)} not {rule["type"]}' if bad else "")
 
 
+def check_exemptions(slug, data=DATA):
+    """Read data/<slug>/classify_report.json; returns the number of stale exemptions (printed, one line per exemption)."""
+    path = data / slug / "classify_report.json"
+    rep = json.load(open(path)).get("exemptions", {}) if path.exists() else {}
+    stale = 0
+    for ex_id, e in rep.items():
+        ok = e["expect_min_met"]
+        stale += not ok
+        print(f'  {"PASS" if ok else "FAIL"} exempt  {ex_id:40} matched {e["matched"]} ({e["tracks"]} track, {e["lines"]} line, {e["km"]} km), expect_min {e["expect_min"]}')
+    return stale
+
+
+def main_exemptions(args):
+    data = DATA
+    if "--data" in args:
+        i = args.index("--data")
+        data = Path(args[i + 1])
+        del args[i:i + 2]
+    slugs = args or sorted(p.parent.name for p in data.glob("*/classify_report.json"))
+    failed = 0
+    for slug in slugs:
+        print(f"== {slug} exemptions")
+        failed += check_exemptions(slug, data)
+    print(f"\n{'ALL PASS' if not failed else str(failed) + ' STALE'}")
+    return 1 if failed else 0
+
+
 def main(slugs):
     failed = 0
     for slug in slugs:
@@ -53,9 +83,12 @@ def main(slugs):
                 ok, msg = fn(rule, *args)
                 failed += not ok
                 print(f'  {"PASS" if ok else "FAIL"} {kind:7} {rule["match"]:40} {msg}')
+        failed += check_exemptions(slug)
     print(f"\n{'ALL PASS' if not failed else str(failed) + ' FAILED'}")
     return 1 if failed else 0
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--exemptions"]:
+        sys.exit(main_exemptions(sys.argv[2:]))
     sys.exit(main(sys.argv[1:] or ["sf-bay-area", "chengdu", "paris"]))
