@@ -4,6 +4,13 @@
 #   R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
 # Use an R2 API token scoped to "Object Read & Write" on this one bucket.
 set -euo pipefail
+# Credentials may live in r2/.env (gitignored; copy r2/.env.example). Variables already in the environment win.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$HERE/.env" ]; then
+  while IFS='=' read -r k v; do
+    case "$k" in R2_ACCOUNT_ID|R2_BUCKET|R2_ACCESS_KEY_ID|R2_SECRET_ACCESS_KEY) [ -z "${!k:-}" ] && export "$k=$v" ;; esac
+  done < "$HERE/.env"
+fi
 : "${R2_ACCOUNT_ID:?}" "${R2_BUCKET:?}" "${R2_ACCESS_KEY_ID:?}" "${R2_SECRET_ACCESS_KEY:?}"
 cd "$(dirname "$0")/../app/public"
 
