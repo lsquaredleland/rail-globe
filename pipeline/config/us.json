@@ -1,13 +1,15 @@
 {
-  "_comment": "All of United States (data/regions/us.geojson, admin level 2). Generic rules, added for the Americas timing build.",
+  "extends": "_north-america",
+  "_comment": "All of United States (data/regions/us.geojson, admin level 2). Generic North American rules come from _north-america.json; only what differs from Canada is here.",
   "stat_name": "United States",
   "stat_local": "United States",
-  "china": false,
-  "commuter_networks": [],
+  "stat_auto": {
+    "country": "US"
+  },
   "high_speed_networks_re": [
     "^Acela"
   ],
-  "type_overrides": [
+  "+type_overrides": [
     {
       "match": {
         "name_re": "^MARC "
@@ -22,7 +24,7 @@
     },
     {
       "match": {
-        "name_re": "^Amtrak (Northeast Regional|Silver Meteor|Auto Train|Cascades|Adirondack)\\b"
+        "name_re": "^Amtrak (Northeast Regional|Silver Meteor|Auto Train)\\b"
       },
       "type": "intercity"
     },
@@ -33,34 +35,74 @@
       "type": "intercity"
     }
   ],
-  "main_terminals": [],
-  "stat_auto": {
-    "country": "US",
-    "levels": [
-      "4"
-    ]
-  },
-  "high_speed_min_kmh": 200,
-  "freight_name_re": "(?i)\\b(Subdivision|Sub|District|Division|Railroad|Railway|Rail Line|Rail Link|Branch|Secondary|Industrial|Lead|Spur|RR)\\b",
-  "track_type_overrides": [
+  "exemptions": [
+    {
+      "id": "amtrak-terminal-districts",
+      "match": {
+        "name_re": "^(New York|Washington) Terminal District$",
+        "operator_re": "^Amtrak$",
+        "type": "freight"
+      },
+      "action": {
+        "type": "intercity"
+      },
+      "reason": "Amtrak's own track in and around Penn Station New York and Washington Union Station. Tagged usage=main with no freight tag, but no station node sits within 200 m, so the no-station test calls it freight.",
+      "source": "https://en.wikipedia.org/wiki/Northeast_Corridor",
+      "added": "2026-10-15",
+      "expect_min": 100
+    },
+    {
+      "id": "metro-north-lines",
+      "match": {
+        "name_re": "^(Hudson|Harlem|New Haven) Line$|^(Waterbury|Danbury) Branch$",
+        "operator_re": "^Metro-North Railroad$",
+        "type": "freight"
+      },
+      "action": {
+        "type": "regional"
+      },
+      "reason": "Metro-North commuter lines (usage=main or branch, no freight tag) that the no-station test calls freight because the stations are not within 200 m of these ways.",
+      "source": "https://en.wikipedia.org/wiki/Metro-North_Railroad",
+      "added": "2026-10-15",
+      "expect_min": 30
+    },
+    {
+      "id": "lirr-lines",
+      "match": {
+        "name_re": "^(Port Jefferson|Hempstead|Atlantic|Belmont Park) Branch$|^New York Terminal District$",
+        "operator_re": "^Long Island Rail Road$",
+        "type": "freight"
+      },
+      "action": {
+        "type": "regional"
+      },
+      "reason": "Long Island Rail Road passenger branches and the Penn Station terminal tracks (usage=main or branch, no freight tag), typed freight by the no-station test. The Montauk Branch is left out: some of its ways are tagged railway:traffic_mode=freight.",
+      "source": "https://en.wikipedia.org/wiki/Long_Island_Rail_Road",
+      "added": "2026-10-15",
+      "expect_min": 20
+    },
+    {
+      "id": "njt-atlantic-city-line",
+      "match": {
+        "name_re": "^Atlantic City Line$",
+        "operator_re": "^New Jersey Transit$",
+        "type": "freight"
+      },
+      "action": {
+        "type": "regional"
+      },
+      "reason": "NJ Transit's Philadelphia to Atlantic City passenger line (usage=main), typed freight by the no-station test.",
+      "source": "https://en.wikipedia.org/wiki/Atlantic_City_Line_(NJ_Transit)",
+      "added": "2026-10-15",
+      "expect_min": 10
+    }
+  ],
+  "+track_type_overrides": [
     {
       "match": {
         "name_re": "^Metrolink .*Subdivision"
       },
       "type": "regional"
-    },
-    {
-      "match": {
-        "operator_re": "(?i)Scenic|Excursion|Historical|Wine Train|Heritage|Tourist"
-      },
-      "type": "other"
-    },
-    {
-      "match": {
-        "name_re": "^(Texas State Railroad|Great Smoky Mountains Railroad|Napa Valley Railroad|Conway Scenic|Cuyahoga Valley Scenic|Oregon Coast Scenic|Port of Tillamook Bay Railroad|Boone and Scenic|Tennessee Overhill)"
-      },
-      "type": "other"
     }
-  ],
-  "freight_operator_exempt_re": "(?i)Metra|Metro-North|Long Island Rail|SEPTA|NJ ?Transit|New Jersey Transit|MARC|Maryland Area|Caltrain|Peninsula Corridor|Virginia Railway Express|Amtrak|Metrolink|Southern California Regional|Sound Transit|North County Transit|Brightline|MBTA|Massachusetts Bay|Tri-Rail|South Florida Regional|Northern Indiana Commuter|Trinity Railway|GO Transit|Metrolinx|VIA Rail|Capital Metro|Utah Transit|Rio Metro|SMART|Altamont|Connecticut Department of Transportation|CTrail|Shore Line East|New Mexico Rail Runner|Denton County|Scenic|Excursion|Historical|Wine Train|Heritage|Tourist"
+  ]
 }

@@ -69,7 +69,7 @@ pub fn load(dir: &Path, cfg: &Path) -> Input {
         stops: parse_values(&dir.join("stop_positions.jsonl")),
         lines: fs::read_to_string(dir.join("lines.json")).ok().and_then(|t| serde_json::from_str::<Vec<Value>>(&t).ok()).unwrap_or_default(),
         airports: parse_feats(&dir.join("airports.geojsonl")),
-        cfg: fs::read_to_string(cfg).ok().and_then(|t| serde_json::from_str::<Map<String, Value>>(&t).ok()).unwrap_or_default(),
+        cfg: if cfg.exists() { crate::config::load_file(cfg) } else { Map::new() },
     }
 }
 
@@ -104,6 +104,23 @@ pub fn fill_default(cfg: &mut Map<String, Value>, props: &Value) {
     }
 }
 
+/// The stale exemptions (matched fewer features than their expect_min) that a region's cut wrote to classify_report.json.
+pub fn stale_exemptions(report: &Value, slug: &str) -> Vec<String> {
+    let Some(ex) = report["exemptions"].as_object() else { return Vec::new() };
+    ex.iter()
+        .filter(|(_, e)| e["expect_min_met"] == false)
+        .map(|(id, e)| format!("{slug}: stale exemption \"{id}\" matched {} features, expected at least {}", e["matched"], e["expect_min"]))
+        .collect()
+}
+
+fn stale_exemption_warnings(dir: &Path) -> Vec<String> {
+    let slug = dir.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    fs::read_to_string(dir.join("classify_report.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .map_or(Vec::new(), |r| stale_exemptions(&r, slug))
+}
+
 pub struct Paths {
     pub data: PathBuf,         // data/
     pub config: PathBuf,       // pipeline/config/
@@ -131,6 +148,7 @@ pub fn build(slug: &str, paths: &Paths) -> Vec<String> {
         fill_default(&mut inp.cfg, &props);
         log.push(format!("  config: pipeline/config/_default.json (no {slug}.json)"));
     }
+    log.extend(stale_exemption_warnings(&dir).into_iter().map(|w| format!("  WARNING: {w}")));
     lap(&mut log, &mut t, format!("read {} features, {} relations, {} stop positions", inp.feats.len(), inp.rels.len(), inp.stops.len()));
 
     let mut st = stations::run(slug, &inp);

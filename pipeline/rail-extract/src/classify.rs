@@ -86,6 +86,26 @@ impl Get for Merged<'_> {
     }
 }
 
+/// a line's merged tags plus its id, for exemptions
+struct LineTags<'a>(&'a Merged<'a>, &'a str);
+
+impl Get for LineTags<'_> {
+    fn g(&self, k: &str) -> Option<&str> {
+        if k == "osm_id" {
+            return Some(self.1);
+        }
+        self.0.g(k)
+    }
+}
+
+/// what one exemption matched
+#[derive(Default)]
+struct ExStats {
+    tracks: u64,
+    lines: u64,
+    km: f64,
+}
+
 /// classify.py matches(): every key of the rule must match
 struct Rule {
     network: Option<String>,
@@ -93,11 +113,12 @@ struct Rule {
     name_re: Option<Regex>,
     operator_re: Option<Regex>,
     osm_id: Option<Vec<String>>,
+    ref_: Option<String>,
 }
 
 impl Rule {
     fn parse(v: &Value) -> Rule {
-        let mut r = Rule { network: None, network_re: None, name_re: None, operator_re: None, osm_id: None };
+        let mut r = Rule { network: None, network_re: None, name_re: None, operator_re: None, osm_id: None, ref_: None };
         let re = |x: &Value| Regex::new(x.as_str().expect("pattern")).unwrap_or_else(|e| panic!("bad pattern in config: {e}"));
         for (k, x) in v.as_object().expect("match rule") {
             match k.as_str() {
@@ -105,7 +126,8 @@ impl Rule {
                 "network_re" => r.network_re = Some(re(x)),
                 "name_re" => r.name_re = Some(re(x)),
                 "operator_re" => r.operator_re = Some(re(x)),
-                "osm_id" => {
+                "ref" => r.ref_ = Some(x.as_str().expect("ref").to_string()),
+                "osm_id" | "osm_ids" => {
                     r.osm_id = Some(match x {
                         Value::String(s) => vec![s.clone()],
                         Value::Array(a) => a.iter().filter_map(|s| s.as_str().map(String::from)).collect(),
@@ -122,12 +144,78 @@ impl Rule {
             && self.network_re.as_ref().map_or(true, |r| r.is_match(t.g("network").unwrap_or("")))
             && self.name_re.as_ref().map_or(true, |r| r.is_match(t.g("name").unwrap_or("")))
             && self.operator_re.as_ref().map_or(true, |r| r.is_match(t.g("operator").unwrap_or("")))
+            && self.ref_.as_deref().map_or(true, |n| t.g("ref") == Some(n))
             && self.osm_id.as_ref().map_or(true, |ids| t.g("osm_id").map_or(false, |o| ids.iter().any(|i| i == o)))
+    }
+}
+
+/// what an exemption does to the features it matches
+enum Action {
+    Type(String),
+    Freight(bool),
+    Drop,
+}
+
+/// One entry of the config's `exemptions` list (docs/12-config-and-exemptions.md): a named, justified exception to the generic rules.
+/// Applied after all the other rules, in file order (a later entry wins over an earlier one), to the track ways (every action) and to the lines
+/// (route masters, else routes; `type` only).
+pub struct Exemption {
+    id: String,
+    rule: Rule,
+    action: Action,
+    /// `match.type`: only features that the rules above have typed this way
+    was_type: Option<String>,
+    expect_min: u64,
+}
+
+impl Exemption {
+    fn parse(x: &Value) -> Exemption {
+        let o = x.as_object().unwrap_or_else(|| panic!("exemptions: each entry must be an object"));
+        let id = o.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()).unwrap_or_else(|| panic!("exemptions: every entry needs an id")).to_string();
+        let bad = |what: &str| -> ! { panic!("exemption \"{id}\": {what}") };
+        if o.get("reason").and_then(Value::as_str).map_or(true, |s| s.trim().is_empty()) {
+            bad("reason is required (say why the generic rules are wrong here)");
+        }
+        for k in o.keys() {
+            if !["id", "match", "action", "reason", "source", "added", "expect_min"].contains(&k.as_str()) {
+                bad(&format!("unknown key {k}"));
+            }
+        }
+        let m = o.get("match").and_then(Value::as_object).filter(|m| !m.is_empty()).unwrap_or_else(|| bad("match must be an object with at least one key"));
+        let mut m = m.clone();
+        let was_type = match m.remove("type") {
+            None => None,
+            Some(Value::String(t)) if ORDER.contains(&t.as_str()) || t == "freight" || t == "yard" => Some(t),
+            Some(_) => bad("match.type must be a rail type (freight, regional, ...)"),
+        };
+        if m.is_empty() {
+            bad("match.type is a condition, not a selector: add name_re, operator_re, ref, network_re or osm_id");
+        }
+        let rule = Rule::parse(&Value::Object(m));
+        for i in rule.osm_id.iter().flatten() {
+            let ok = i.split_once('/').map_or(false, |(k, n)| matches!(k, "way" | "relation" | "node") && !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+            if !ok {
+                bad(&format!("osm id {i:?} must look like way/123 or relation/456"));
+            }
+        }
+        let a = o.get("action").and_then(Value::as_object).unwrap_or_else(|| bad("action must be an object"));
+        let action = match (a.len(), a.get("type"), a.get("freight"), a.get("drop")) {
+            (1, Some(Value::String(t)), None, None) if ORDER.contains(&t.as_str()) || t == "freight" => Action::Type(t.clone()),
+            (1, None, Some(Value::Bool(b)), None) => Action::Freight(*b),
+            (1, None, None, Some(Value::Bool(true))) => Action::Drop,
+            _ => bad("action must be exactly one of {\"type\": <rail type>}, {\"freight\": true|false}, {\"drop\": true}"),
+        };
+        let expect_min = match o.get("expect_min") {
+            None => 1,
+            Some(v) => v.as_u64().unwrap_or_else(|| bad("expect_min must be a whole number")),
+        };
+        Exemption { id, rule, action, was_type, expect_min }
     }
 }
 
 /// pipeline/config/<slug>.json, as classify.py reads it
 pub struct Cfg {
+    exemptions: Vec<Exemption>,
     china: bool,
     type_overrides: Vec<(Rule, String)>,
     track_type_overrides: Vec<(Rule, String)>,
@@ -150,8 +238,7 @@ impl Cfg {
     }
 
     pub fn load(path: &Path, regions_dir: &Path) -> Cfg {
-        let v: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display())))
-            .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+        let v = Value::Object(crate::config::load_file(path));
         let truthy = |x: &Value| match x {
             Value::Bool(b) => *b,
             Value::Number(n) => n.as_f64().map_or(false, |f| f != 0.0),
@@ -176,7 +263,14 @@ impl Cfg {
             let p = path.parent().unwrap_or(Path::new(".")).join(f);
             std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display())).lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
         });
+        let exemptions: Vec<Exemption> = v.get("exemptions").and_then(Value::as_array).map_or(Vec::new(), |a| a.iter().map(Exemption::parse).collect());
+        for (i, x) in exemptions.iter().enumerate() {
+            if exemptions[..i].iter().any(|y| y.id == x.id) {
+                panic!("exemptions: id \"{}\" is used twice in {}", x.id, path.display());
+            }
+        }
         Cfg {
+            exemptions,
             passenger_names,
             china: v.get("china").map_or(false, truthy),
             type_overrides: overrides("type_overrides"),
@@ -502,6 +596,8 @@ pub struct RelRow {
 
 /// a feature line of features.geojsonl that is a candidate track (a way written as a LineString)
 pub struct TrackIn<'a> {
+    pub start: usize, // byte range of the whole feature line in the features buffer (an exemption can drop it)
+    pub end: usize,
     pub pos: usize, // byte position in the features buffer where its properties object closes
     pub props: FeatProps<'a>,
     pub routes: Vec<String>,
@@ -510,6 +606,8 @@ pub struct TrackIn<'a> {
 }
 
 pub struct Out {
+    /// exemptions that matched fewer features than their expect_min, as warning text
+    pub stale: Vec<String>,
     pub typed: Vec<u8>,
     pub lines: Vec<u8>,
     pub report: Vec<u8>,
@@ -561,6 +659,7 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
             route_master.insert(format!("relation/{id}"), m.id.as_str());
         }
     }
+    let mut ex_stats: Vec<ExStats> = cfg.exemptions.iter().map(|_| ExStats::default()).collect();
     let rtype: Vec<(String, &'static str)> = routes.iter().map(|r| route_type(&r.tags, cfg, hs_routes.contains(&r.id))).collect();
 
     // lines: route_master where one exists, else the route; master type = most prominent of its routes
@@ -588,7 +687,17 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
             t = ty.clone();
         }
         let (first, tags) = (&first_route.tags, &src.tags);
-        let ts = rtype[rids[0]].1;
+        let mut ts = rtype[rids[0]].1;
+        // exemptions beat every rule above (a later one beats an earlier one)
+        for (xi, x) in cfg.exemptions.iter().enumerate() {
+            if let Action::Type(ty) = &x.action {
+                if x.was_type.as_deref().map_or(true, |w| w == t) && x.rule.matches(&LineTags(&merged, lid)) {
+                    t = ty.clone();
+                    ts = "exemption";
+                    ex_stats[xi].lines += 1;
+                }
+            }
+        }
         bump(&mut by_type, &t);
         bump(&mut by_type_src, &format!("{t}/{ts}"));
         // json.dump with Python's default separators (", " and ": ")
@@ -760,10 +869,42 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
             }
         }
     }
+    // exemptions: applied last, so they win over everything above
+    let mut dropped = vec![false; tracks.len()];
+    if !cfg.exemptions.is_empty() {
+        for (ti, tr) in tracks.iter().enumerate() {
+            let Some(d) = decided[ti].as_mut() else { continue };
+            for (xi, x) in cfg.exemptions.iter().enumerate() {
+                if x.was_type.as_deref().map_or(false, |w| w != d.t) || !x.rule.matches(&tr.props) {
+                    continue;
+                }
+                ex_stats[xi].tracks += 1;
+                ex_stats[xi].km += ll_km(&tr.ll);
+                dropped[ti] = false;
+                match &x.action {
+                    Action::Type(ty) => (d.t, d.s) = (ty.clone(), "exemption"),
+                    Action::Freight(true) => (d.t, d.s) = ("freight".into(), "exemption"),
+                    Action::Freight(false) => {
+                        if d.t == "freight" {
+                            // back to what its own tags say, or Regional when those say freight too
+                            d.t = d.own.clone().filter(|o| o != "freight").unwrap_or_else(|| "regional".into());
+                            d.s = "exemption";
+                        }
+                    }
+                    Action::Drop => dropped[ti] = true,
+                }
+            }
+        }
+    }
     for (ti, tr) in tracks.iter().enumerate() {
         let Some(Decided { t, s, own }) = decided[ti].take() else { continue };
         let p = &tr.props;
         let rw = p.g("railway").unwrap_or("");
+        if dropped[ti] {
+            typed.extend_from_slice(&feats[at..tr.start]);
+            at = tr.end;
+            continue;
+        }
         typed.extend_from_slice(&feats[at..tr.pos]);
         at = tr.pos;
         if rw == "construction" {
@@ -787,7 +928,27 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
     }
     typed.extend_from_slice(&feats[at..]);
 
-    let report = J::obj(vec![
+    let mut stale = Vec::new();
+    let mut ex_report = Vec::new();
+    for (x, st) in cfg.exemptions.iter().zip(&ex_stats) {
+        let matched = st.tracks + st.lines;
+        let met = matched >= x.expect_min;
+        if !met {
+            stale.push(format!("stale exemption \"{}\" matched {matched} features, expected at least {}", x.id, x.expect_min));
+        }
+        ex_report.push((
+            x.id.clone(),
+            J::obj(vec![
+                ("matched", J::Int(matched as i64)),
+                ("tracks", J::Int(st.tracks as i64)),
+                ("lines", J::Int(st.lines as i64)),
+                ("km", J::Raw(format!("{:.1}", st.km))),
+                ("expect_min", J::Int(x.expect_min as i64)),
+                ("expect_min_met", J::Raw(met.to_string())),
+            ]),
+        ));
+    }
+    let mut report = J::obj(vec![
         ("region", J::s(slug)),
         ("track_by_type", J::Obj(most_common(&counts))),
         ("track_by_type_and_source", J::Obj(sources.iter().map(|((t, s), n)| (format!("{t}/{s}"), J::Int(*n))).collect())),
@@ -795,7 +956,14 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         ("lines_by_type", J::Obj(most_common(&by_type))),
         ("lines_by_type_source", J::Obj(most_common(&by_type_src))),
     ]);
+    if let (J::Obj(fields), false) = (&mut report, ex_report.is_empty()) {
+        fields.push(("exemptions".into(), J::Obj(ex_report)));
+    }
     let mut rep = Vec::new();
     report.write_pretty(&mut rep, 0);
-    Out { typed, lines: lines_out, report: rep, n_lines: line_ids.len() }
+    Out { stale, typed, lines: lines_out, report: rep, n_lines: line_ids.len() }
 }
+
+#[cfg(test)]
+#[path = "classify_tests.rs"]
+mod tests;

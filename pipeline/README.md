@@ -133,6 +133,7 @@ and `china` (mainland + Hong Kong + Macao) came from Nominatim (`build_regions.p
 
 New region: an outline (generated, or a hand-made GeoJSON Feature in `regions/<slug>.geojson`) and, if it needs its own rules,
 `config/<slug>.json` (otherwise `config/_default.json` is used), then `cut <slug>`; the planet is not read again.
+A config can `"extends"` another (`_north-america`) and list justified `exemptions` to the generic rules: `docs/12-config-and-exemptions.md`.
 Changing which tags are kept (`rail-extract/src/rules.rs`, `cache_key`) needs a new cache; changing the rules for what is cut
 only needs a rebuild of the binary and a new cut.
 

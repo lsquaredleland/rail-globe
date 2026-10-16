@@ -119,6 +119,8 @@ pub fn js_opt(out: &mut Vec<u8>, s: Option<&[u8]>) {
 pub enum J {
     Null,
     Int(i64),
+    /// a number already written as JSON text (a fixed-decimals float)
+    Raw(String),
     Str(String),
     Arr(Vec<J>),
     Obj(Vec<(String, J)>),
@@ -139,6 +141,7 @@ impl J {
         match self {
             J::Null => out.extend_from_slice(b"null"),
             J::Int(i) => int(out, *i),
+            J::Raw(s) => out.extend_from_slice(s.as_bytes()),
             J::Str(s) => py_str(out, s),
             J::Arr(v) if v.is_empty() => out.extend_from_slice(b"[]"),
             J::Obj(v) if v.is_empty() => out.extend_from_slice(b"{}"),
