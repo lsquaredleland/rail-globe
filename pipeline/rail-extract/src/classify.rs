@@ -939,10 +939,13 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
             ("yard".into(), "service")
         } else {
             let (o, src) = own_tag_type(p, cfg);
-            let best = highest(
-                tr.routes.iter().filter_map(|r| route_line_type(r)).chain(if o == "high_speed" { Some(o.as_str()) } else { None }),
-            )
-            .map(str::to_string);
+            // A route's High-speed type is the service's (a TGV runs on conventional line too), so it only counts on track that is
+            // high-speed itself (highspeed=yes, or maxspeed at the floor); other track of such a route takes its next best route type, else Intercity.
+            let route_types: Vec<&str> = tr.routes.iter().filter_map(|r| route_line_type(r)).collect();
+            let own_hs = o == "high_speed";
+            let best = highest(route_types.iter().copied().filter(|t| own_hs || *t != "high_speed").chain(own_hs.then_some("high_speed")))
+                .or_else(|| route_types.contains(&"high_speed").then_some("intercity"))
+                .map(str::to_string);
             own = Some(o.clone());
             match best {
                 Some(b) => (b, "route"),

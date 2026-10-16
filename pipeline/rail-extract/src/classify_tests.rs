@@ -266,3 +266,44 @@ fn intercity_chain_between_regional_track_becomes_regional() {
     assert_eq!((ty(1), ty(2)), ("regional".to_string(), "regional".to_string()), "{typed:?}");
     assert_eq!(ty(4), "intercity", "an isolated piece is not part of a line: {typed:?}");
 }
+
+/// a high-speed service type applies only to track that is high-speed itself; the rest of such a route is Intercity
+#[test]
+fn high_speed_route_type_needs_high_speed_track() {
+    let rows = [RelRow {
+        id: "relation/9".into(),
+        route: true,
+        master: false,
+        tags: Owned(vec![("route".into(), "train".into()), ("service".into(), "high_speed".into())]),
+        rel_members: vec![],
+    }];
+    let ways: Vec<Vec<(&[u8], &[u8])>> = vec![
+        vec![(b"railway", b"rail"), (b"maxspeed", b"300")],  // way/1: the LGV itself
+        vec![(b"railway", b"rail"), (b"maxspeed", b"120")],  // way/2: conventional line the TGV also uses
+        vec![(b"railway", b"rail"), (b"highspeed", b"yes")], // way/3: tagged high-speed
+    ];
+    let mut feats = Vec::new();
+    let mut spans = Vec::new();
+    for i in 0..ways.len() {
+        let l = format!("{{\"type\":\"Feature\",\"properties\":{{\"osm_id\":\"way/{}\"}},\"geometry\":null}}\n", i + 1);
+        spans.push((feats.len(), feats.len() + l.len(), feats.len() + l.find("},\"geometry\"").unwrap()));
+        feats.extend_from_slice(l.as_bytes());
+    }
+    let tracks: Vec<TrackIn> = ways
+        .iter()
+        .enumerate()
+        .map(|(i, t)| TrackIn {
+            start: spans[i].0,
+            end: spans[i].1,
+            pos: spans[i].2,
+            props: FeatProps { tags: List(t.clone()), osm_id: format!("way/{}", i + 1) },
+            routes: vec!["relation/9".to_string()],
+            first: (i as i32 * 1_000_000, 0),
+            ll: vec![(i as i32 * 1_000_000, 0), (i as i32 * 1_000_000, 10_000)],
+        })
+        .collect();
+    let out = classify("t", &cfg_json(json!({})), &rows, &feats, &tracks, &FxHashSet::default(), &[]);
+    let typed: Vec<Value> = String::from_utf8(out.typed).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let ty = |i: usize| typed[i]["properties"]["type"].as_str().unwrap().to_string();
+    assert_eq!((ty(0), ty(1), ty(2)), ("high_speed".to_string(), "intercity".to_string(), "high_speed".to_string()), "{typed:?}");
+}

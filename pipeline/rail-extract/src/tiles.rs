@@ -422,9 +422,17 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
             if let Some(k) = speed_kmh(s(p, "maxspeed")).filter(|k| *k != 0.0) {
                 props.insert("kmh".into(), json!(k.round_ties_even() as i64));
             }
-            let name = s(p, "name").filter(|v| !v.is_empty());
+            // track with no name of its own is named after its railway (the route=railway relation it belongs to: LGV Sud-Est), not after its services
+            let own_name = s(p, "name").filter(|v| !v.is_empty());
+            let name = own_name.or(s(p, "_rwy").filter(|v| !v.is_empty()));
+            if own_name.is_none() {
+                if let Some(rn) = name {
+                    props.insert("n".into(), json!(rn));
+                }
+            }
             if name.is_some() {
-                if let Some(en) = english_name(p).filter(|en| Some(en.as_str()) != name) {
+                let en = if own_name.is_some() { english_name(p) } else { s(p, "_rwy_en").map(String::from) };
+                if let Some(en) = en.filter(|en| Some(en.as_str()) != name) {
                     props.insert("ne".into(), json!(en));
                 }
             }
@@ -505,11 +513,9 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
                 if let Some(k) = props.get("kmh").and_then(Value::as_i64) {
                     ov.insert("kmh".into(), json!(SPEED_BAND_MINS.iter().find(|&&b| k >= b).copied().unwrap_or(0)));
                 }
-                // a click opens the first line (ln); track with no mapped line is named through its railway number
-                if !props.contains_key("ln") {
-                    if let Some(n) = props.get("n").and_then(Value::as_str) {
-                        ov.insert("nk".into(), json!(nk_of[n]));
-                    }
+                // a click opens the first line (ln); every named track also carries its railway number (nk): the hover names the railway, not the services
+                if let Some(n) = props.get("n").and_then(Value::as_str) {
+                    ov.insert("nk".into(), json!(nk_of[n]));
                 }
                 // a sketch of the metro network for z4-6, with no attributes but the type, so it merges into a few long lines
                 if t == "metro" && !con {

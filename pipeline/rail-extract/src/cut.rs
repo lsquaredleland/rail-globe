@@ -25,6 +25,8 @@ use std::time::Instant;
 struct Ctx {
     way_routes: FxHashMap<i64, BTreeSet<String>>, // way id -> route relation ids ("relation/123", string order as in filter.cpp)
     route_operator: FxHashMap<String, String>,
+    /// way id -> the named infrastructure lines (route=railway) it is a member of: (way members of the line, name, English name); the smallest line names the track
+    way_railway: FxHashMap<i64, Vec<(usize, String, Option<String>)>>,
     member_area: FxHashMap<(u8, i64), String>, // (b'n' | b'w' | b'r', id) -> stop_area id; a later stop area wins
 }
 
@@ -75,6 +77,15 @@ fn feature(t: &List, k: u8, id: i64, geom: &[u8], label: String, ctx: &Ctx) -> F
     key(&mut o, b"osm_id");
     js(&mut o, format!("{}/{id}", osm_type(k)).as_bytes());
     if k == b'w' {
+        // the name of the railway (infrastructure line) the way belongs to, for track with no name of its own: the smallest line that names it
+        if let Some((_, name, en)) = ctx.way_railway.get(&id).and_then(|v| v.iter().min_by_key(|(n, name, _)| (*n, name.clone()))) {
+            key(&mut o, b"_rwy");
+            js(&mut o, name.as_bytes());
+            if let Some(en) = en.as_ref().filter(|e| *e != name) {
+                key(&mut o, b"_rwy_en");
+                js(&mut o, en.as_bytes());
+            }
+        }
         if let Some(rs) = ctx.way_routes.get(&id).filter(|s| !s.is_empty()) {
             key(&mut o, b"_routes");
             o.push(b'[');
@@ -382,7 +393,7 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
     let t_member = t0.elapsed().as_secs_f64();
 
     // ---- relations side table (filter.cpp RelHandler), in id order
-    let mut ctx = Ctx { way_routes: FxHashMap::default(), route_operator: FxHashMap::default(), member_area: FxHashMap::default() };
+    let mut ctx = Ctx { way_routes: FxHashMap::default(), route_operator: FxHashMap::default(), way_railway: FxHashMap::default(), member_area: FxHashMap::default() };
     struct Row {
         kind: RelKind,
         id: String,
@@ -456,6 +467,15 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
                     if m.t == 1 && (m.role.is_empty() || m.role == b"route") {
                         ctx.way_routes.entry(m.id).or_default().insert(rid.clone());
                         route_ways.push(m.id);
+                    }
+                }
+            }
+            RelKind::RailwayLine => {
+                if let Some(name) = t.get(b"name").filter(|n| !n.is_empty()).map(txt) {
+                    let n_ways = r.mem.iter().filter(|m| m.t == 1).count();
+                    let en = crate::rules::english_name(&t).map(txt);
+                    for m in r.mem.iter().filter(|m| m.t == 1) {
+                        ctx.way_railway.entry(m.id).or_default().push((n_ways, name.clone(), en.clone()));
                     }
                 }
             }
