@@ -11,6 +11,10 @@ Replace the placeholders first: `data.example.com` (R2 custom domain) in `app/ve
 4. Cloudflare zone, for the data domain: SSL mode Full (strict), min TLS 1.2, "Always use HTTPS", HSTS on. Add a Cache Rule (cache everything, respect origin headers) and a rate-limiting rule (e.g. 300 requests/min/IP) so range reads cannot run up the bill.
 5. R2 > Manage API tokens: create a token with **Object Read & Write on this bucket only**. No Admin token. Rotate it on a schedule; it exists only in your shell/CI secrets.
 
+## One command, raw data to live site
+`pipeline/publish.sh` (from the repo root) does planet cache, outlines, cut, build, tiles, places, optional glyphs, a check of the output on disk, the R2 upload (copy mode), the push, the R2 prune and a live check of R2 and the site. Credentials: copy `r2/.env.example` to `r2/.env` (gitignored). Always start with `pipeline/publish.sh --dry-run`.
+Hidden files and folders (such as tool state in `.omc/`) are never uploaded: `sync.sh` filters them out.
+
 ## Publish data
 ```
 export R2_ACCOUNT_ID=... R2_BUCKET=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=...

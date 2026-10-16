@@ -3,6 +3,8 @@
 Reference for the pipeline commands. For the first-time sequence from a fresh clone (in the right order, with the prerequisites) see `Run it` in the root `README.md`; run `rail-extract outlines --level 2`, `4` and `5 --country CN` before the first cut (see 'Region outlines' below).
 Needs stable Rust (extraction and MLT tiles; tested with 1.99.0). Python 3 is not needed for the pipeline: `check.py` and `top.py` use the standard library only, `measure_views.py` needs `pmtiles`, `build_regions.py` and `outline_cn.py` need shapely. No tippecanoe or tile-join.
 The commands below are written for running from `pipeline/`; `rail-extract`, `check.py` and the glyph script find the repository from their own location, so they also work from the repository root (`top.py` and `measure_views.py` use relative paths).
+**Raw data to live site, one command:** `pipeline/publish.sh` chains the steps below with R2 and Vercel (stages: tools, cache, outlines, build, glyphs, verify, upload, deploy, prune, live). `pipeline/publish.sh --dry-run` shows what it would do and runs the read-only checks; `--planet FILE` starts from a planet download; `--glyphs` rebuilds the label glyphs; `--push` pushes `main` between the upload and the prune so Vercel builds the app. Credentials come from `r2/.env`. See `r2/README.md`. Do not run a world build unless you mean to (`CLAUDE.md`).
+
 Timings below were measured on 2026-10-12 (14-core Mac, planet-260928).
 
 ```
