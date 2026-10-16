@@ -189,7 +189,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         picked.sort_by_key(|(k, _)| k.to_string());
         for (k, v) in picked {
             let Some((poly, bbox)) = outline(k, dirs) else { continue };
-            let lvl5 = v["admin_level"] == "5" || v["city"] == true;   // `city: true`: an outline fetched by pipeline/fetch_city_outlines.py (any admin level)
+            let lvl5 = v["admin_level"] == "5" || v["city"] == true;   // `city: true`: an outline from `outlines --cities` (any admin level)
             let en = v["name_en"].as_str().or(v["name"].as_str()).unwrap_or(k).trim_end_matches(" City").trim_end_matches(" Prefecture").to_string();
             areas.push(new(k, en.clone(), v["name"].as_str().filter(|n| *n != en).map(String::from), if lvl5 { "city" } else { "province" }, Some(poly), bbox, if lvl5 { min_metro } else { 0 }));
         }

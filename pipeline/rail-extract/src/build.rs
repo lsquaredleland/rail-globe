@@ -4,6 +4,7 @@
 //! once a month, and a region (a city, a country, the world) is cut from the cache in about a second.
 //!
 //! Passes, in this order (the planet is sorted nodes, ways, relations; each pass decodes only its own blobs, in parallel):
+//!   0. nodes, tags only: the Wikidata ids of the place=city nodes, so that pass 1 can keep the boundary of each city (admin levels 6 to 9).
 //!   1. relations: side-table relations (stop areas and groups, rail routes and route masters, route=railway) and area relations
 //!      (station, platform, yard, railway land, station building, aerodrome, terminal multipolygons). Their member ways and
 //!      member nodes are needed even when untagged (multipolygon outlines; route stops for the smart-extract membership rule).
@@ -104,6 +105,43 @@ struct NodeBlk {
     villages: usize, // place=village nodes seen (counted, not kept)
 }
 
+
+/// Wikidata ids of the place=city nodes (a pass over the node blobs, tags only), for the cities' own boundaries
+fn city_wikidata(f: &File, nodes: &[BlobRef]) -> std::collections::HashSet<Vec<u8>> {
+    nodes
+        .par_iter()
+        .map(|r| {
+            with_block(f, r, |raw| {
+                let blk = Block::parse(raw);
+                let (place, wd) = (key_ids(&blk, &[b"place"]), key_ids(&blk, &[b"wikidata"]));
+                let mut out: Vec<Vec<u8>> = Vec::new();
+                if place.is_empty() || wd.is_empty() {
+                    return out;
+                }
+                let mut kvb = Vec::new();
+                for g in &blk.groups {
+                    if group_kind(g) != K_NODES {
+                        continue;
+                    }
+                    for_each_node(g, true, &mut kvb, |_, _, _, kv| {
+                        if kv.is_empty() {
+                            return;
+                        }
+                        let city = kv.chunks_exact(2).any(|p| place.contains(&p[0]) && blk.s(p[1]) == b"city");
+                        if city {
+                            if let Some(p) = kv.chunks_exact(2).find(|p| wd.contains(&p[0])) {
+                                out.push(blk.s(p[1]).to_vec());
+                            }
+                        }
+                    });
+                }
+                out
+            })
+        })
+        .flatten_iter()
+        .collect()
+}
+
 pub fn build(planet: &Path, out: &Path) {
     let t0 = Instant::now();
     let lap = |what: &str| eprintln!("[{:7.1}s] {what}", t0.elapsed().as_secs_f64());
@@ -122,6 +160,10 @@ pub fn build(planet: &Path, out: &Path) {
         "indexed {n} blobs{} (nodes 0..{w0}, ways {w0}..{r0}, relations {r0}..{n})",
         if from_cache { " from the cached index" } else { "" }
     ));
+
+    // ---- pass 0, place nodes: whose boundary is wanted
+    let city_wd = city_wikidata(f, &data[..w0]);
+    lap(&format!("pass 0 (nodes, tags only): {} Wikidata ids of place=city nodes", city_wd.len()));
 
     // ---- pass 1, relations
     let all_rels: Vec<RelOut> = data[r0..]
@@ -145,11 +187,12 @@ pub fn build(planet: &Path, out: &Path) {
                         |keys, vals| {
                             keys.iter().any(|k| ty.contains(k)) && {
                                 let t = Sep { blk: &blk, keys, vals };
-                                rules::rel_kind(&t).is_some() || rules::rel_area_wanted(&t) || rules::admin_boundary(&t)
+                                rules::rel_kind(&t).is_some() || rules::rel_area_wanted(&t) || rules::admin_boundary(&t) || rules::city_boundary(&t, &city_wd)
                             }
                         },
                         |id, b| {
-                            let bnd = rules::admin_boundary(&Sep { blk: &blk, keys: &b.keys, vals: &b.vals });
+                            let sep = Sep { blk: &blk, keys: &b.keys, vals: &b.vals };
+                            let bnd = rules::admin_boundary(&sep) || rules::city_boundary(&sep, &city_wd);
                             let mut tags = Vec::new();
                             ser_tags(&mut tags, b.keys.iter().zip(b.vals.iter()).map(|(&k, &v)| (blk.s(k), blk.s(v))));
                             let mut roles = Vec::new();
@@ -177,7 +220,7 @@ pub fn build(planet: &Path, out: &Path) {
     mem_ways.par_sort_unstable();
     mem_ways.dedup();
     lap(&format!(
-        "pass 1 (relations): {} kept, {} member ways; {} admin boundaries (levels 2, 4), {} boundary ways",
+        "pass 1 (relations): {} kept, {} member ways; {} admin boundaries (levels 2, 4, 5 and the cities' 6 to 9), {} boundary ways",
         rels.len(),
         mem_ways.len(),
         bnd_rels.len(),

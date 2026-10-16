@@ -50,7 +50,7 @@ rail-extract/target/release/rail-extract places --parts ../app/public/data/pilot
 #   the countries of the regions and the provinces / states (level 4) that hold a station complex (outline box, fitting zoom, outline slug), and the CITIES: places.json's labels keep every city and town, but search.json has no towns and only cities with a metro or light rail system:
 #   a place=city (or a level-5 outline of China) with a station complex within 12 km and open passenger track typed `metro` or `light_rail` (not construction, not proposed; monorail alone does not count) within 12 km of its point (exact distance to the track, not a grid);
 #   one entry per metro area: candidates are sorted by rank, then population, then capital flag, then n_stations, and taken greedily, dropping any within 20 km of one already taken (Tokyo, not Shinjuku). A level-5 outline that holds candidate places becomes ONE entry with the outline's box and slug and the best place's name, rank and point (the other places inside it are no entries); level-5 outlines that are districts of a city-province (Hong Kong Island, Kowloon, New Territories) are dropped and level-5 outlines are no longer listed as provinces.
-#   City outlines for the point-only cities: `places` writes <data>/city-outlines-wanted.json; `python3 pipeline/fetch_city_outlines.py` (network, 5 min, cached) writes data/regions/<cc>-<city>.geojson with `city: true` in index.json; then `build` and `places` again (docs/14-city-outlines-and-highlights.md).
+#   City outlines for the point-only cities: `places` writes <data>/city-outlines-wanted.json; `rail-extract outlines --cities <that file>` writes data/regions/<cc>-<city>.geojson with `city: true` in index.json from the cache (the cache keeps the boundaries of admin levels 6 to 9 whose Wikidata id is a place=city node's: rebuild it once after pulling this change); then `build` and `places` again (docs/14-city-outlines-and-highlights.md).
 #   A country with under 3,000 km of open passenger rail (<out>/<slug>/stats.json) and no city entry is listed without its provinces (world: 57 countries, 1,370 provinces left).
 #   Needs <data>/<slug>/features.typed.geojsonl for the metro test. 2026-10-15 world: 146 countries, 1,674 provinces, 726 cities (63 from level-5 outlines), 255 KB (92 KB gzipped); the 1,674 provinces become 1,370 with the small-country rule; pilot: 5, 116, 194 (63), 32 KB.
 python3 check.py                                 # phase 2 "Done when": answer lists in answers/
@@ -127,14 +127,14 @@ rail-extract/target/release/rail-extract outlines --level 2                # 218
 rail-extract/target/release/rail-extract outlines --level 4                # 3,062 provinces / states: cn-sichuan, us-california ... (0.8 s)
 rail-extract/target/release/rail-extract outlines --level 4 --country CN   # just one country's
 rail-extract/target/release/rail-extract outlines --level 5 --country CN   # 342 Chinese prefecture-level cities (cn-chengdu ...); needed by the region cards
-#   (levels 2, 4 and 5 are in the cache; adding a level means rebuilding the cache, 47 s)
+#   (levels 2, 4 and 5 are in the cache, and 6 to 9 for the cities; adding a level means rebuilding the cache, about 70 s)
 rail-extract/target/release/rail-extract cut us-california cn-sichuan      # then cut any of them (about 1 s)
 ```
 
 `../data/regions/index.json` lists every outline (name, English name, level, country, ISO code, OSM relation). Hand-made outlines
 in `regions/` win over generated ones with the same slug: `sf-bay-area` (9 counties), `paris`, `chengdu`, `greater-bay-area`
 and `china` (mainland + Hong Kong + Macao) came from Nominatim (`build_regions.py` unions the boundary dumps in `regions/*.json`;
-`outline_cn.py` looks up the China ones, 47 s). Cities and counties (levels 5 to 8) are not in the cache yet.
+`outline_cn.py` looks up the China ones, 47 s). City boundaries (levels 6 to 9, only those of place=city nodes) are in the cache since 2026-10-16: `outlines --cities` (docs/14).
 
 New region: an outline (generated, or a hand-made GeoJSON Feature in `regions/<slug>.geojson`) and, if it needs its own rules,
 `config/<slug>.json` (otherwise `config/_default.json` is used), then `cut <slug>`; the planet is not read again.

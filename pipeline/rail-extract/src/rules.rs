@@ -81,6 +81,15 @@ pub fn admin_boundary<T: Tags + ?Sized>(t: &T) -> bool {
         && t.get(b"admin_level").map_or(false, |l| ADMIN_LEVELS.contains(&l))
 }
 
+/// a city's own boundary (admin levels 6 to 9: the county, municipality or city limits), kept only when its Wikidata id is that of a
+/// place=city node (`wanted`, collected in a pass over the nodes before the relations are read). Level 5 is kept whole already.
+pub fn city_boundary<T: Tags + ?Sized>(t: &T, wanted: &std::collections::HashSet<Vec<u8>>) -> bool {
+    matches!(t.get(b"type"), Some(b"boundary" | b"multipolygon"))
+        && is(t, b"boundary", b"administrative")
+        && t.get(b"admin_level").map_or(false, |l| matches!(l, b"6" | b"7" | b"8" | b"9"))
+        && t.get(b"wikidata").map_or(false, |w| wanted.contains(w))
+}
+
 pub fn passenger_mode<T: Tags + ?Sized>(t: &T) -> bool {
     MODE_FLAGS.iter().any(|m| is(t, m, b"yes"))
 }

@@ -266,7 +266,7 @@ struct Outline {
     name_en: Option<String>,
     level: String,
     osm_id: i64,
-    /// a city outline fetched by pipeline/fetch_city_outlines.py (the cache has no boundary relation for it): `city: true` in index.json
+    /// a city outline written by `outlines --cities` (a boundary of admin level 6 to 9, or any level for a city): `city: true` in index.json
     city: bool,
 }
 
@@ -581,14 +581,15 @@ pub fn run(data: &Path, out: &Path, cache_path: &Path, slugs: &[String], region_
         // the stations of a country's regions are not counted per country: n is 0 (the map shows no count for a country either)
         s.push(json!([ct.name, ct.en, local(&ct.local, &ct.name), "country", b3(ct.pt.0), b3(ct.pt.1), b3(ct.bbox[0]), b3(ct.bbox[1]), b3(ct.bbox[2]), b3(ct.bbox[3]), fit_zoom(&ct.bbox), ct.region, 0]));
     }
-    // the point cities (no outline) for pipeline/fetch_city_outlines.py, which fetches their boundaries by Wikidata id
+    // the cities that are points (or have a generated outline) for `outlines --cities`, which picks their boundaries from the cache by Wikidata id
+    let city_outline_slugs: HashSet<&str> = outlines.iter().filter(|o| o.city).map(|o| o.slug.as_str()).collect();
     let wanted_outlines: Vec<Value> = cities
         .iter()
-        .filter(|c| c.outline.is_none())
+        .filter(|c| c.outline.as_ref().map_or(true, |(slug, _)| city_outline_slugs.contains(slug.as_str())))   // points, and cities whose outline is a fetched one
         .filter_map(|c| Some(json!({ "name": c.name, "name_en": c.en, "wikidata": c.wd.as_ref()?, "lon": r3(c.lon), "lat": r3(c.lat), "stations": c.n })))
         .collect();
     write_json(&data.join("city-outlines-wanted.json"), &Value::Array(wanted_outlines.clone()));
-    lap(&format!("{} cities without an outline written to {}/city-outlines-wanted.json", wanted_outlines.len(), data.display()));
+    lap(&format!("{} cities without an outline (or with a fetched one) written to {}/city-outlines-wanted.json", wanted_outlines.len(), data.display()));
     // small countries without a city entry are searched at country level only (a whole-country region, so its km are known)
     let country_only: Vec<String> = countries
         .iter()

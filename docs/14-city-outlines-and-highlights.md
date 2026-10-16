@@ -4,42 +4,14 @@ Follow-ups to the search work in `docs/10-world-build.md`. Sections 1 and 3 are 
 
 ## 1. City outlines (implemented 2026-10-16)
 
-**Built (route B).** `rail-extract places` writes `<data>/city-outlines-wanted.json` (the point-only cities with their Wikidata ids; 660 of 663 have one). `pipeline/fetch_city_outlines.py` looks the relations up on Overpass, fetches the polygons from Nominatim (raw answers cached in `data/ext/city-outlines/`, so a re-run is offline) and writes `data/regions/<cc>-<name>.geojson` plus `index.json` entries with `"city": true` (real `admin_level` kept; a slug that already exists gets `-city`: `us-new-york-city`, `bg-sofia-city2`). `stats.rs` treats a `city: true` entry as a city (card, shape, `kind: city`) whatever its level; `places.rs` takes its box and slug into the search entry and drops the other places inside it. Run order: `places`, `fetch_city_outlines.py`, `build` (all countries touched, 35 s), `places` again.
+**Built from the local planet (route A).** Pass 0 of the cache build (`build.rs`, `city_wikidata`) reads the node blobs' tags and collects the Wikidata ids of all 11,443 `place=city` nodes (24 s); pass 1 then keeps every boundary relation of admin levels 6 to 9 whose Wikidata id is one of them (`rules::city_boundary`), next to the countries, provinces and level-5 cities it kept before. The cache build takes 68 s (was about 55 s) and the file grew from 1,207 to 1,226 MB. `rail-extract places` writes `<data>/city-outlines-wanted.json` (the cities that are points or have a generated outline, with their Wikidata ids); `rail-extract outlines --cities <that file>` picks, per id, the boundary of the highest admin level 5 to 9, finds its country like a province's, skips polygons under 2 km2 or over 20,000 km2 and writes `data/regions/<cc>-<name>.geojson` plus an `index.json` entry with `"city": true` (the real `admin_level` stays; a slug taken already gets `-city`, `-city2`; an earlier entry for the same relation is replaced). `stats.rs` treats a `city: true` entry as a city (card, shape, `kind: city`) whatever its level; `places.rs` takes its box and slug into the search entry and drops the other places inside it. Run order after a new planet: `cache`, the usual `cut`/`build`, `places`, `outlines --cities`, `build` (all countries, 35 s), `places`. 0.4 s for the outlines step.
 
-**Result (world).** 445 cities got an outline (88 in the US, 40 in Germany, 38 in Japan, 30 in France, 12 in Canada, ...): 487 of the 726 search cities now have one (was 63, all in China), 239 stay points. Of the 238 point cities still wanted, 169 have no boundary relation under their Wikidata id (Dhaka, Istanbul, Mumbai, Lahore, Lagos, Lima, Cairo, Santiago, ...; a name-and-point fallback would catch some) and the rest were out of the 2 to 20,000 km2 range or at province level (Shanghai, Berlin, Tokyo, Mexico City are provinces already). City limits as decided: Boston 131 km of passenger route, Seattle 77, Chicago 467, New York 600, Toronto 363. The picked place keeps the card while it spans 15% of the screen. Two traps found on the way: New York is also a state (a "district of a city-province" rule would have dropped the city; it now applies to China's level 5 only) and Sofia has two province entries (the first run overwrote one; slugs are unique now).
+A first version fetched the polygons from Overpass and Nominatim (a Python script, since removed): the cache route gives the same 445 relations plus two more (Buffalo, Sarlerua), with no network. I wrongly said the planet was not on disk; it is `planet-260928.osm.pbf` in the repository root.
 
-### Scope as planned (kept for the reasoning)
+**Result (world).** 446 cities got an outline (88 in the US, 40 in Germany, 38 in Japan, 30 in France, 12 in Canada, ...): 487 of the 726 search cities now have one (was 63, all in China), 239 stay points. 212 of the 660 cities asked for have no boundary of level 5 to 9 under their Wikidata id (Dhaka, Istanbul, Mumbai, Lahore, Lagos, Lima, Cairo, Santiago, ...: the place node and the boundary carry different ids, or the boundary is a province: Shanghai, Berlin, Tokyo, Mexico City). A match by name and by the place's point inside the boundary would catch some; it needs the cache to keep boundaries without a Wikidata match, which is large. City limits as decided: Boston 131 km of passenger route, Seattle 77, Chicago 467, New York 600, Toronto 363. The picked place keeps the card while it spans 15% of the screen. Two traps found on the way: New York is also a state (a "district of a city-province" rule would have dropped the city; it now applies to China's level 5 only) and Sofia has two province entries (the first run overwrote one; slugs are unique now).
 
-**The gap.** `search.json` has 663 city entries that are only a point (every city outside China: New York, Boston, Chicago, ...). They can be found and flown to, and the region button names them, but they have no outline, no statistics card of their own and no "outline area in view" line; the card shows the state. Only China's prefecture-level cities (level 5) have outlines, because `outlines --level 5` and `stats.rs` handle only levels 2, 4 and 5 and the cache keeps only those.
-
-**What OSM has.** Sampled by Wikidata id (Overpass, 20 cities): US cities are `admin_level=8` (Boston, Chicago, Los Angeles, Houston, Seattle, Philadelphia, Atlanta, Miami, Portland, Minneapolis, Newark), consolidated city-counties are 6 (San Francisco, Denver), New York is 5, Toronto 6, Montreal and Vancouver 8, Mexico City is a level 4 state. 19 of 20 had a boundary relation under the city's Wikidata id. 660 of the 663 point cities have a `wikidata` tag on their place node (the cache keeps it), so matching place to boundary by Wikidata id is reliable, with name plus "contains the point" as fallback.
-
-**Two ways to get the polygons.**
-
-| | A. Planet (cache) | B. Fetch script (like `outline_cn.py`) |
-| --- | --- | --- |
-| How | `rules::ADMIN_LEVELS` gains 6, 7, 8 for boundary relations whose Wikidata id is a place=city node's; `outlines --level 8` writes them | A Python script posts the 663 Wikidata ids to Overpass (or Nominatim `lookup`, 50 ids per request; with polygon threshold 0.0002 a city has 150 to 600 points) and writes `data/regions/<cc>-<name>.geojson` plus `index.json` entries |
-| Needs | the planet again: **not on disk**, an 80 to 90 GB download, then a 54 s cache build | network, once; about 14 Nominatim requests |
-| Matches the rest | yes (same planet, same simplification) | a slightly different date from the planet; fine for outlines |
-| Verdict | right for the next monthly rebuild | **start here**: it produces the same files, so A can replace it later with no app or stats change |
-
-**Work list (B first).**
-1. `places.rs`: carry `wikidata` from `Place` into the city candidates; write the list of point cities (name, Wikidata id, point, country) next to `search.json`. About 30 lines.
-2. `pipeline/fetch_city_outlines.py`: fetch, keep the largest part plus any part holding a station, simplify to about 20 m, write `data/regions/<country>-<city>.geojson`, add `index.json` entries with `admin_level` "8" and a `city: true` field. Skip a city when no boundary matches or the area is under 2 km² or over 20,000 km².
-3. `stats.rs`: today level 5 is the city level (`lvl5`, `min_metro`). Generalise to "an index entry with `city: true`", so the card, `shapes.json` and `stats.json` areas get `kind: city` for them. Cities with no station inside are dropped, as for level 5.
-4. `places.rs`: treat `city: true` outlines like level 5: the best place inside gives the name, the outline gives the box and slug (this also removes more satellite places, as Tianfu New Area was removed).
-5. App: nothing new. `areaForView`, the outline layer and the card already take any area with a shape; `pickedSlug` in `App.tsx` keeps the card on a picked city.
-6. Rebuild the side files, `stats` and `shapes` for the countries touched (about 40 s for all), re-run `places` (2 s).
-
-**Size.** About 660 polygons of 150 to 600 points: roughly 3 to 5 MB more `shapes.json` over the world, 1.5 MB of it for the US; loaded per country on demand as now.
-
-**Decisions for the user before building it.**
-1. **City limits are small.** Boston (level 8) is 125 km², a fraction of its metro; Chicago, Houston and Los Angeles are large. The card would count only track and stations inside the legal city: right for "what is in this city", misleading for "the Boston rail network". Recommendation: city limits, shown as the city, with the state card one zoom out.
-2. **Boroughs.** New York is one level 5 boundary; the five boroughs are level 7. One entry for New York, as now.
-3. **Which cities.** All 663 point cities, or only those with real rail inside the limits (the stats step drops cities with no station inside anyway). Recommendation: all, and let the station test prune.
-4. **A network step.** Overpass or Nominatim in the build makes one script depend on the network (the glyph step is the only other one). Recommendation: accept it for this script and commit its list of ids, not the polygons.
-
-Effort: the fetch script plus the three Rust changes, about a day; route A adds the planet download.
+### Decisions made (user, 2026-10-16)
+City limits, not metro areas (Boston is 131 km of passenger route inside its limits); one entry for New York; all cities with a boundary, the station test prunes; the local planet, not Overpass.
 
 ## 2. Why some lines have no highlight (research)
 

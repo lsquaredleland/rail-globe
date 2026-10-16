@@ -3,6 +3,7 @@
 //!     rail-extract cache --planet planet-260928.osm.pbf [--out data/cache/planet-260928.railcache] [--threads N]
 //!     rail-extract cut [--cache data/cache/<name>.railcache] [--regions pipeline/regions] [--data data] <slug>...
 //!     rail-extract outlines --level 2|4 [--country CC] [--out data/regions]
+//!     rail-extract outlines --cities data/world/city-outlines-wanted.json [--out data/regions]   (city outlines from the cache)
 //!     rail-extract build <slug>... [--no-tiles | --combined NAME]       (or cut ... --build)
 //!
 //! `cache` reads the planet once (about a minute) and keeps every rail candidate of the world with its coordinates.
@@ -54,6 +55,7 @@ fn usage() -> ! {
         "usage:\n  rail-extract cache --planet PLANET.osm.pbf [--out data/cache/<planet>.railcache] [--threads N]\n  \
          rail-extract cut [--cache FILE] [--regions DIR] [--data DIR] [--threads N] [--strict-exemptions] <slug>...\n  \
          rail-extract outlines --level 2|4 [--country CC] [--cache FILE] [--out data/regions]\n  \
+         rail-extract outlines --cities WANTED.json [--cache FILE] [--out data/regions]      (city outlines; WANTED.json from `places`)\n  \
          rail-extract build <slug>... [--no-tiles | --combined NAME]      (cut ... --build: build straight after the cut)\n  \
          rail-extract tiles <slug>... [--name NAME] [--out DIR] [--data DIR]\n  \
          rail-extract world [--data DIR] [--out DIR] [--name NAME] [--deep-zoom N] [--regions DIR] (--slugs-file FILE | <slug>...)\n  \
@@ -214,7 +216,7 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            k @ ("--planet" | "--out" | "--cache" | "--regions" | "--data" | "--threads" | "--level" | "--country" | "--combined" | "--name" | "--deep-zoom" | "--slugs-file" | "--tsv" | "--top" | "--min-km" | "--parts") => {
+            k @ ("--planet" | "--out" | "--cache" | "--regions" | "--data" | "--threads" | "--level" | "--country" | "--combined" | "--name" | "--deep-zoom" | "--slugs-file" | "--tsv" | "--top" | "--min-km" | "--parts" | "--cities") => {
                 opt.insert(k, args.get(i + 1).cloned().unwrap_or_else(|| usage()));
                 i += 2;
             }
@@ -377,11 +379,15 @@ fn main() {
             pminfo::run(Path::new(file), opt.get("--tsv").map(Path::new), opt.get("--top").map_or(15, |v| v.parse().expect("--top")));
         }
         "outlines" => {
-            let level = opt.get("--level").cloned().unwrap_or_else(|| usage());
             let path = opt.get("--cache").map(PathBuf::from).unwrap_or_else(|| default_cache(&root));
             let out = opt.get("--out").map(PathBuf::from).unwrap_or_else(|| root.join("data/regions"));
             let c = cache::Cache::open(&path).unwrap_or_else(|e| panic!("{e}"));
-            outlines::outlines(&c, &level, opt.get("--country").map(String::as_str), &out);
+            if let Some(wanted) = opt.get("--cities") {
+                outlines::city_outlines(&c, Path::new(wanted), &out);
+            } else {
+                let level = opt.get("--level").cloned().unwrap_or_else(|| usage());
+                outlines::outlines(&c, &level, opt.get("--country").map(String::as_str), &out);
+            }
         }
         _ => usage(),
     }
