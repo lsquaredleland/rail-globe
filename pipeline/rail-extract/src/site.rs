@@ -82,6 +82,28 @@ fn write_lines(path: &Path, rows: &[Value]) {
     fs::write(path, out).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
 
+/// The config file for a slug: pipeline/config/<slug>.json, else the template pipeline/config/_default.json (second value true).
+pub fn config_path(config_dir: &Path, slug: &str) -> (PathBuf, bool) {
+    let own = config_dir.join(format!("{slug}.json"));
+    if own.exists() {
+        (own, false)
+    } else {
+        (config_dir.join("_default.json"), true)
+    }
+}
+
+/// Fill the slug-specific keys of the template from the region's outline properties: stat_name <- name_en (else name),
+/// stat_local <- name, stat_auto.country <- country. The generic configs written by hand for the world build had exactly these.
+pub fn fill_default(cfg: &mut Map<String, Value>, props: &Value) {
+    let name = props["name"].as_str().unwrap_or("");
+    let en = props["name_en"].as_str().unwrap_or(name);
+    cfg.insert("stat_name".into(), Value::from(en));
+    cfg.insert("stat_local".into(), Value::from(name));
+    if let Some(Value::Object(auto)) = cfg.get_mut("stat_auto") {
+        auto.insert("country".into(), props["country"].clone());
+    }
+}
+
 pub struct Paths {
     pub data: PathBuf,         // data/
     pub config: PathBuf,       // pipeline/config/
@@ -99,7 +121,16 @@ pub fn build(slug: &str, paths: &Paths) -> Vec<String> {
     };
     let mut t = Instant::now();
     let dir = paths.data.join(slug);
-    let inp = load(&dir, &paths.config.join(format!("{slug}.json")));
+    let (cfg_path, is_default) = config_path(&paths.config, slug);
+    let mut inp = load(&dir, &cfg_path);
+    if is_default {
+        let outline = paths.regions.iter().map(|d| d.join(format!("{slug}.geojson"))).find(|p| p.exists());
+        let props = outline
+            .and_then(|p| serde_json::from_str::<Value>(&fs::read_to_string(p).ok()?).ok())
+            .map_or(Value::Null, |v| v["properties"].clone());
+        fill_default(&mut inp.cfg, &props);
+        log.push(format!("  config: pipeline/config/_default.json (no {slug}.json)"));
+    }
     lap(&mut log, &mut t, format!("read {} features, {} relations, {} stop positions", inp.feats.len(), inp.rels.len(), inp.stops.len()));
 
     let mut st = stations::run(slug, &inp);
@@ -122,4 +153,27 @@ pub fn build(slug: &str, paths: &Paths) -> Vec<String> {
     log.push(format!("  {}", prep.summary));
     log.push(format!("  {:6.2}s  total", t0.elapsed().as_secs_f64()));
     log
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_is_filled_from_the_outline() {
+        let mut cfg: Map<String, Value> = serde_json::from_str(include_str!("../../config/_default.json")).unwrap();
+        let props: Value = serde_json::from_str(r#"{"name":"Österreich","name_en":"Austria","country":"AT"}"#).unwrap();
+        fill_default(&mut cfg, &props);
+        assert_eq!(cfg["stat_name"], "Austria");
+        assert_eq!(cfg["stat_local"], "Österreich");
+        assert_eq!(cfg["stat_auto"], serde_json::json!({"levels": ["4"], "country": "AT"}));
+        assert_eq!(cfg["high_speed_min_kmh"], 200);
+    }
+
+    #[test]
+    fn config_path_falls_back_to_the_template() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../config");
+        assert_eq!(config_path(&dir, "paris"), (dir.join("paris.json"), false));
+        assert_eq!(config_path(&dir, "no-such-slug"), (dir.join("_default.json"), true));
+    }
 }

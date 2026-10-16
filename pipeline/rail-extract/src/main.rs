@@ -12,6 +12,7 @@
 //! stations.py, con_stations.py and build_tiles.py); --no-tiles writes side files only (regions drawn from a bigger region's tiles);
 //! --combined NAME writes side files and tile input for every slug, then one tile writer run over all of them -> NAME.pmtiles and NAME.parts.json (no per-region PMTiles).
 //! Whenever a pilot source was built with tiles, pilot.pmtiles and pilot.parts.json are rewritten from the pilot sources' tile input.
+//!     rail-extract world-list [--data data/world] [--min-km 1] (--slugs-file FILE | <slug>...)   which countries of a world cut have passenger rail -> kept.txt, dropped.txt
 //!     rail-extract tiles <slug>... [--name NAME] [--out DIR]       the tile writer alone over existing tile input (default out data/tiles)
 //! `outlines` writes country (level 2) or province / state (level 4) outlines from the admin boundaries in the cache.
 //! Paths default to this repository, wherever the command runs from.
@@ -26,6 +27,7 @@ mod out;
 mod outlines;
 mod geomx;
 mod pbf;
+mod pminfo;
 mod pyjson;
 mod region;
 mod rules;
@@ -34,6 +36,7 @@ mod stations;
 mod stats;
 mod tilewriter;
 mod tiles;
+mod world_list;
 
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
@@ -49,7 +52,10 @@ fn usage() -> ! {
          rail-extract cut [--cache FILE] [--regions DIR] [--data DIR] [--threads N] <slug>...\n  \
          rail-extract outlines --level 2|4 [--country CC] [--cache FILE] [--out data/regions]\n  \
          rail-extract build <slug>... [--no-tiles | --combined NAME]      (cut ... --build: build straight after the cut)\n  \
-         rail-extract tiles <slug>... [--name NAME] [--out DIR] [--data DIR]"
+         rail-extract tiles <slug>... [--name NAME] [--out DIR] [--data DIR]\n  \
+         rail-extract world [--data DIR] [--out DIR] [--name NAME] [--deep-zoom N] [--regions DIR] (--slugs-file FILE | <slug>...)\n  \
+         rail-extract world-list [--data DIR] [--min-km N] (--slugs-file FILE | <slug>...)      (kept.txt / dropped.txt from a world cut)\n  \
+         rail-extract pminfo FILE [--tsv FILE] [--top N]"
     );
     std::process::exit(2)
 }
@@ -76,7 +82,12 @@ fn no_tile_input(data: &Path, slug: &str) -> bool {
 
 /// data bounds [west, south, east, north] of a region from its outline (hand-made first, else data/regions)
 fn outline_bounds(root: &Path, slug: &str) -> [f64; 4] {
-    let outline = [root.join("pipeline/regions"), root.join("data/regions")]
+    outline_bounds_in(&[root.join("pipeline/regions"), root.join("data/regions")], slug)
+}
+
+/// the same, searching the given folders in order
+fn outline_bounds_in(dirs: &[PathBuf], slug: &str) -> [f64; 4] {
+    let outline = dirs
         .iter()
         .map(|d| d.join(format!("{slug}.geojson")))
         .find(|p| p.exists())
@@ -184,7 +195,7 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            k @ ("--planet" | "--out" | "--cache" | "--regions" | "--data" | "--threads" | "--level" | "--country" | "--combined" | "--name") => {
+            k @ ("--planet" | "--out" | "--cache" | "--regions" | "--data" | "--threads" | "--level" | "--country" | "--combined" | "--name" | "--deep-zoom" | "--slugs-file" | "--tsv" | "--top" | "--min-km") => {
                 opt.insert(k, args.get(i + 1).cloned().unwrap_or_else(|| usage()));
                 i += 2;
             }
@@ -245,14 +256,18 @@ fn main() {
                         .find(|p| p.exists())
                         .unwrap_or_else(|| panic!("no outline {slug}.geojson in {dirs:?}: run `rail-extract outlines` or add one"));
                     let reg = region::Region::load(slug, &path);
-                    // rail types need the region's rules; without them the cut still writes its files
-                    let cfg_path = root.join("pipeline/config").join(format!("{slug}.json"));
-                    let cfg = cfg_path.exists().then(|| classify::Cfg::load(&cfg_path, &root.join("pipeline/regions")));
+                    // rail types need the region's rules: its own config, else the template
+                    let (cfg_path, _) = site::config_path(&root.join("pipeline/config"), slug);
+                    let cfg = Some(classify::Cfg::load(&cfg_path, &root.join("pipeline/regions")));
                     cut::cut(&c, &reg, &data.join(slug), cfg.as_ref()).line
                 })
                 .collect();
             for l in lines {
                 eprintln!("  {l}");
+            }
+            let n_default = rest.iter().filter(|s| site::config_path(&root.join("pipeline/config"), s).1).count();
+            if n_default > 0 {
+                eprintln!("  {n_default} region(s) without their own pipeline/config/<slug>.json use the template pipeline/config/_default.json");
             }
             eprintln!("[{:6.2}s] cut", t0.elapsed().as_secs_f64());
             if opt.contains_key("--build") {
@@ -283,6 +298,41 @@ fn main() {
             let name = opt.get("--name").cloned().unwrap_or_else(|| rest.join("+"));
             let data = opt.get("--data").map(PathBuf::from).unwrap_or_else(|| root.join("data"));
             tilewriter::run(&data, &rest, &out, &name);
+        }
+        "world" => {
+            let mut slugs = rest.clone();
+            if let Some(f) = opt.get("--slugs-file") {
+                slugs.extend(std::fs::read_to_string(f).unwrap_or_else(|e| panic!("read {f}: {e}")).split_whitespace().map(String::from));
+            }
+            if slugs.is_empty() {
+                usage();
+            }
+            let data = opt.get("--data").map(PathBuf::from).unwrap_or_else(|| root.join("data/world"));
+            let out = opt.get("--out").map(PathBuf::from).unwrap_or_else(|| root.join("app/public/data/world"));
+            let name = opt.get("--name").cloned().unwrap_or_else(|| "world".to_string());
+            let deep: u8 = opt.get("--deep-zoom").map_or(6, |v| v.parse().expect("--deep-zoom"));
+            let dirs = vec![PathBuf::from(opt.get("--regions").cloned().unwrap_or_else(|| root.join("data/regions").to_string_lossy().into_owned()))];
+            let parts: Vec<_> = slugs.iter().filter(|s| !no_tile_input(&data, s)).map(|s| serde_json::json!({ "slug": s, "bounds": outline_bounds_in(&dirs, s) })).collect();
+            let used: Vec<String> = parts.iter().map(|p| p["slug"].as_str().unwrap().to_string()).collect();
+            let t = Instant::now();
+            tilewriter::run_world(&data, &used, &out, &name, deep);
+            std::fs::write(out.join(format!("{name}.parts.json")), serde_json::to_string_pretty(&parts).unwrap() + "\n").expect("write parts.json");
+            eprintln!("world {name}: {} slugs, {:.1} s", used.len(), t.elapsed().as_secs_f64());
+        }
+        "world-list" => {
+            let mut slugs = rest.clone();
+            if let Some(f) = opt.get("--slugs-file") {
+                slugs.extend(std::fs::read_to_string(f).unwrap_or_else(|e| panic!("read {f}: {e}")).split_whitespace().map(String::from));
+            }
+            if slugs.is_empty() {
+                usage();
+            }
+            let data = opt.get("--data").map(PathBuf::from).unwrap_or_else(|| root.join("data/world"));
+            world_list::run(&data, &slugs, opt.get("--min-km").map_or(1.0, |v| v.parse().expect("--min-km")));
+        }
+        "pminfo" => {
+            let file = rest.first().unwrap_or_else(|| usage());
+            pminfo::run(Path::new(file), opt.get("--tsv").map(Path::new), opt.get("--top").map_or(15, |v| v.parse().expect("--top")));
         }
         "outlines" => {
             let level = opt.get("--level").cloned().unwrap_or_else(|| usage());

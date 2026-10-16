@@ -1,0 +1,47 @@
+{
+  "_comment": "All of China (data/regions/cn.geojson, admin level 2) for the world build. Same rules as china.json (the pilot's China, a hand-made outline).",
+  "china": true,
+  "proposed_region": "cn/hk.json",
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [
+    {
+      "match": {
+        "name_re": "市域铁路"
+      },
+      "type": "regional"
+    },
+    {
+      "match": {
+        "name_re": "旅游|观光"
+      },
+      "type": "other"
+    }
+  ],
+  "main_station_re": "^((成都|天府|重庆|西安|北京|上海|广州|深圳|东莞|珠海|佛山|惠州|中山|江门|肇庆|香港)(东|西|南|北|朝阳|丰台)?|福田|西九龙|香港西九龙|红磡)站?$|^(香港西九龍|西九龍|紅磡|红磡)站?( .*)?$",
+  "main_terminals": [],
+  "stat_name": "China",
+  "stat_local": "中国",
+  "stat_auto": {
+    "country": "CN",
+    "levels": [
+      "4",
+      "5"
+    ],
+    "min_metro": 20,
+    "exclude": [
+      "cn-hong-kong-island",
+      "cn-kowloon",
+      "cn-new-territories"
+    ]
+  },
+  "track_type_overrides": [
+    {
+      "match": {
+        "name_re": "^(抚乐线|东吴支线|来合铁路)$"
+      },
+      "type": "freight"
+    }
+  ],
+  "passenger_stations_file": "cn-passenger-stations.txt"
+}

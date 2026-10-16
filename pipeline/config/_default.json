@@ -1,0 +1,14 @@
+{
+  "_comment": "Template for a region with no pipeline/config/<slug>.json of its own: generic rules (no commuter or high-speed network patterns, no overrides, 200 km/h high-speed floor). rail-extract fills in stat_name (outline name_en), stat_local (outline name) and stat_auto.country (outline country) from the region's outline, see site.rs default_config.",
+  "china": false,
+  "commuter_networks": [],
+  "high_speed_networks_re": [],
+  "type_overrides": [],
+  "main_terminals": [],
+  "stat_auto": {
+    "levels": [
+      "4"
+    ]
+  },
+  "high_speed_min_kmh": 200
+}
