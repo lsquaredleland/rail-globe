@@ -72,9 +72,11 @@ const CON_DASH_PX = 12
 const CON_GAP_PX = 8
 /** First zoom with dashes. `con_draw` is written into tiles from one zoom earlier (tiles.rs CON_DRAW_MINZOOM = this - 1), so it is loaded in time. */
 const CON_DASH_MINZOOM = 4
-/** [zoom, minimum px, TYPE_WIDTH index] of the construction width ramp; width = max(minimum, type width * 1.2) */
-const CON_STOPS: [number, number, number][] = [[4, 2.6, 0], [10, 1.8, 0], [12, 2.2, 1], [15, 3, 2]]
-const conStopWidth = (t: RailType, k: number) => Math.max(CON_STOPS[k][1], TYPE_WIDTH[t][CON_STOPS[k][2]] * 1.2)
+/** Rail is drawn at LOW_ZOOM_SHARE of its width at z7 and below, and grows to full width at z10 (the thick lines crowd the zoomed-out map) */
+const LOW_ZOOM_SHARE = 0.5
+/** [zoom, minimum px, TYPE_WIDTH index, share of the width] of the construction width ramp; width = share * max(minimum, type width * 1.2) */
+const CON_STOPS: [number, number, number, number][] = [[4, 2.6, 0, LOW_ZOOM_SHARE], [7, 2.6, 0, LOW_ZOOM_SHARE], [10, 1.8, 0, 1], [12, 2.2, 1, 1], [15, 3, 2, 1]]
+const conStopWidth = (t: RailType, k: number) => CON_STOPS[k][3] * Math.max(CON_STOPS[k][1], TYPE_WIDTH[t][CON_STOPS[k][2]] * 1.2)
 const conWidth = (mult?: Expr): Expr => ['interpolate', ['linear'], ['zoom'], ...CON_STOPS.flatMap((_, k) => {
   const w = byType((t) => conStopWidth(t, k), 'type', conStopWidth('other', k)) as Expr
   return [CON_STOPS[k][0], mult ? ['*', w, mult] : w]
@@ -104,13 +106,14 @@ const conDashPx = (greyOut = false): Expr => {
 /** under-construction colour: the colour rule of open track (`other` is drawn dark grey) */
 const conColor: Expr = ['match', get('type'), 'other', '#45423C', typeColor]
 
-/** width that follows z10 / z12 / z15 stops, with an optional multiplier expression */
+/** width that follows z10 / z12 / z15 stops (half of the z10 width at z7 and below), with an optional multiplier expression */
 function widthExpr(mult?: Expr): Expr {
   const stop = (i: number): Expr => {
     const w = byType((t) => TYPE_WIDTH[t][i]) as Expr
     return mult ? (['*', w, mult] as Expr) : w
   }
-  return ['interpolate', ['linear'], ['zoom'], 10, stop(0), 12, stop(1), 15, stop(2)] as Expr
+  const low = ['*', stop(0), LOW_ZOOM_SHARE] as Expr
+  return ['interpolate', ['linear'], ['zoom'], 7, low, 10, stop(0), 12, stop(1), 15, stop(2)] as Expr
 }
 
 /** label text: the English field when the language is English and the tile has one, else the local field */
@@ -314,7 +317,7 @@ export function addRailSource(map: MLMap, source: string) {
   top.push({ id: L(source, 'casing'), type: 'line', ...src, 'source-layer': 'track', filter: ['all', ['==', get('type'), 'high_speed'], ['!', ['has', 'con']]],
     layout: roundJoin,
     paint: { 'line-color': '#FFFFFF', 'line-opacity': 0.9, 'line-gap-width': 0,
-      'line-width': ['interpolate', ['linear'], ['zoom'], 10, 6, 12, 7.5, 15, 9] } } as LayerSpecification)
+      'line-width': ['interpolate', ['linear'], ['zoom'], 7, 6 * LOW_ZOOM_SHARE, 10, 6, 12, 7.5, 15, 9] } } as LayerSpecification)
   trackLayer('track', { type: 'line', ...src, 'source-layer': 'track', minzoom: 0,
     filter: ['all', ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight']],
     layout: { ...roundJoin, 'line-sort-key': rank },
@@ -421,7 +424,7 @@ export function addRailSource(map: MLMap, source: string) {
     add({ id: L(source, name), type: 'circle', ...src, 'source-layer': 'stations', minzoom, filter: ['all', ['==', get('tier'), tier], ['!', ['has', 'con']]],
       layout: { 'circle-sort-key': tier === 1 ? 3 : tier === 2 ? 2 : 1 } as never,
       paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, r[0], 12, r[1], 15, r[2]],
-        'circle-color': '#FFFFFF', 'circle-stroke-width': stroke, 'circle-stroke-color': ring, 'circle-pitch-alignment': 'map' } })
+        'circle-color': THEME_COLORS.light.stationFill, 'circle-stroke-width': stroke, 'circle-stroke-color': ring, 'circle-pitch-alignment': 'map' } })
   circle('st3', 3, STATION_ZOOM[3].dot, [2.2, 2.8, 3.5], 1.3, '#3A3936')
   circle('st2', 2, STATION_ZOOM[2].dot, [4, 5, 6], 2.5, INK)
   circle('st1', 1, STATION_ZOOM[1].dot, [4.5, 6.5, 7], 3, ['case', ['==', get('hsr'), 1], '#B3123A', INK])
@@ -430,7 +433,7 @@ export function addRailSource(map: MLMap, source: string) {
   const conCircle = (tier: 1 | 2 | 3, r: [number, number, number], stroke: number) =>
     add({ id: L(source, `stcon${tier}`), type: 'circle', ...src, 'source-layer': 'stations', minzoom: STATION_ZOOM[tier].dot,
       filter: ['all', ['has', 'con'], ['==', get('tier'), tier]],
-      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, r[0], 12, r[1], 15, r[2]], 'circle-color': '#FFFFFF',
+      paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 8, r[0], 12, r[1], 15, r[2]], 'circle-color': THEME_COLORS.light.stationFill,
         'circle-stroke-width': stroke, 'circle-stroke-color': ['case', ['==', get('hsr'), 1], '#B3123A', '#6B665B'], 'circle-stroke-opacity': 0.95 } })
   conCircle(3, [2.6, 3.6, 4.6], 1.4)
   conCircle(2, [4, 5, 6], 2)

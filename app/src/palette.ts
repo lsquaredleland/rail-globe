@@ -47,13 +47,13 @@ export type Theme = 'light' | 'dark'
 export const THEME_COLORS = {
   light: {
     land: '#FBFBF9', water: '#E6EDF3', waterEdge: '#D2DDE7', park: '#F1F4EE', road: '#ECEBE7', border: '#A9A59C', border4: '#D8D5CE',
-    wood: '#F4F6F0', farm: '#FBFBF9', urban: '#F2F1ED', label: '#2F2D29', ink: '#1E1E1C', ink2: '#33312C', ink3: '#6B665B', stationFill: '#FFFFFF', casing: '#FFFFFF',
+    wood: '#F4F6F0', farm: '#FBFBF9', urban: '#F2F1ED', label: '#2F2D29', ink: '#1E1E1C', ink2: '#33312C', ink3: '#6B665B', stationFill: '#FFE9A6', casing: '#FFFFFF',
     ground: '#E7E1D5', groundEdge: '#DDD6C8', yard: '#ECE7DE', building: '#D5CDBF', buildingEdge: '#BCB3A3', platform: '#C9C1B2',
     airport: '#E6E0D2', airportLine: '#9A927E', terminal: '#CBC1AD', terminalEdge: '#A99F8A', st3: '#3A3936', hsr: '#B3123A',
   },
   dark: {
     land: '#1C1E22', water: '#11141A', waterEdge: '#2B3340', park: '#212823', road: '#2B2E34', border: '#6B7280', border4: '#40454E',
-    wood: '#1F2822', farm: '#1E2022', urban: '#25282D', label: '#C9CED6', ink: '#E8EAEE', ink2: '#C9CED6', ink3: '#8D94A0', stationFill: '#1C1E22', casing: '#1C1E22',
+    wood: '#1F2822', farm: '#1E2022', urban: '#25282D', label: '#C9CED6', ink: '#E8EAEE', ink2: '#C9CED6', ink3: '#8D94A0', stationFill: '#7385A3', casing: '#1C1E22',
     ground: '#2A2D33', groundEdge: '#3A3F47', yard: '#26292E', building: '#30343B', buildingEdge: '#454A53', platform: '#4A4F58',
     airport: '#262A30', airportLine: '#555B66', terminal: '#3A3F47', terminalEdge: '#555B66', st3: '#C9CED6', hsr: '#F0507A',
   },
