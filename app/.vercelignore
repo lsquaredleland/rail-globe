@@ -4,4 +4,6 @@ public/glyphs
 node_modules
 dist
 bench
-.env*
+.env
+.env.local
+.env.*.local
