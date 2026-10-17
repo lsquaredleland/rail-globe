@@ -4,7 +4,7 @@ import { INACTIVE, SPEED_BANDS, SPEED_NONE, SPEED_UNKNOWN } from '../mapStyle'
 import { TYPE_COLOR, TYPE_LABEL, TYPE_ORDER, TYPE_WIDTH, type RailType } from '../palette'
 
 type Units = 'km' | 'mi'
-export const AREA_KIND: Record<string, string> = { province: 'Province', city: 'City', region: 'Region', area: 'Area' }
+export const AREA_KIND: Record<string, string> = { province: 'Province', city: 'City', region: 'Country', area: 'Area' }
 
 const MI = 0.621371
 const conv = (v: number, u: Units) => (u === 'km' ? v : v * MI)
@@ -172,6 +172,41 @@ export function TypeCard({ area: a, units, hidden, freight, construction, propos
   )
 }
 
+/** Zoomed out (no area fills the screen): the colour key and the on/off switches for the whole world, without kilometres. */
+export function WorldCard({ operator, zoom, embedded, hidden, freight, hsrOnly, onToggleType, onShowAll, onHideAll, onToggleFreight }: {
+  operator: boolean; zoom: number; embedded?: boolean; hidden: string[]; freight: boolean; hsrOnly: boolean
+  onToggleType(t: string): void; onShowAll(): void; onHideAll(): void; onToggleFreight(): void
+}) {
+  return (
+    <aside className={`area-card${embedded ? ' embedded' : ''}`} aria-label="Rail in the world">
+      {!embedded && (zoom > 5
+        ? <div className="ac-head"><strong>No area here</strong><span className="muted sm ac-kind">Move the centre over land</span></div>
+        : <div className="ac-head"><strong>World</strong><span className="muted sm ac-kind">Zoom in to an area for its totals</span></div>)}
+      {operator && <div className="muted sm">Lines take each operator&apos;s colour{hsrOnly ? '; lines that are not high-speed are greyed' : ''}. Rail types below still switch on and off.</div>}
+      <div className="ac-sec"><span className="eyebrow">On the map</span>
+        <Tools allOn={hidden.length === 0} allOff={TYPE_ORDER.every((t) => hidden.includes(t))} onAll={onShowAll} onNone={onHideAll} /></div>
+      <div className="ac-rows">
+        {TYPE_ORDER.filter((t) => t !== 'freight').map((t) => {
+          const off = hidden.includes(t)
+          const grey = hsrOnly && t !== 'high_speed'
+          const sw = grey ? INACTIVE : TYPE_COLOR[t]
+          return (
+            <button key={t} type="button" className={`ac-row${off ? ' off' : ''}${grey ? ' grey' : ''}`} aria-pressed={!off} title={off ? `Show ${TYPE_LABEL[t]}` : `Hide ${TYPE_LABEL[t]}`} onClick={() => onToggleType(t)}>
+              <i className="sw" style={{ background: off ? 'transparent' : sw, borderColor: sw }} />
+              <span className="grow"><span className="nm">{TYPE_LABEL[t]}</span>{off && <span className="muted sm"> hidden</span>}</span>
+            </button>
+          )
+        })}
+        <button type="button" className={`ac-row frt${freight ? '' : ' off'}${hsrOnly ? ' grey' : ''}`} aria-pressed={freight} title={freight ? 'Hide freight' : 'Show freight'} onClick={onToggleFreight}>
+          <i className="sw" style={{ background: 'transparent', borderColor: hsrOnly ? INACTIVE : freight ? TYPE_COLOR.freight : '#B8B4AB' }} />
+          <span className="grow"><span className="nm">Freight</span>{!freight && <span className="muted sm"> hidden</span>}</span>
+        </button>
+      </div>
+      {hsrOnly && <div className="ac-grey muted"><i />HSR only is on: other types are greyed on the map</div>}
+    </aside>
+  )
+}
+
 const bandName = (i: number) => (i === 0 ? `${SPEED_BANDS[0].min}+ km/h` : SPEED_BANDS[i].min === 0 ? 'under 80' : `${SPEED_BANDS[i].min}–${SPEED_BANDS[i - 1].min - 1} km/h`)
 /** swatch thickness per band: the rail type that typically runs at that speed */
 const BAND_TYPE: RailType[] = ['high_speed', 'high_speed', 'high_speed', 'high_speed', 'intercity', 'regional', 'regional', 'metro', 'light_rail']
@@ -181,7 +216,6 @@ export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, china, constru
   area: StatsArea | null; units: Units; hiddenSpeed: number[]; hsrOnly: boolean; china: boolean; construction: boolean; proposed: boolean; embedded?: boolean
   onToggle(m: number): void; onShowAll(): void; onHideAll(): void
 }) {
-  if (!a && !embedded) return null
   const hsMin = china ? 250 : 200   // high-speed starts here: China's line, else the UIC line
   const km = (m: number) => a?.speed?.[m === SPEED_NONE ? 'none' : String(m)] ?? 0
   const all = [...SPEED_BANDS.map((b) => b.min), SPEED_NONE]
@@ -207,7 +241,7 @@ export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, china, constru
         </svg>
         <span className="grow"><span className="nm">{none ? 'Not mapped' : bandName(i)}</span>
           {m === 200 && <span className="sub">{china ? 'high-speed elsewhere, intercity here' : 'high-speed here (UIC)'}</span>}</span>
-        <span className="v muted">{v > 0 ? `${num(v, units)} ${units}` : 'none'}</span>
+        {a ? <span className="v muted">{v > 0 ? `${num(v, units)} ${units}` : 'none'}</span> : <span className="v" />}
         {hasCon && (
           <span className="cv muted"><span className="cv-in">
             {conKm(m) > 0 && <svg width="24" height="8" viewBox="0 0 24 8" aria-hidden="true"><line x1="1" y1="4" x2="23" y2="4" stroke={grey ? INACTIVE : none ? SPEED_UNKNOWN : band.color} strokeWidth="2" strokeDasharray="4 3" /></svg>}
@@ -227,7 +261,7 @@ export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, china, constru
   return (
     <aside className={`area-card sp${embedded ? ' embedded' : ''}${showCon ? ' con-on' : ''}${showProp ? ' prop-on' : ''}`} aria-label={a ? `Track speed in ${a.name}` : 'Track speed'}>
       <div className="ac-sec top">
-        <div><strong className="ac-title">Track speed</strong><div className="muted sm">{a ? `${a.name} · ` : ''}{hidN === 0 ? 'all bands on the map' : `${hidN} band${hidN > 1 ? 's' : ''} hidden`}</div></div>
+        <div><strong className="ac-title">Track speed</strong><div className="muted sm">{a ? `${a.name} · ` : 'Zoom in to an area for its totals · '}{hidN === 0 ? 'all bands on the map' : `${hidN} band${hidN > 1 ? 's' : ''} hidden`}</div></div>
         <Tools allOn={hidN === 0} allOff={hidN === all.length} onAll={onShowAll} onNone={onHideAll} />
       </div>
       <div className="sp-colhead"><span>In service</span><span className="bt">Construction</span><span className="bt pr">Proposed</span></div>
@@ -240,7 +274,7 @@ export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, china, constru
       <div className="sp-line uic"><b>200 · UIC line</b><i /></div>
       {SPEED_BANDS.slice(5).map((b, i) => <Fragment key={b.min}>{row(b.min, i + 5)}</Fragment>)}
       {row(SPEED_NONE, 0)}
-      <div className="sp-total"><b>Total</b><b>{num(totalOpen, units)} {units}</b><b className="bt">{hasCon ? `+${num(totalCon, units)} ${units}` : ''}</b><b className="bt pr">{hasProp ? `+${num(totalProp, units)} ${units}` : ''}</b></div>
+      <div className="sp-total"><b>Total</b><b>{a ? `${num(totalOpen, units)} ${units}` : ''}</b><b className="bt">{hasCon ? `+${num(totalCon, units)} ${units}` : ''}</b><b className="bt pr">{hasProp ? `+${num(totalProp, units)} ${units}` : ''}</b></div>
       {hsrOnly && <div className="ac-grey muted"><i />Not high-speed (greyed)</div>}
       <div className="muted sm ac-foot">Colour from the maxspeed tag. {china ? "High-speed here follows China's 250 km/h line." : 'High-speed here is 200 km/h and up (UIC); China uses 250.'} Passenger route in service, double track counted once.</div>
     </aside>

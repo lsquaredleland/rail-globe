@@ -37,6 +37,10 @@ export const isKnownRegion = (s: string) => dynamic.has(s)
 export const TILES = 'world'
 type Part = { slug: string; bounds: [number, number, number, number] }
 let parts: Part[] = []
+/** `partAt` answers '' before world.parts.json is in, and the smallest bounds before the outlines of overlapping countries are: whatever is computed from it must run again then */
+const partListeners = new Set<() => void>()
+export const onPartsChange = (cb: () => void) => { partListeners.add(cb); return () => { partListeners.delete(cb) } }
+const partsChanged = () => partListeners.forEach((cb) => cb())
 /** The per-region sources that were joined, with their outline bounds, from world.parts.json (written by the join in
  *  rail-extract). Await once at startup before `partAt` / `regionOf`. Bounds may overlap (see `partAt`). Tiles carry no region field, so a
  *  feature's region (its side files: tags, lines, stations, highlights) is found from where it lies. */
@@ -44,8 +48,9 @@ export async function loadParts() {
   const r = await fetch(`${DATA_BASE}${TILES}.parts.json`)
   if (!r.ok) throw new Error(`${TILES}.parts.json: ${r.status}`)
   parts = await r.json()
+  partsChanged()
 }
-/** Outlines are fetched only where bounds overlap (neighbouring countries), never all at once: the world has 146 of them, 12 MB */
+/** Outlines are fetched only where bounds overlap (neighbouring countries), never all at once: the world has 142 of them, 12 MB */
 const outlineLoads = new Map<string, Promise<void>>()
 const loadOuter = (slug: string) => {
   let p = outlineLoads.get(slug)
@@ -53,7 +58,7 @@ const loadOuter = (slug: string) => {
     p = fetch(`${DATA_BASE}${slug}.boundary.geojson`).then((x) => (x.ok ? x.json() : null)).then((j: GeoJSON.Feature | null) => {
       const g = j?.geometry
       outers[slug] = !g ? [] : g.type === 'Polygon' ? [g.coordinates[0]] : g.type === 'MultiPolygon' ? g.coordinates.map((q) => q[0]) : []
-    }).catch(() => { outers[slug] = [] })
+    }).catch(() => { outers[slug] = [] }).then(partsChanged)
     outlineLoads.set(slug, p)
   }
   return p

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { DATA_BASE } from './config'
 import type { View } from './MapView'
 
@@ -34,16 +34,19 @@ export function parseSearch(rows: Row[]): SearchItem[] {
   }))
 }
 
-let loading: Promise<SearchItem[]> | null = null
-/** search.json, fetched once; [] when the build has none */
-export function loadSearch(): Promise<SearchItem[]> {
-  loading ??= fetch(`${DATA_BASE}search.json`).then((r) => (r.ok ? r.json() : [])).then(parseSearch).catch(() => [])
+let loading: Promise<SearchItem[] | null> | null = null
+/** search.json, fetched once; null when it could not be loaded */
+export function loadSearch(): Promise<SearchItem[] | null> {
+  loading ??= fetch(`${DATA_BASE}search.json`).then((r) => (r.ok ? r.json() : Promise.reject(r.status))).then(parseSearch).catch(() => { loading = null; return null })   // a failure is not kept: the next call tries again
   return loading
 }
-export function useSearch(): SearchItem[] {
-  const [items, setItems] = useState<SearchItem[]>([])
-  useEffect(() => { let live = true; loadSearch().then((i) => { if (live) setItems(i) }); return () => { live = false } }, [])
-  return items
+export type SearchStatus = 'loading' | 'ready' | 'failed'
+export function useSearch(): { items: SearchItem[]; status: SearchStatus; retry(): void } {
+  const [state, setState] = useState<{ items: SearchItem[]; status: SearchStatus }>({ items: [], status: 'loading' })
+  const [tries, setTries] = useState(0)
+  useEffect(() => { let live = true; loadSearch().then((i) => { if (live) setState(i ? { items: i, status: 'ready' } : { items: [], status: 'failed' }) }); return () => { live = false } }, [tries])
+  const retry = useCallback(() => { setState({ items: [], status: 'loading' }); setTries((n) => n + 1) }, [])
+  return { ...state, retry }
 }
 
 const KIND_RANK = { country: 0, city: 1, province: 2 } as const

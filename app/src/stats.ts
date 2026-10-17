@@ -72,16 +72,3 @@ export function areaForView<T extends StatsArea>(areas: T[], shapes: Shapes, v: 
   }
   return best
 }
-
-/** Every one of `areas` that holds the point, smallest first (a city, its province, its country), for picking a region by clicking. */
-export function areasAt<T extends StatsArea>(areas: T[], shapes: Shapes, lon: number, lat: number): T[] {
-  const hit: T[] = []
-  for (const a of areas) {
-    const [w, s, e, n] = a.bbox
-    if (lon < w || lon > e || lat < s || lat > n) continue
-    const shape = shapes[a.slug]
-    if (shape && !inRings(shape, lon, lat)) continue
-    hit.push(a)
-  }
-  return hit.sort((a, b) => (a.bbox[2] - a.bbox[0]) - (b.bbox[2] - b.bbox[0]))
-}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapView, type Hit, type MapHandle, type View } from './MapView'
 import { SPEED_BANDS, SPEED_NONE, type ColorMode, type MapState } from './mapStyle'
 import type { Theme } from './palette'
-import { regionBySlug, registerSearch, isChina, hsMinKmh, isKnownRegion, partAt, DEFAULT_REGION } from './regions'
+import { regionBySlug, registerSearch, isChina, hsMinKmh, isKnownRegion, partAt, onPartsChange, DEFAULT_REGION } from './regions'
 import { featured, itemInView, useSearch, type SearchItem } from './search'
 import { TYPE_ORDER } from './palette'
 import { loadBoundary, loadLineIndex, loadNamedLines, loadRailways, loadStation, railwayOf, type LineIndex, type NamedLine, type Railways } from './data'
@@ -12,8 +12,8 @@ import { Legend } from './components/Legend'
 import { TooltipBody } from './components/Tooltip'
 import { LinePanel, LinesList, StationPanel } from './components/Panels'
 import { Icon, LangContext, Segmented, Toggle, type Lang } from './components/ui'
-import { SpeedCard, TypeCard } from './components/AreaCard'
-import { areaForView, useStats, areasAt } from './stats'
+import { SpeedCard, TypeCard, WorldCard } from './components/AreaCard'
+import { areaForView, useStats } from './stats'
 import { InspectPanel, InspectTooltipBody } from './components/Inspect'
 
 type Selected = { kind: 'station'; slug: string; id: string } | { kind: 'line'; slug: string; id: number } | { kind: 'lines' } | { kind: 'inspect'; hit: Hit } | null
@@ -48,7 +48,6 @@ export default function App() {
   const [hiddenSpeed, setHiddenSpeed] = useState<number[]>(() => (init.hidden.includes('high_speed') ? [...new Set([...init.hiddenSpeed, 400, 350, 300, 250])] : init.hiddenSpeed))
   const [inspect, setInspect] = useState(init.inspect)
   const [outline, setOutline] = useState(init.outline)
-  const [legendOpen, setLegendOpen] = useState(() => !matchMedia('(max-width: 719px)').matches)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [selected, setSelected] = useState<Selected>(null)
   const [selPt, setSelPt] = useState<[number, number] | null>(null)
@@ -69,7 +68,7 @@ export default function App() {
   const map = useRef<MapHandle>(null)
   const wrap = useRef<HTMLDivElement>(null)
 
-  const found = useSearch()   // search.json: the countries, provinces / states and cities with rail
+  const { items: found, status: placesStatus, retry: retryPlaces } = useSearch()   // search.json: the countries, provinces / states and cities with rail
   const ensureIndex = useCallback((slug: string) => {
     loadLineIndex(slug).then((ix) => setIndexes((p) => (p[slug] ? p : { ...p, [slug]: ix }))).catch(() => {})
     loadRailways(slug).then((rw) => setRailways((p) => (p[slug] ? p : { ...p, [slug]: rw }))).catch(() => {})
@@ -87,12 +86,17 @@ export default function App() {
     registerSearch(found)
     return found
   }, [found])
+  const foundFeatured = useMemo(() => featured(found), [found])
   const stats = useStats(found, viewNow, region.slug)
   const [boundaryGeo, setBoundaryGeo] = useState<{ slug: string; geo: GeoJSON.Geometry | null } | null>(null)
-  // the card is always there (unless collapsed): the area that fills half the screen, else the biggest area under the view centre,
-  // else the picked region's own totals
+  // the card follows the outline: it is there only while an area fills the screen (the same test as the outline), and goes away when zoomed out further
   // World build: a country's box can cover far islands and its neighbours, so the country under the view centre is the one whose outline holds it
-  const overRegions = useMemo(() => stats.regions.filter((r) => r.slug === partAt(viewNow.center)), [stats, viewNow])
+  const [partsVer, setPartsVer] = useState(0)   // partAt changes answer once world.parts.json and the outlines of overlapping countries load: the card is worked out again then, without waiting for a pan
+  const viewNowRef = useRef(viewNow)
+  viewNowRef.current = viewNow
+  const partSeen = useRef('')
+  useEffect(() => onPartsChange(() => { const p = partAt(viewNowRef.current.center); if (p !== partSeen.current) { partSeen.current = p; setPartsVer((v) => v + 1) } }), [])
+  const overRegions = useMemo(() => { void partsVer; return stats.regions.filter((r) => r.slug === partAt(viewNow.center)) }, [stats, viewNow, partsVer])
   const allAreas = useMemo(() => [...overRegions.filter((r) => !regionBySlug(r.slug).noCard), ...stats.areas], [overRegions, stats])
   // the area that fills half the screen: it gets the outline, which goes away when zoomed out further
   // the place picked in the search keeps the card and outline while it still fills 15% of the screen's width (else Chengdu would give way to its New Area)
@@ -101,10 +105,9 @@ export default function App() {
     const p = pickedSlug ? allAreas.filter((a) => a.slug === pickedSlug) : []
     return areaForView(p, stats.shapes, viewNow, window.innerWidth, 0.15) ?? areaForView(allAreas, stats.shapes, viewNow, window.innerWidth)
   }, [allAreas, stats, viewNow, pickedSlug])
-  const viewItem = useMemo(() => itemInView(found, viewNow, window.innerWidth, partAt(viewNow.center)), [found, viewNow])
-  const cardArea = useMemo(
-    () => viewArea ?? areasAt(allAreas, stats.shapes, viewNow.center[0], viewNow.center[1]).pop() ?? overRegions.find((r) => r.slug === region.slug) ?? null,
-    [viewArea, allAreas, stats, viewNow, region.slug])
+  const viewItem = useMemo(() => { void partsVer; return itemInView(found, viewNow, window.innerWidth, partAt(viewNow.center)) }, [found, viewNow, partsVer])
+  // the card shows exactly when the outline can: the area that fills the screen, and nothing at the zoom levels where no area does
+  const cardArea = viewArea
   // the outline of the area in view: its simplified shape, else (a pilot region) its boundary file
   const shape = viewArea ? stats.shapes[viewArea.slug] : undefined
   const needBoundary = outline && viewArea && !shape ? viewArea.slug : null
@@ -201,7 +204,7 @@ export default function App() {
 
   // One state behind every switch: the type cards and the speed card hide the same track. High-speed is both a type and the four
   // bands from 250 km/h up (200 outside China), so hiding it in one card hides it in the other.
-  const areaSlug = cardArea?.slug ?? region.slug
+  const areaSlug = cardArea?.slug ?? (partAt(viewNow.center) || region.slug)   // zoomed out: the country under the centre sets where high-speed starts
   const HS_BANDS = SPEED_BANDS.filter((b) => b.min >= hsMinKmh(areaSlug)).map((b) => b.min)   // 250 in China, 200 elsewhere
   const allSpeed = [...SPEED_BANDS.map((b) => b.min), SPEED_NONE]
   const withHs = (sp: number[], off: boolean) => (off ? [...new Set([...sp, ...HS_BANDS])] : sp.filter((m) => !HS_BANDS.includes(m)))
@@ -239,7 +242,7 @@ export default function App() {
   }
 
   const controls: Controls = {
-    area: cardArea, inView: viewItem, items, featured: featured(found), pickPlace, region, fallback: DEFAULT_REGION, mode, hsrOnly, setHsrOnly, construction, proposed, setProposed, outline, setOutline, freight, units, inspect, setInspect, lang, setLang, theme, setTheme, setRegion, setMode, setConstruction, setFreight, setUnits, copied, copyLink,
+    area: cardArea, inView: viewItem, items, featured: foundFeatured, placesStatus, retryPlaces, pickPlace, region, fallback: DEFAULT_REGION, mode, hsrOnly, setHsrOnly, construction, proposed, setProposed, outline, setOutline, freight, units, inspect, setInspect, lang, setLang, theme, setTheme, setRegion, setMode, setConstruction, setFreight, setUnits, copied, copyLink,
     openLines: () => { openList(); setSheetOpen(false) },
   }
 
@@ -297,12 +300,13 @@ export default function App() {
       )}
 
       {/* toolbar and card share one column, so the card moves down when the toolbar grows (wraps) */}
-      {!compact && <div className="left-stack"><Toolbar c={controls} />{mode !== 'operator' && (mode === 'speed'
+      {!compact && <div className="left-stack"><Toolbar c={controls} />{mode === 'speed'
         ? <SpeedCard area={cardArea} units={units} construction={construction} proposed={proposed} {...speedProps} />
-        : <TypeCard area={cardArea} units={units} hidden={hidden} freight={freight} construction={construction} proposed={proposed} hsrOnly={hsrOnly}
-            onToggleType={legendProps.onToggleType} onShowAll={legendProps.onShowAll} onHideAll={legendProps.onHideAll} onToggleFreight={legendProps.onToggleFreight} />)}</div>}
-      {/* the card on the left is the legend for type and speed; only the operator colours list lines, on the right */}
-      {!compact && !selected && mode === 'operator' && <Legend mode={mode} hsrOnly={hsrOnly} open={legendOpen} setOpen={setLegendOpen} freight={freight} index={idx} {...legendProps} />}
+        : cardArea
+          ? mode !== 'operator' && <TypeCard area={cardArea} units={units} hidden={hidden} freight={freight} construction={construction} proposed={proposed} hsrOnly={hsrOnly}
+            onToggleType={legendProps.onToggleType} onShowAll={legendProps.onShowAll} onHideAll={legendProps.onHideAll} onToggleFreight={legendProps.onToggleFreight} />
+          : <WorldCard operator={mode === 'operator'} zoom={viewNow.zoom} hidden={hidden} freight={freight} hsrOnly={hsrOnly}
+            onToggleType={legendProps.onToggleType} onShowAll={legendProps.onShowAll} onHideAll={legendProps.onHideAll} onToggleFreight={legendProps.onToggleFreight} />}</div>}
       {!compact && (
         <div className="zoom" role="group" aria-label="Zoom">
           <button type="button" aria-label="Zoom in" onClick={() => map.current?.zoomBy(1)}>{Icon.plus}</button>
@@ -355,7 +359,9 @@ export default function App() {
             <h3 className="eyebrow">Legend</h3>
             {mode === 'speed'
               ? <SpeedCard area={cardArea} units={units} construction={construction} proposed={proposed} embedded {...speedProps} />
-              : <Legend mode={mode} hsrOnly={hsrOnly} open setOpen={() => {}} freight={freight} index={idx} compact {...legendProps} />}
+              : mode === 'operator'
+                ? <WorldCard embedded operator zoom={viewNow.zoom} hidden={hidden} freight={freight} hsrOnly={hsrOnly} onToggleType={legendProps.onToggleType} onShowAll={legendProps.onShowAll} onHideAll={legendProps.onHideAll} onToggleFreight={legendProps.onToggleFreight} />
+                : <Legend mode={mode} hsrOnly={hsrOnly} open setOpen={() => {}} freight={freight} index={idx} compact {...legendProps} />}
             <h3 className="eyebrow">More</h3>
             <div className="row between"><span>Units</span><Segmented<'km' | 'mi'> label="Units" value={units} onChange={setUnits} options={[{ value: 'km', label: 'km' }, { value: 'mi', label: 'mi' }]} /></div>
             <div className="row between"><span>Map</span><Segmented<Theme> label="Map" value={theme} onChange={setTheme} options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} /></div>

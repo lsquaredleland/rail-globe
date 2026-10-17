@@ -121,3 +121,7 @@ Files go to `app/bench/results/` (git-ignored): `<label>-<timestamp>.json`, or `
 - Trackpad pinch input is not simulated; wheel ticks are.
 
 The request table also counts the app's own glyph files (`/glyphs/`: requests / KB) and the PMTiles KB transferred (`encodedDataLength`, cache hits count 0, so it varies with the HTTP cache; do not compare it across runs).
+
+## Hover sweep
+
+`hover-sweep.mjs` scripts a fast mouse sweep over rail (the interaction the zoom bench never exercises) and reports handler time, `setFilter` cost, frames over 25 ms, long tasks and side-file reads. See the header of the script for flags (`--views --zooms --moves --interval --mode --runs --throttle --fresh --latency --profile --pre --headed`) and four more: `--late` (sweep as soon as tiles are in, without waiting for the idle highlight prefetch), `--cold` (a new browser with an empty profile per view and zoom), `--prefetch` (measure the idle prefetch after each jump: long tasks, shard requests, bytes; no mouse) and `--dwell <n>` (time-to-highlight mode: n hovers, one per line, each from the empty map). Results: `results/hover-<label>-<time>.json`. Findings and the expected numbers: `docs/09-performance-playbook.md`, "Hover-lag investigation".

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Region } from '../regions'
-import { searchItems, type SearchItem } from '../search'
+import { searchItems, type SearchItem, type SearchStatus } from '../search'
 import type { ColorMode } from '../mapStyle'
 import type { StatsArea } from '../data'
 import { AREA_KIND } from './AreaCard'
@@ -9,7 +9,7 @@ import type { Theme } from '../palette'
 
 export interface Controls {
   /** the area the card shows (what the view is over); the picker names it, falling back to the pilot region */
-  area: StatsArea | null; inView: SearchItem | null; items: SearchItem[]; featured: SearchItem[]; pickPlace(it: SearchItem): void; region: Region; fallback: Region; mode: ColorMode; hsrOnly: boolean; setHsrOnly(v: boolean): void; construction: boolean; proposed: boolean; outline: boolean; freight: boolean; units: 'km' | 'mi'; lang: Lang; setLang(l: Lang): void; theme: Theme; setTheme(t: Theme): void; inspect: boolean
+  area: StatsArea | null; inView: SearchItem | null; items: SearchItem[]; featured: SearchItem[]; placesStatus: SearchStatus; retryPlaces(): void; pickPlace(it: SearchItem): void; region: Region; fallback: Region; mode: ColorMode; hsrOnly: boolean; setHsrOnly(v: boolean): void; construction: boolean; proposed: boolean; outline: boolean; freight: boolean; units: 'km' | 'mi'; lang: Lang; setLang(l: Lang): void; theme: Theme; setTheme(t: Theme): void; inspect: boolean
   setRegion(slug: string): void; setMode(m: ColorMode): void; setConstruction(v: boolean): void; setProposed(v: boolean): void; setOutline(v: boolean): void; setFreight(v: boolean): void
   setUnits(u: 'km' | 'mi'): void; setInspect(v: boolean): void; openLines(): void; copyLink(): void; copied: boolean
 }
@@ -35,35 +35,45 @@ export function RegionPicker({ c, block }: { c: Controls; block?: boolean }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const [at, setAt] = useState(0)
-  const close = () => { setOpen(false); setQ('') }
+  const button = useRef<HTMLButtonElement>(null)
+  const close = useCallback(() => { setOpen(false); setQ('') }, [])
   const ref = useOutside(open, close)
-  const input = useRef<HTMLInputElement>(null)
-  useEffect(() => { if (open) input.current?.focus() }, [open])
   const hits = useMemo(() => (q.trim() ? searchItems(c.items, q, 14) : c.featured), [q, c.items, c.featured])
   useEffect(() => setAt(0), [hits])
-  const pick = (it: SearchItem) => { c.pickPlace(it); close() }
+  const kbd = useRef(false)   // scroll the list only for arrow keys: a hover must not move it under the pointer
+  useEffect(() => { if (kbd.current) document.getElementById(`place-${at}`)?.scrollIntoView({ block: 'nearest' }) }, [at, hits])
+  const pick = (it: SearchItem) => { c.pickPlace(it); close(); button.current?.focus() }
+  const closeToButton = () => { close(); button.current?.focus() }
+  const status = c.placesStatus === 'failed' ? 'Places could not load' : c.placesStatus === 'loading' ? 'Loading places…' : q.trim() && !hits.length ? 'No place with rail matches' : ''
+  const heading = q.trim() ? (hits.length ? 'Results' : '') : 'Biggest rail networks'
   // a city without an outline (no statistics of its own) is more exact than the province round it
   const city = c.inView?.kind === 'city' && !c.inView.bbox && c.area?.kind !== 'city' ? c.inView : null
   const name = city ? (city.nameEn ?? city.name) : c.area?.name ?? c.inView?.nameEn ?? c.inView?.name ?? c.fallback.name
   const kind = city ? ITEM_KIND.city : c.area ? AREA_KIND[c.area.kind] : c.inView ? ITEM_KIND[c.inView.kind]   : c.fallback.sub
   return (
-    <div className={`pop-wrap${block ? ' block' : ''}`} ref={ref}>
-      <button type="button" className="btn region" aria-haspopup="listbox" aria-expanded={open} onClick={() => (open ? close() : setOpen(true))}>
+    <div className={`pop-wrap${block ? ' block' : ''}`} ref={ref} onKeyDown={(e) => { if (open && e.key === 'Escape') { e.stopPropagation(); closeToButton() } }}
+      onBlur={(e) => { if (open && e.relatedTarget && !e.currentTarget.contains(e.relatedTarget as Node)) close() }}>
+      <button ref={button} type="button" className="btn region" aria-haspopup="dialog" aria-expanded={open}
+        onClick={() => { if (open) close(); else { setOpen(true); if (c.placesStatus === 'failed') c.retryPlaces() } }}>
         {Icon.map}<strong>{name}</strong><span className="muted">{kind}</span>{Icon.chevron(open)}
       </button>
+      <div role="status" aria-live="polite" className="sr-only">{open ? status : ''}</div>
       {open && (
-        <div className="pop search-pop">
-          <input ref={input} className="search-in" type="search" placeholder="Search countries, states, cities" aria-label="Search places" aria-controls="place-results" aria-activedescendant={hits[at] ? `place-${at}` : undefined}
+        <div className="pop search-pop" role="dialog" aria-label="Choose a place">
+          <input autoFocus className="search-in" type="search" enterKeyHint="go" placeholder="Search countries, states, cities" aria-label="Search places"
+            role="combobox" aria-expanded={hits.length > 0} aria-autocomplete="list" aria-controls="place-results" aria-activedescendant={hits[at] ? `place-${at}` : undefined}
             value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" spellCheck={false}
             onKeyDown={(e) => {
-              if (e.key === 'ArrowDown') { e.preventDefault(); setAt((a) => Math.min(hits.length - 1, a + 1)) }
-              else if (e.key === 'ArrowUp') { e.preventDefault(); setAt((a) => Math.max(0, a - 1)) }
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return
+              if (e.key === 'ArrowDown') { kbd.current = true; e.preventDefault(); setAt((a) => Math.max(0, Math.min(hits.length - 1, a + 1))) }
+              else if (e.key === 'ArrowUp') { kbd.current = true; e.preventDefault(); setAt((a) => Math.max(0, Math.min(hits.length - 1, a - 1))) }
               else if (e.key === 'Enter' && hits[at]) pick(hits[at])
             }} />
+          {heading && <span className="eyebrow pad">{heading}</span>}
+          {status && <span className="eyebrow pad" aria-hidden="true">{status}</span>}
           <div role="listbox" id="place-results" aria-label="Places" className="search-list">
-            <span className="eyebrow pad">{q.trim() ? (hits.length ? 'Results' : 'No place with rail matches') : 'Biggest rail networks'}</span>
             {hits.map((r, i) => (
-              <div key={`${r.kind}:${r.slug ?? r.name}:${i}`} id={`place-${i}`} role="option" aria-selected={i === at} className={`opt${i === at ? ' sel' : ''}`} onMouseEnter={() => setAt(i)} onClick={() => pick(r)}>
+              <div key={`${r.kind}:${r.slug ?? r.name}:${i}`} id={`place-${i}`} role="option" aria-selected={i === at} className={`opt${i === at ? ' sel' : ''}`} onMouseEnter={() => { kbd.current = false; setAt(i) }} onClick={() => pick(r)}>
                 <span className="grow"><span className="name">{r.nameEn ?? r.name} {r.local && r.local !== r.nameEn && <span className="muted">{r.local}</span>}</span><span className="sub">{ITEM_KIND[r.kind]}</span></span>
               </div>
             ))}
