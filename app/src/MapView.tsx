@@ -229,7 +229,12 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       if (!loaded.current || key === prefetched) return
       prefetched = key
       // the outlines that decide which country a track belongs to must be in first, else a border track asks the neighbour for its line file (404)
-      setTimeout(() => { if (!map.isMoving()) void warmParts([c.lng, c.lat]).then(() => { if (!map.isMoving()) prefetchHighlights(map) }) }, 150)
+      // a prefetch that did not finish (the map moved, or the view changed under it) must not mark the view done: coming back to it asks again
+      const again = () => { if (prefetched === key) prefetched = '' }
+      setTimeout(() => {
+        if (map.isMoving()) { again(); return }
+        void warmParts([c.lng, c.lat]).then(() => (map.isMoving() ? false : prefetchHighlights(map))).then((done) => { if (!done) again() })
+      }, 150)
     })
     map.on('moveend', () => {
       const c = map.getCenter()

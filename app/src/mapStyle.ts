@@ -626,31 +626,44 @@ export function highlightLine(map: MLMap, slug: string | null, lineId: number | 
 /** While the map is idle, load the highlight data of the lines on screen so a hover finds it ready (a file is a few KB; a long
  *  line's is up to ~100 KB). Cheap enough: one hit-layer query, at most PREFETCH_MAX files, a few at a time. */
 const PREFETCH_MAX = 48
-export function prefetchHighlights(map: MLMap) {
-  if (map.getZoom() < 6) return
+let prefetchGen = 0
+/** Resolves to true when every queued file was processed, false when the map moved first or a newer call took over (the caller may then ask again). */
+export function prefetchHighlights(map: MLMap): Promise<boolean> {
+  if (map.getZoom() < 6) return Promise.resolve(true)
   const layers = hitLayers(TILES).filter((l) => map.getLayer(l))
-  if (!layers.length) return
+  if (!layers.length) return Promise.resolve(true)
+  const gen = ++prefetchGen
   const todo = new Map<string, () => Promise<unknown>>()
-  // A view returns thousands of track pieces, most of them pieces of a line already seen. regionOf is a point-in-outline test
-  // (China's outline has tens of thousands of vertices): ask it once per line or railway name, not once per piece (it was 1.8 s of a
-  // 4 s idle at Chengdu z10, throttle 4, all of it freezing the main thread just when the pointer starts to move).
-  const seen = new Set<string>()
+  // A view returns thousands of track pieces. regionOf is a point-in-outline test (China's outline has tens of thousands of vertices):
+  // it was 1.8 s of a 4 s idle at Chengdu z10, throttle 4, all of it freezing the main thread just when the pointer starts to move. So it
+  // runs once per ~5 km cell, and a piece already queued (same region, same line id or railway name; ids are numbered per region) is skipped first.
+  const cellRegion = new Map<string, string>()
   for (const f of map.queryRenderedFeatures({ layers })) {
     if (todo.size >= PREFETCH_MAX) break
     const ln = Number(String(f.properties.ln ?? '').split(',')[0])
     const isLine = Number.isFinite(ln) && ln > 0
-    const key = isLine ? `l${ln}` : f.properties.n ? `n${f.properties.n}` : ''
-    if (!key || seen.has(key)) continue
-    seen.add(key)
-    const slug = regionOf(f)
-    if (isLine) todo.set(`${slug}|${ln}`, () => loadLineHighlight(slug, ln))
-    else todo.set(`${slug}|n|${f.properties.n}`, () => loadNameHighlight(slug, String(f.properties.n)))
+    if (!isLine && !f.properties.n) continue
+    let c = (f.geometry as GeoJSON.LineString).coordinates as unknown
+    while (Array.isArray(c) && Array.isArray(c[0])) c = c[0]
+    const cell = Array.isArray(c) ? `${Math.round(Number(c[0]) * 20)},${Math.round(Number(c[1]) * 20)}` : ''
+    let slug = cellRegion.get(cell)
+    if (slug === undefined) { slug = regionOf(f); if (cell) cellRegion.set(cell, slug) }
+    const key = isLine ? `${slug}|${ln}` : `${slug}|n|${f.properties.n}`
+    if (todo.has(key)) continue
+    const s = slug
+    todo.set(key, isLine ? () => loadLineHighlight(s, ln) : () => loadNameHighlight(s, String(f.properties.n)))
   }
   const jobs = [...todo.values()]
+  let complete = true
   // two at a time (a shard is up to ~470 KB and r2.dev serves HTTP/1.1: six connections shared with the tiles); the rest is dropped as soon
-  // as the map moves again, so a pan's tile requests do not queue behind a prefetch nobody is waiting for
-  const run = async () => { while (!map.isMoving()) { const j = jobs.shift(); if (!j) break; await j().catch(() => null) } }
-  for (let i = 0; i < 2; i++) void run()
+  // as the map moves again (or a newer prefetch starts), so a pan's tile requests do not queue behind a prefetch nobody is waiting for
+  const run = async () => {
+    while (jobs.length) {
+      if (map.isMoving() || gen !== prefetchGen) { complete = false; return }
+      await jobs.shift()!().catch(() => null)
+    }
+  }
+  return Promise.all([run(), run()]).then(() => complete)
 }
 
 /** Line number badges: a rounded rectangle in the line's colour with a white outline, stretchable so icon-text-fit can size it to the number.
