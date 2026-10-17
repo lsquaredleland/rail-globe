@@ -1,4 +1,4 @@
-import { DATA_BASE, TILE_SOURCE } from './config'
+import { DATA_BASE } from './config'
 import type { SearchItem } from './search'
 
 export interface Region {
@@ -16,46 +16,28 @@ export interface Region {
   noCard?: boolean
 }
 
-/** The hand-tuned regions of the pilot build (their own centre, zoom and card rules). The world build has none: its regions come from search.json. */
-const PILOT_REGIONS: Region[] = [
-  { slug: 'sf-bay-area', name: 'SF Bay Area', sub: '9 counties', center: [-122.22, 37.7], zoom: 9.3, zoomPhone: 8.4 },
-  { slug: 'greater-bay-area', name: 'Greater Bay Area', sub: 'Pearl River Delta + HK + Macao', local: '粤港澳大湾区', center: [113.55, 22.75], zoom: 8.2, zoomPhone: 7.3, tiles: 'china' },
-  { slug: 'paris', name: 'Paris', sub: 'Île-de-France', center: [2.35, 48.86], zoom: 10.6, zoomPhone: 9.6, tiles: 'fr', noCard: true },
-  { slug: 'fr', name: 'France', sub: 'Whole country', local: 'France', center: [2.6, 46.6], zoom: 5.2, zoomPhone: 4.3 },
-  { slug: 'ch', name: 'Switzerland', sub: 'Whole country', local: 'Schweiz', center: [8.2, 46.8], zoom: 7, zoomPhone: 6 },
-  { slug: 'it', name: 'Italy', sub: 'Whole country', local: 'Italia', center: [12.5, 42.4], zoom: 5.1, zoomPhone: 4.2 },
-  { slug: 'chengdu', name: 'Chengdu', sub: 'Municipality', local: '成都', center: [104.07, 30.66], zoom: 10.2, zoomPhone: 9.2, tiles: 'china', noCard: true },
-  { slug: 'cn-beijing', name: 'Beijing', sub: 'Municipality', local: '北京', center: [116.4, 39.93], zoom: 9.6, zoomPhone: 8.6, tiles: 'china', noCard: true },
-  { slug: 'de', name: 'Germany', sub: 'Whole country', local: 'Deutschland', center: [10.45, 51.1], zoom: 5.4, zoomPhone: 4.5 },
-  { slug: 'china', name: 'China', sub: 'Mainland + HK + Macao', local: '中国', center: [108.0, 34.5], zoom: 3.8, zoomPhone: 2.8 },
-]
-
-export const REGIONS: Region[] = TILE_SOURCE === 'world' ? [] : PILOT_REGIONS
-
-/** Where the map starts without a link: the Greater Bay Area in the pilot, the whole world in the world build */
-export const DEFAULT_REGION: Region = TILE_SOURCE === 'world'
-  ? { slug: 'world', name: 'World', sub: 'All countries with rail', center: [15, 28], zoom: 2.2, zoomPhone: 1.6, noCard: true }
-  : PILOT_REGIONS[1]
+/** Where the map starts without a link: the whole world */
+export const DEFAULT_REGION: Region = { slug: 'world', name: 'World', sub: 'All countries with rail', center: [15, 28], zoom: 2.2, zoomPhone: 1.6, noCard: true }
 
 const dynamic = new Map<string, Region>()
 const SUB = { country: 'Country', province: 'Province / state', city: 'City' } as const
-/** Makes the countries and provinces of search.json known as regions (a link to `#r=de-bavaria` finds its centre and zoom). The hand-tuned regions win. */
+/** Makes the countries and provinces of search.json known as regions (a link to `#r=de-bavaria` finds its centre and zoom).  */
 export function registerSearch(items: SearchItem[]) {
   for (const it of items) {
     if (!it.slug || dynamic.has(it.slug)) continue
     dynamic.set(it.slug, { slug: it.slug, name: it.nameEn ?? it.name, sub: SUB[it.kind], local: it.local ?? undefined, center: it.center, zoom: it.zoom, zoomPhone: Math.max(1.5, it.zoom - 1) })
   }
 }
-/** A region by slug: a hand-tuned one, else one made from search.json, else (an unknown slug) a placeholder that names the slug and sits at the default view. Never another region. */
+/** A region by slug: one made from search.json, else (an unknown slug) a placeholder that names the slug and sits at the default view. Never another region. */
 export const regionBySlug = (s: string): Region =>
-  REGIONS.find((r) => r.slug === s) ?? dynamic.get(s) ?? { ...DEFAULT_REGION, slug: s, name: s, sub: '', local: undefined, noCard: true }
-export const isKnownRegion = (s: string) => REGIONS.some((r) => r.slug === s) || dynamic.has(s)
+  dynamic.get(s) ?? { ...DEFAULT_REGION, slug: s, name: s, sub: '', local: undefined, noCard: true }
+export const isKnownRegion = (s: string) => dynamic.has(s)
 
-/** The one tile source on the map: the per-region PMTiles (SF Bay Area, China and the countries) joined (rail-extract build, join_pilot). Style layer ids are `pilot:<name>`. */
-export const TILES = TILE_SOURCE
+/** The one tile source on the map: the countries' PMTiles joined into world.pmtiles (rail-extract world). Style layer ids are `world:<name>`. */
+export const TILES = 'world'
 type Part = { slug: string; bounds: [number, number, number, number] }
 let parts: Part[] = []
-/** The per-region sources that were joined, with their outline bounds, from pilot.parts.json (written by the join in
+/** The per-region sources that were joined, with their outline bounds, from world.parts.json (written by the join in
  *  rail-extract). Await once at startup before `partAt` / `regionOf`. Bounds may overlap (see `partAt`). Tiles carry no region field, so a
  *  feature's region (its side files: tags, lines, stations, highlights) is found from where it lies. */
 export async function loadParts() {

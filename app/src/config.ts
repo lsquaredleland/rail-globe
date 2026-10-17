@@ -13,11 +13,8 @@ export const STATION_ZOOM: Record<1 | 2 | 3, { dot: number; label: number }> = {
 const envBase = import.meta.env.VITE_DATA_BASE as string | undefined
 const dataRoot = envBase ? envBase.replace(/\/?$/, '/') : new URL('data/', document.baseURI).href
 
-/** Which build of the pipeline the map shows: `pilot` (default; pilot.pmtiles in data/), or `world` with VITE_TILE_SOURCE=world (world.pmtiles
- *  and the country side files in data/world/, written by `rail-extract world`). Dev switch for looking at the world build; the app does
- *  not offer it to users. */
-export const TILE_SOURCE = import.meta.env.VITE_TILE_SOURCE === 'world' ? 'world' : 'pilot'
-export const DATA_BASE = TILE_SOURCE === 'world' ? `${dataRoot}world/` : dataRoot
+/** The map shows the world build: world/world.pmtiles and the country side files in data/world/ (written by `rail-extract world`). */
+export const DATA_BASE = `${dataRoot}world/`
 
 /** Map label glyphs (SDF fonts, only the characters the map can draw), written by pipeline/glyphs: gitignored, so a deployed build reads them from the data bucket's glyphs/ folder (VITE_DATA_BASE), else the app's own glyphs/ folder. MapLibre
  *  wants an absolute URL with its {fontstack} and {range} placeholders left as they are. */

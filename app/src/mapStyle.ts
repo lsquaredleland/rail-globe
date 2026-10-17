@@ -443,9 +443,9 @@ export function addRailSource(map: MLMap, source: string) {
   label('lbl1', 1, STATION_ZOOM[1].label, [13, 16], true)
   label('lbl2', 2, STATION_ZOOM[2].label, [12, 13], true)
   label('lbl3', 3, STATION_ZOOM[3].label, [10.5, 11.5], false)
-  // operator logo on the dots of the bigger stations (tier 1 and 2), covering the dot until z16, then lifted above it; the image is fetched when the layer first asks for it (addBadgeImages)
+  // operator logo on the dots of the bigger stations (tier 1 and 2), always covering the dot (centred at every zoom, so the dot never shows beside it); the image is fetched when the layer first asks for it (addBadgeImages)
   add({ id: L(source, 'logo'), type: 'symbol', ...src, 'source-layer': 'stations', minzoom: 9, filter: ['all', ['has', 'lg'], ['<=', get('tier'), 2], ['!', ['has', 'con']]],
-    layout: { 'icon-image': ['concat', 'logo|', get('lg')], 'icon-anchor': 'center', 'icon-offset': ['step', ['zoom'], ['literal', [0, 0]], 16, ['literal', [0, -22]]], 'symbol-sort-key': get('tier'),
+    layout: { 'icon-image': ['concat', 'logo|', get('lg')], 'icon-anchor': 'center', 'symbol-sort-key': get('tier'),
       'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.6, 14, 0.9], 'icon-padding': 3 } })
   const conLabel = (tier: 1 | 2 | 3, size: [number, number]) =>
     add({ id: L(source, `lblcon${tier}`), type: 'symbol', ...src, 'source-layer': 'complexes', minzoom: STATION_ZOOM[tier].label,

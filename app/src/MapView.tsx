@@ -3,8 +3,8 @@ import * as maplibregl from 'maplibre-gl'   // MapLibre 6 is ESM-only: no defaul
 import type { GeoJSONSource, Map as MLMap, MapGeoJSONFeature } from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { addAirportIcon, addBadgeImages, addBoundary, addPlaceLabels, placesGeoJSON, addOutline, setOutline, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayers, prefetchHighlights, setFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
-import { loadParts, regionOf, warmParts, REGIONS, TILES } from './regions'
+import { addAirportIcon, addBadgeImages, addPlaceLabels, placesGeoJSON, addOutline, setOutline, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayers, prefetchHighlights, setFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
+import { loadParts, regionOf, warmParts, TILES } from './regions'
 import { DATA_BASE } from './config'
 
 export type Hit =
@@ -144,7 +144,6 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       const c0 = map.getCenter()
       await warmParts([c0.lng, c0.lat])
       if (mapRef.current !== map) return
-      for (const r of REGIONS) addBoundary(map, r.slug)
       addOutline(map)
       addRailSource(map, TILES)   // one source: the pilot regions' tiles joined; regions inside China are drawn from China's part
       map.addSource('selection', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })

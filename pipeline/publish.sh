@@ -2,13 +2,13 @@
 # Raw data -> build -> R2 -> Vercel, in one command. Every step is the documented one (README.md "Run it", docs/10-world-build.md); this only chains
 # them, checks the output between steps, and orders the upload and the deploy so the live site is never half-updated.
 #
-#   pipeline/publish.sh [--mode world|pilot] [--planet FILE] [--glyphs] [--push] [--dry-run] [--stages a,b,c] [--skip a,b]
+#   pipeline/publish.sh [--planet FILE] [--glyphs] [--push] [--dry-run] [--stages a,b,c] [--skip a,b]
 #
 # Stages, in order (default: all but cache, glyphs, deploy):
 #   tools     build the Rust extractor
 #   cache     planet .osm.pbf -> .railcache (only with --planet FILE; once per planet, about 1 min, 4.5 GB)
 #   outlines  region outlines from the cache
-#   build     cut, classify, station model, side files, tiles, places (world: about 2 min and 12 GB; pilot: about 1 min)
+#   build     cut, classify, station model, side files, tiles, places (about 2 min and 12 GB)
 #   glyphs    label glyphs over the new tiles (only with --glyphs; first run downloads about 34 MB of fonts)
 #   verify    check the output on disk (read only); stops the run on a failure
 #   upload    r2/sync.sh in copy mode: adds and updates files in R2, deletes nothing, so the live app keeps working
@@ -23,10 +23,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MODE=world; PLANET=; GLYPHS=0; PUSH=0; DRY=0; ONLY=; SKIP=
+PLANET=; GLYPHS=0; PUSH=0; DRY=0; ONLY=; SKIP=
 while [ $# -gt 0 ]; do
   case "$1" in
-    --mode) MODE="$2"; shift ;;
     --planet) PLANET="$2"; shift ;;
     --glyphs) GLYPHS=1 ;;
     --push) PUSH=1 ;;
@@ -38,7 +37,6 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-case "$MODE" in world|pilot) ;; *) echo "--mode must be world or pilot" >&2; exit 2 ;; esac
 
 RE=pipeline/rail-extract/target/release/rail-extract
 DATA=app/public/data
@@ -82,42 +80,29 @@ fi
 
 if want build; then
   ls data/cache/*.railcache >/dev/null 2>&1 || fail "no data/cache/*.railcache: run with --planet planet-YYMMDD.osm.pbf first"
-  if [ "$MODE" = world ]; then
-    say "build: world (docs/10-world-build.md)"
-    run mkdir -p data/world
-    if [ "$DRY" = 1 ]; then echo "+ ls data/regions | grep -E '^[a-z]{2}.geojson\$' > data/world/slugs.txt"; else
-      ls data/regions | grep -E '^[a-z]{2}\.geojson$' | sed 's/.geojson//' > data/world/slugs.txt; fi
-    run "$RE" cut --regions data/regions --data data/world $( [ -f data/world/slugs.txt ] && cat data/world/slugs.txt || true )
-    run "$RE" world-list --data data/world --slugs-file data/world/slugs.txt
-    KEPT=$( [ -f data/world/kept.txt ] && cat data/world/kept.txt || true )
-    run "$RE" build $KEPT --no-tiles --threads 5 --data data/world --out "$DATA/world"
-    run "$RE" world --slugs-file data/world/kept.txt
-    run "$RE" outlines --cities data/world/city-outlines-wanted.json
-    run "$RE" build $KEPT --no-tiles --threads 5 --data data/world --out "$DATA/world"
-    run "$RE" world --slugs-file data/world/kept.txt
-  else
-    say "build: pilot (README.md)"
-    run "$RE" cut sf-bay-area china de fr ch it paris chengdu greater-bay-area cn-beijing
-    run "$RE" build sf-bay-area china de fr ch it
-    run "$RE" build paris chengdu greater-bay-area cn-beijing --no-tiles
-    run "$RE" places --parts "$DATA/pilot.parts.json"
-  fi
+  say "build: world (docs/10-world-build.md)"
+  run mkdir -p data/world
+  if [ "$DRY" = 1 ]; then echo "+ ls data/regions | grep -E '^[a-z]{2}.geojson\$' > data/world/slugs.txt"; else
+    ls data/regions | grep -E '^[a-z]{2}\.geojson$' | sed 's/.geojson//' > data/world/slugs.txt; fi
+  run "$RE" cut --regions data/regions --data data/world $( [ -f data/world/slugs.txt ] && cat data/world/slugs.txt || true )
+  run "$RE" world-list --data data/world --slugs-file data/world/slugs.txt
+  KEPT=$( [ -f data/world/kept.txt ] && cat data/world/kept.txt || true )
+  run "$RE" build $KEPT --no-tiles --threads 5 --data data/world --out "$DATA/world"
+  run "$RE" world --slugs-file data/world/kept.txt
+  run "$RE" outlines --cities data/world/city-outlines-wanted.json
+  run "$RE" build $KEPT --no-tiles --threads 5 --data data/world --out "$DATA/world"
+  run "$RE" world --slugs-file data/world/kept.txt
 fi
 
 if want glyphs; then
   say "glyphs"
   run npm --prefix pipeline/glyphs install --no-audit --no-fund
-  if [ "$MODE" = world ]; then run node pipeline/glyphs/build-glyphs.mjs --data "$DATA/world" --tiles world --out "$DATA/../glyphs"
-  else run node pipeline/glyphs/build-glyphs.mjs; fi
+  run node pipeline/glyphs/build-glyphs.mjs --data "$DATA/world" --tiles world --out "$DATA/../glyphs"
 fi
 
 if want verify; then
-  say "verify: output on disk ($MODE)"
-  if [ "$MODE" = world ]; then
-    root="$DATA/world"; tiles="$root/world.pmtiles"; min=500000000
-  else
-    root="$DATA"; tiles="$root/pilot.pmtiles"; min=100000000
-  fi
+  say "verify: output on disk"
+  root="$DATA/world"; tiles="$root/world.pmtiles"; min=500000000
   [ -f "$tiles" ] || fail "missing $tiles"
   size=$(stat -f %z "$tiles" 2>/dev/null || stat -c %s "$tiles")
   [ "$size" -ge "$min" ] || fail "$tiles is only $size bytes (expected at least $min)"
@@ -136,8 +121,6 @@ if want verify; then
   files=$(find "$DATA" -type f | wc -l | tr -d ' ')
   echo "ok: $n regions, $files files, $(basename "$tiles") $((size / 1000000)) MB"
   [ "$files" -le 30000 ] || fail "$files files under $DATA: too many (the shard layout has about 11,000)"
-  [ "$MODE" = world ] && ! grep -q '^VITE_TILE_SOURCE=world' app/.env.production 2>/dev/null && echo "warning: app/.env.production does not set VITE_TILE_SOURCE=world: the deployed app will read the pilot, not this world build"
-  [ "$MODE" = pilot ] && grep -q '^VITE_TILE_SOURCE=world' app/.env.production 2>/dev/null && echo "warning: app/.env.production sets VITE_TILE_SOURCE=world: the deployed app will ignore this pilot build"
   if command -v python3 >/dev/null; then
     python3 -I pipeline/check.py >/tmp/publish-check.log 2>&1 && echo "answer lists: pass" || echo "warning: answer lists failed (see /tmp/publish-check.log; one failure, '成都' tier 3, is known)"
   fi
@@ -167,8 +150,7 @@ fi
 if want live; then
   say "live: R2 and the site"
   DATA_ORIGIN=$(node -e "const c=JSON.parse(require('fs').readFileSync('app/vercel.json','utf8')).headers[0].headers.find(h=>h.key==='Content-Security-Policy').value;const m=c.split(';').map(s=>s.trim()).find(s=>s.startsWith('connect-src '));console.log(m.split(' ').find(o=>o.startsWith('https://')&&!o.includes('openfreemap')))")
-  prefix=$([ "$MODE" = world ] && echo world/ || echo "")
-  tiles=$([ "$MODE" = world ] && echo world/world.pmtiles || echo pilot.pmtiles)
+  prefix=world/; tiles=world/world.pmtiles
   code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-15' -H "Origin: $SITE" "$DATA_ORIGIN/$tiles"); [ "$code" = 206 ] && echo "ok: $tiles range request 206" || fail "$tiles range request returned $code"
   code=$(curl -s -o /dev/null -w '%{http_code}' "$DATA_ORIGIN/${prefix}it/shards.json"); [ "$code" = 200 ] && echo "ok: ${prefix}it/shards.json" || fail "${prefix}it/shards.json returned $code"
   acao=$(curl -sI -H "Origin: $SITE" "$DATA_ORIGIN/$tiles" | tr -d '\r' | grep -i '^access-control-allow-origin' || true); [ -n "$acao" ] && echo "ok: CORS ($acao)" || fail "no CORS header for $SITE"
@@ -176,4 +158,4 @@ if want live; then
   csp=$(curl -sI "$SITE" | tr -d '\r' | grep -ic '^content-security-policy' || true); [ "$csp" = 1 ] && echo "ok: $SITE serves its CSP" || fail "$SITE did not answer with a Content-Security-Policy header"
 fi
 
-say "done ($MODE${DRY:+, dry run})"
+say "done${DRY:+ (dry run)}"

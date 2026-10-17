@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadShapes, loadStats, type Shapes, type StatsArea } from './data'
-import { REGIONS, regionBySlug } from './regions'
+import { regionBySlug } from './regions'
 import type { SearchItem } from './search'
 import type { View } from './MapView'
 
@@ -20,7 +20,6 @@ export function useStats(items: SearchItem[], view: View, picked: string): Stats
   const [loaded, setLoaded] = useState<Loaded>({})
   const [lon, lat] = view.center
   const wanted = useMemo(() => {
-    if (REGIONS.length) return REGIONS.map((r) => r.slug)
     const w = view.zoom < 3.2 ? [] : items.filter((i) => i.kind === 'country' && i.slug && i.bbox && lon >= i.bbox[0] && lon <= i.bbox[2] && lat >= i.bbox[1] && lat <= i.bbox[3]).map((i) => i.slug!)
     return picked && items.some((i) => i.slug === picked && i.kind === 'country') ? [...new Set([...w, picked])] : w
   }, [items, lon, lat, view.zoom, picked])
