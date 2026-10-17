@@ -23,7 +23,7 @@ Map data © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/cop
 
 ## Run it
 
-From a fresh clone to a working pilot map. Every command runs from the repository root. Tested end to end on a fresh clone (macOS, 14 cores, planet-260928; the planet read itself was skipped, see step 2).
+From a fresh clone to the data checks (pilot regions); the app needs the world build below. The steps up to 5 give the pilot extracts. Every command runs from the repository root. Tested end to end on a fresh clone (macOS, 14 cores, planet-260928; the planet read itself was skipped, see step 2).
 
 Needs:
 - Node 20+ (tested with 22) and npm.
@@ -52,16 +52,16 @@ $RE outlines --level 5 --country CN
 # 4. Cut the ten regions the app offers from the cache (2 s)
 $RE cut sf-bay-area china de fr ch it paris chengdu greater-bay-area cn-beijing
 
-# 5. Build. The six pilot sources make tiles and, together, pilot.pmtiles (30 s); the app reads only that file, and it is written only when all six are built.
+# 5. Build. The six pilot sources make tiles and, together, pilot.pmtiles (30 s); it is written only when all six are built.
 #    The other four are drawn from those tiles and need side files only (1 s).
 $RE build sf-bay-area china de fr ch it
 $RE build paris chengdu greater-bay-area cn-beijing --no-tiles
 
-# 6. City, town and country names (app/public/data/places.json) and the search index (search.json). Step 5 already ran this at its end (0.3 s, from the
+# 6. (Pilot only; the world build runs it itself.) City, town and country names (app/public/data/places.json) and the search index (search.json). Step 5 already ran this at its end (0.3 s, from the
 #    place nodes in the cache and the stations of step 5); run it again by hand only after changing the code or the outlines. Without places.json no country, city or town names show (station names still do).
 $RE places --parts app/public/data/pilot.parts.json
 
-# 7. Label glyphs (git-ignored; without them every label fails). Run after steps 5 and 6: it reads pilot.pmtiles and places.json. First run 8 min here (font downloads), 40 s once the fonts are cached.
+# 7. Label glyphs (git-ignored; without them every label fails). Run after steps 5 and 6; for the app it must read world.pmtiles (see the world build below), not pilot.pmtiles. First run 8 min here (font downloads), 40 s once the fonts are cached.
 npm --prefix pipeline/glyphs install
 node pipeline/glyphs/build-glyphs.mjs
 
@@ -70,11 +70,11 @@ npm --prefix app install
 npm --prefix app run dev        # http://127.0.0.1:5173/
 ```
 
-Check it worked: `app/public/data/pilot.pmtiles` (about 300 MB) and `pilot.parts.json` exist, `app/public/glyphs/` holds two folders (`Noto Sans Regular`, `Noto Sans Bold`), and the app at `#v=11/48.86/2.35` shows Paris rail with station names and a region card, with no console errors. `npm --prefix app run build` type-checks and builds a static site in `app/dist/`.
+Check it worked: `app/public/data/pilot.pmtiles` (about 300 MB) and `pilot.parts.json` exist, `app/public/glyphs/` holds two folders (`Noto Sans Regular`, `Noto Sans Bold`), and the data checker passes on the pilot regions (Paris included). The app itself needs the world build below. `npm --prefix app run build` type-checks and builds a static site in `app/dist/`.
 
-### Optional: the world build
+### The world build (the app's only data source)
 
-Every country with passenger rail in one file, `app/public/data/world/world.pmtiles` (1.15 GB, 142 countries). Not part of the pilot; run it only when you want it (disk: about 10 GB for `data/world/` and `app/public/data/world/`; memory: 10.5 GB peak for the tile step, 12 GB for the side files). Needs steps 1 and 2 above (the `.railcache`) and the level 2 and level 4 outlines of step 3. Times on a 14-core Mac: cut 7 s, side files 37 s, tiles 55 to 59 s.
+The app's only data source (deployed 2026-10-16): every country with passenger rail in one file, `app/public/data/world/world.pmtiles` (1.15 GB, 142 countries). Run it only when you want it (disk: about 10 GB for `data/world/` and `app/public/data/world/`; memory: 10.5 GB peak for the tile step, 12 GB for the side files). Needs steps 1 and 2 above (the `.railcache`) and the level 2 and level 4 outlines of step 3. Times on a 14-core Mac: cut 7 s, side files 37 s, tiles 55 to 59 s.
 
 ```
 mkdir -p data/world && ls data/regions | grep -E '^[a-z]{2}\.geojson$' | sed 's/.geojson//' > data/world/slugs.txt   # the 216 country outlines
@@ -86,7 +86,7 @@ $RE outlines --cities data/world/city-outlines-wanted.json                      
 $RE build $(cat data/world/kept.txt) --no-tiles --threads 5 --data data/world --out app/public/data/world   # again: the statistics and shapes now have the cities
 $RE world --slugs-file data/world/kept.txt                                                           # second pass: the same, with the city outlines in the search index (skip it if you only changed outlines: `$RE places ...` is enough)
 $RE pminfo app/public/data/world/world.pmtiles                                                       # header, tiles and bytes per zoom
-VITE_TILE_SOURCE=world npm --prefix app run dev                                                      # look at it (the app reads only the pilot by default)
+npm --prefix app run dev                                                                              # look at it
 ```
 
 Not in the repo, so rebuilt by the commands above: `data/`, the planet, `app/public/data/` (including the world folder), `app/public/glyphs/`. The world build also writes `world/places.json` and `world/search.json` (the `world` command runs `rail-extract places` last). Details and the memory-bounded writer: `docs/10-world-build.md`.
@@ -108,4 +108,4 @@ Research notes, not decisions or commitments. v1 stays GTFS-free and fully stati
 
 ## Status
 
-Pilot stage: SF Bay Area, Paris and China (with Chengdu, Beijing and the Greater Bay Area drawn from China's tiles). Phases and their "Done when" tests are in `docs/05-pilot-plan.md`; undecided items are in `docs/06-open-questions.md`. Never run a world build unless asked (see "Optional: the world build" above).
+World build deployed 2026-10-16 (R2 r2.dev + Vercel, `pipeline/publish.sh`); custom domain and the low-zoom tile budget (`docs/16-low-zoom-tile-weight-plan.md`) are open. The pilot regions remain the data-check regions. Phases and their "Done when" tests are in `docs/05-pilot-plan.md`; undecided items are in `docs/06-open-questions.md`. Never run a world build unless asked (see "Optional: the world build" above).

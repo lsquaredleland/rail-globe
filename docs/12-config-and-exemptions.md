@@ -10,6 +10,8 @@ A config file may start with `"extends": "<name>"`, where `<name>` is another fi
 2. the `extends` chain, root first (`_north-america.json` extends `_default`; `us.json` and `ca.json` extend `_north-america`).
 3. the region's own file.
 
+A file of its own that says `extends` still gets `stat_name`, `stat_local` and `stat_auto.country` filled from the outline when it leaves them out (explicit values win; `fill_default` in `site.rs`), so a bare `{"extends": "_default"}` file keeps its card name and its province/city areas.
+
 A file without `extends` gets nothing beneath it: the hand-written pilot configs (`paris`, `sf-bay-area`, `chengdu`) are unchanged. (An implicit `_default` under every file would have added `stat_auto` to them and changed their statistics.)
 
 Missing parent, a cycle (`a -> b -> a`) and a bad `+key` stop the run with a message naming the file.

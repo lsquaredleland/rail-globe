@@ -14,6 +14,8 @@ Boundaries are administrative areas (decided).
 
 ## Phases
 
+Status 2026-10-17: the world build runs end to end and is deployed (R2 `r2.dev` for data, Vercel for the app, `pipeline/publish.sh`); the app reads only `world/world.pmtiles` and no longer has the pilot regions. Phase 5 "Done when" is not met yet: the low-zoom views are over the 600 KB budget (`11-performance-todos.md`) and the custom domain is not attached. The pilot regions below stay as the data-check regions (`pipeline/answers/`).
+
 | Phase | Work | Done when |
 | --- | --- | --- |
 | 0 · Setup | Repo, `docs/`, `CLAUDE.md`. Vite + React + TypeScript app skeleton. One osmium config cutting the three regions | Three extracts from one planet pass; empty app runs locally |

@@ -38,3 +38,4 @@ app/bench/results/
 .env
 .env.local
 r2/.env
+.claude/worktrees/

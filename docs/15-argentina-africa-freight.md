@@ -60,3 +60,7 @@ python3 pipeline/qa/study_ways.py ar za tz ...     # per-way tables (km, route, 
 rail-extract cut --regions data/regions --data data/world <slugs>
 rail-extract world-list --data data/world --slugs-file data/world/slugs.txt
 ```
+
+## Added 2026-10-17: Brazil, Chile, Colombia, Uruguay, Venezuela, Dominican Republic
+
+User decision after the Americas QA (`docs/qa/americas-africa-asia.md`): the same "routes" mode applies to these six. Each has its own `pipeline/config/<slug>.json` extending `_evidence-routes` (they are not in `_groups.json`), with stat names set explicitly and the exemptions listed there. Passenger-typed open way-km before and after (scratch cut, not yet in the world build): Brazil 14,044 to 4,001, Chile 3,701 to 1,143, Colombia 1,561 to 729 (after the Turistren exemptions), Uruguay 1,391 to 118, Venezuela 380 to 38, Dominican Republic 238 to 0. Uruguay has no running passenger service to preserve (the Montevideo-Progreso service is planned, not running). Peru, Bolivia and Cuba keep the old default. The world build needs a re-cut of the six countries to show it.

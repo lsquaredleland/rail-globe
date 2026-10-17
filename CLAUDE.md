@@ -14,11 +14,18 @@ A static web map of passenger rail built from OpenStreetMap, made for comparing 
 | `docs/05-pilot-plan.md` | Pilot regions and phases 0 to 5, each with a "Done when" test |
 | `docs/06-open-questions.md` | What is still undecided, and what is parked |
 | `docs/07-freight-detection.md` | How freight is told from passenger track in OSM: the research, the ordered rules, the settings, the known failures |
+| `docs/08-americas-passenger-qa.md` | Americas passenger-rail QA: what was checked, what was fixed, what is left |
 | `docs/09-performance-playbook.md` | What made the map fast (MLT writer, glyphs, feature state, hover), what did not, how to benchmark, and the open problems (glyph download size, duplicate range requests) |
+| `docs/10-world-build.md` | The world build: commands, measured times and sizes, `search.json` rules, memory-bounded writer |
+| `docs/11-performance-todos.md` | Open performance items (P0 low-zoom tile weight, measurements to repeat) and what is superseded |
 | `docs/12-config-and-exemptions.md` | Per-region configs: `extends` layering, the `exemptions` list (schema, stale detection) |
 | `docs/13-freight-north-america.md` | Study: freight or passenger in the US, Canada and Mexico against NARN, the rule that came out of it (proposal) |
-| `docs/15-argentina-africa-freight.md` | Study and rule: passenger needs evidence in Argentina and Africa (routes mode, stations mode, `_groups.json`) |
 | `docs/14-city-outlines-and-highlights.md` | City outlines scope, why some lines have no highlight, small countries as country level only |
+| `docs/15-argentina-africa-freight.md` | Study and rule: passenger needs evidence in Argentina and Africa (routes mode, stations mode, `_groups.json`) |
+| `docs/16-low-zoom-tile-weight-plan.md` | Measured plan to bring z2 to z8 views under 600 KB, ordered by payoff (scripts in `pipeline/bench/lowzoom/`) |
+| `docs/17-action-items.md` | Open action items and decisions that are the user's call |
+| `docs/18-changelog-2026-10-17.md` | What changed in the 2026-10-16/17 QA and fix session, what was verified, what went wrong |
+| `docs/qa/` | Per-region QA notes (west Europe, east Europe, east Asia and Oceania, Americas, Africa and Asia) |
 | `docs/reference/research-summary.md` | Key measurements from the original research (tile sizes, build times, OSM coverage) |
 
 ## How to work
@@ -35,7 +42,7 @@ A static web map of passenger rail built from OpenStreetMap, made for comparing 
 
 - Pipeline: Rust extractor (`pipeline/rail-extract`: planet -> world rail cache -> region cuts, including rail type classification; `build`: station model, tile input, side files, MLT tiles through the Rust writer `tilewriter.rs`), PMTiles; no tippecanoe
 - App: Vite + React + TypeScript, MapLibre GL JS, OpenFreeMap basemap restyled minimal
-- Hosting: Cloudflare R2 for tiles (`r2.dev` during the pilot), static host for the app
+- Hosting: Cloudflare R2 for tiles and side files (live on the `r2.dev` public URL, custom domain still to do), Vercel for the app (`rail-globe.vercel.app`); the app reads only the world build; `pipeline/publish.sh` runs raw data to live site
 
 ## Data rules that are easy to get wrong
 

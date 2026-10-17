@@ -17,7 +17,7 @@ No library or published heuristic does this. OpenRailwayMap renders from tags (`
 
 Applied to each track way; "unrouted" means no passenger route relation (`route=train`, `subway`, ... mapped to a line) uses it.
 
-1. **Tags.** `usage=tourism` is Other. `railway:traffic_mode=freight`, `usage=industrial|freight|military|farm` is Freight. `highspeed=yes` or maxspeed at least 250 km/h (200 outside China) is High-speed. `usage=main` is Intercity, `branch` Regional (`unrouted_main_type` in the config).
+1. **Tags.** `usage=tourism` is Other. `railway:traffic_mode=freight`, `usage=industrial|freight|military|farm` is Freight. `highspeed=yes` or maxspeed at least 250 km/h (200 outside China) is High-speed. `usage=main` is Intercity, `branch` Regional (`unrouted_main_type` in the config). Narrow gauge (`railway=narrow_gauge`) goes through the same tag rules (2026-10-17; it was always Other before): the Bord na Móna peat railways (`usage=industrial`) are Freight, ARST / FAL / Zillertalbahn track with `usage=branch` is Regional, narrow gauge with no usage stays Other. A route's High-speed type from track alone needs half of its length on high-speed track (`HS_TRACK_SHARE`; construction track not counted); under half, a route of 150 km or more in the region is Intercity (`LONG_ROUTE_KM`), a shorter one Regional. `service=highspeed` is High-speed. Narrow gauge with no passenger evidence (rules 6 and the evidence setting) is Other, not Freight; the stations that serve it are looked for beside narrow-gauge track too.
 2. **Service track** (`service=siding|yard|spur|crossover`) is Yard.
 3. **Route relations.** Track on a passenger route takes the most prominent route type, whatever its own tags say.
 4. **Name share** (`classify.rs`, `mostly_freight`). A named railway whose unrouted ways are Freight on 90% or more, with at least 5 of them, is Freight on all of them. Fixes the untagged ways of a tagged freight line (Haoji: 119 ways).
@@ -62,6 +62,31 @@ Simulation: every Intercity or Regional way (typed from `usage=main|branch` alon
 | France | 16,009 | 15,116 | 2,149 | 3,100 |
 
 It hides real passenger lines wherever route relations are thin: China keeps its tagged high-speed grid but loses most of the conventional network; Italy loses Sardinia's main line, the Rome to Pisa coast line and parts of the Adriatic line. Germany and France barely change. China has about 530 `route=train` relations, so "no route" often means "not mapped". The rules above (assume passenger, find freight by evidence) stay.
+
+## Americas: correct freight labelling (requirement, 2026-10-15)
+
+**The requirement (user).** Label freight correctly. Too many lines are drawn as passenger-related traffic. This outranks everything else in the Americas work: a freight line drawn as passenger is a worse error than a rarely used passenger line drawn as freight.
+
+**What is wrong today (screenshots of 54 views, pass 1 in `08-americas-passenger-qa.md`).**
+- US and Canada: short-line and regional freight (west of Fort Worth, Kansas, Oklahoma, Nebraska, the Dakotas, the Rust Belt) is drawn as Regional or Intercity. BTS NARN, an independent passenger-use inventory, gives no passenger code under 58% of the US Regional km and 7 to 9% of the Intercity km.
+- South America, Cuba, Dominican Republic: whole freight and sugar-railway networks are drawn as Intercity or Regional (Argentina's Belgrano Cargas and Ferroexpreso Pampeano network, Brazil's MRS and FCA, Uruguay, Chile south of Chillan, Peru, Bolivia, most of Cuba, the sugar lines of the Dominican east).
+- Cause: outside the US, Canada and Mexico passenger route relations are sparse, so unrouted track is typed from `usage=main` / `branch` alone (default Intercity or Regional). The existing evidence rules only demote a railway that is a short dead-end branch, or whose name matches a freight pattern; the rest stays passenger by default.
+
+**Principle to implement.** Passenger needs evidence. Unrouted track in the Americas is Freight unless: it is on a passenger route relation; a passenger station serves its railway; it runs beside routed passenger track (second tracks, crossovers); or an explicit override says so. Metro, light rail, tram, monorail and funicular are not affected. When evidence is too thin to decide (a country with almost no tagged stations), prefer Freight and record the cost here.
+
+**Acceptance tests.**
+- US and Canada, measured with the BTS NARN passenger segments (public domain, NTAD North American Rail Network Lines, `PASSNGR` A, B, C, D, E, I, R, V, O; T tourist is not passenger): our Intercity, Regional and High-speed km with under 10% NARN overlap falls sharply (Regional first), while NARN passenger km still covered by our passenger track stays at or above 95% (US) and 90% (Canada), per class A, B, C, V, R.
+- Screenshots: no short-line freight drawn as Regional in the Plains and Texas views; South America, Cuba and the Dominican Republic show only plausible passenger lines.
+- Real services that must survive: Amtrak (all routes), Metra, Metro-North, LIRR, NJ Transit, SEPTA, MBTA, MARC, VRE, Caltrain, ACE, Coaster, Metrolink, Sounder, FrontRunner, TRE, Brightline, Alaska Railroad, Rail Runner; VIA, GO, exo, West Coast Express; Mexico Tren Maya, Interoceanico, Suburbano, Interurbano, Chepe; Argentina Roca, Sarmiento, Mitre, San Martin, Belgrano Sur and Norte, Urquiza, Tucuman, Mar del Plata, Bahia Blanca, Rosario, Tren del Valle; Chile EFE Metrotren, Biotren, Tren Central to Chillan, Merval; Brazil EFVM, EFC Carajas, CPTM, SuperVia, CBTU Recife, Natal and BH, VLTs; Peru Lima metro (PeruRail and Ferrocarril Central are tourist: Other); Colombia Medellin; Panama Canal Railway; Uruguay AFE suburban; Cuba Havana-Santa Clara-Camaguey-Santiago, Havana-Pinar del Rio, Hershey.
+- Regression: the 9 pilot regions (sf-bay-area, paris, chengdu, greater-bay-area, china, de, fr, ch, it) stay byte-identical unless a rule is deliberately switched on for them.
+
+**What was tried and reverted on 2026-10-15 (kept in the git history of branch `americas-qa`, not in the code).** `high_speed_min_kmh`; `freight_name_re` with a 5 km station shield and operator exemptions; a beside-passenger-route rule (20 m); Amtrak and VIA long-distance overrides; tourist railways as Other; Mexico per-way name rule; generic configs for 26 Americas countries; `build --combined`; the Americas as a second tile source in the app. They removed about 145,000 km of US freight from passenger types but were rule-by-rule patches on a "passenger unless proven freight" default, which is the opposite of the principle above. Pass-2 experiment options coded but never run: `freight_unrouted_no_station`, `freight_isolated_km`, `passenger_station_level`.
+
+**Findings worth keeping.**
+- Real Amtrak trackage over freight railroads (UP Beaumont, Dallas, Austin, Coast; BNSF Spokane, Fort Worth, Seligman; about 400 km) has no route relation and no station of its own: an evidence rule must not turn it to Freight (route members, beside-route and NARN-style trackage rights matter).
+- NARN `C` (commuter) is inherited by freight lines that share track with commuter trains; `T` is tourist; Canadian Ontario Northland, Algoma Central and Gaspe codes are probably stale (suspended service).
+- Acela's network tag is `Amtrak`, so a `^Acela` network match never fires; a route-derived High-speed type applied to every slow way on a route (NEC at 30 to 125 mph, Metro-North) is wrong: high-speed should need the track's own speed.
+- Rocky Mountaineer (Mountain, Laggan, Prince George Subdivisions), Texas State Railroad, Great Smoky Mountains Railroad, Napa Valley and Cuyahoga Valley are tourist railways, not passenger service.
 
 ## Ideas not done
 

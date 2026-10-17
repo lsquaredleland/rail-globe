@@ -120,6 +120,9 @@ On file size: both maps read the same PMTiles file and fetch only the tiles on s
 ## Area card (experiment, 2026-10-13)
 
 The top-left card follows the view and is tied to the region picker, which names the same area (e.g. Chengdu, not the pilot region it sits in).
+
+The region picker is a search bar over countries, provinces / states and cities with a metro or light rail system (no towns). Typing matches local and English names, ignoring case and accents (`Москва`, `成都`, `Zurich` for Zürich); names that start with the text come before those that contain it. Each row says Country, Province / state or City. Up / down / Enter pick, Esc closes. A country or province flies to fit its outline; a city goes to about z7 to z12 by size (most z10 to z12). Every country with rail is reachable this way. The Compare view does not exist yet, so the search drives the one map.
+
 - Rail type and operator modes: route km as a grid of squares (1, 2 or 5 x 10^n km each, 250 at most), one row per type that switches it on the map (All / None), a "not in the total" block for being built and freight, and station dots.
 - Speed mode: a track speed list with km per band; each band switches on or off on the map (`hs` in the URL). It replaces the old speed legend.
-- The earlier Rail types legend now sits bottom right (type and operator modes only) while the cards are tried out. Per-band km comes from `speed` in `stats.json`.
+- The bottom-right legend is removed: the top-left card is the legend. When no area fills the screen (zoomed out to a continent or the world) it shows a World card instead: the colour key, the type on/off switches and the freight switch, without kilometres (in operator mode, a note that lines take each operator's colour). Per-band km comes from `speed` in `stats.json`.

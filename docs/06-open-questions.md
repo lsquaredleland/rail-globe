@@ -33,7 +33,7 @@ The docs did not cover these, so they were implemented as the obvious option and
 | Unrouted main line in the US | A per-region setting (`unrouted_main_type` in `pipeline/config/`). The SF Bay Area sets it to Freight, so unrouted `usage=main` track is muted grey instead of Intercity. Paris and Chengdu keep Intercity |
 | Track on shared line (phase 3) | Track takes the most prominent type of any line on it, so a classic line used by a few TGVs (e.g. Paris–Strasbourg east of Noisy-le-Sec) is drawn High-speed |
 | Operator strands (phase 3) | One strand per line per piece of track from z12. Above 7 lines on one piece, strand width and spacing shrink so the bundle stays at about 7 strands wide |
-| Tile layout (phase 3) | Decided 2026-10-13 (see `00-overview.md`): the pilot is one joined tile source, `pilot.pmtiles`, built from per-region files. Phase 5 still decides the world layout. Tier 1/2/3 stations appear in tiles from z7/z9/z11 and on screen (circles) from z8/z10/z12; labels come from the complexes layer from z10/z11/z13 |
+| Tile layout (phase 3) | Decided 2026-10-13 (see `00-overview.md`): the pilot is one joined tile source, `pilot.pmtiles`, built from per-region files. The world layout is decided and deployed (2026-10-16): one `world.pmtiles` from `rail-extract world`, the only source the app reads (`10-world-build.md`). Tier 1/2/3 stations appear in tiles from z7/z9/z11 and on screen (circles) from z8/z10/z12; labels come from the complexes layer from z10/z11/z13 |
 | Design extras left out (phase 3) | Compare view (switch shown, disabled until phase 4) and the Terminus badge in tooltips (shown only in the station panel, per the design). Units (km/mi), Copy link and Inspect OSM tags are in |
 | Inspect OSM tags | Shows the tags the data spec keeps (not the full OSM tag set, which the filter drops) plus fields Rail Globe derives (rail type and how it was set, routes, stop area, station model fields). Tags load on demand from 256 id-sharded files per region (`data/<slug>/tags/`), so they are not in the tiles. Hover shows tags; click pins a panel with Open in OSM and Copy tags |
 | Airport icons | The plane icon and IATA code sit at the centre of the airport outline (commercial airports only: IATA code, not military, 300 ha or more; smaller airfields get outline and code, no icon). Stations at airports are ordinary circles; their tooltip and panel still say Airport. The track tooltip no longer shows a Tracks row (the value was unknown for most track) |
@@ -118,7 +118,7 @@ Open, by measured payoff:
 
     NOT yet measured: the warm frame bench, cold-cache load and throttled-network load have not been run on MLT (they need the user's headed 120 Hz display). The earlier MVT baseline files were overwritten by the MLT build; an MVT baseline can be rebuilt from git HEAD in a worktree with tippecanoe installed.
 12. **Self-host glyphs**: done 2026-10-15 (Latin and CJK), see "Self-hosted subset glyphs" below.
-13. **Production hosting.** `r2.dev` has no Cloudflare cache and is rate-limited. Use a custom domain with cache, or chunked tiles read by HTTP Range like the reference.
+13. **Production hosting.** `r2.dev` has no Cloudflare cache and is rate-limited. Use a custom domain with cache, or chunked tiles read by HTTP Range like the reference. Status 2026-10-17: the world build is live on `r2.dev` (R2) with the app on Vercel; the custom domain is still open (live checks and what is missing: `11-performance-todos.md`, R2 item).
 14. **Pre-rendered raster tiles for z0-5.** Also fixes the z5 China views over the 600 KB budget.
 15. **Move the tooltip with a CSS transform** instead of `top`/`left`.
 16. **Per-layer `minzoom`/`maxzoom`** on every layer so off-zoom layers are skipped early. Not tried.
@@ -221,6 +221,8 @@ Per view, full bench (MVT / MLT): Chengdu East missed 1 / 1, jank 383 / 344; She
 Side-by-side screenshots (kept locally only, not in the repo): rail geometry, colours, dashes and station dots match; 0.01 to 0.5% of pixels differ by more than 40/255 (Paris z13 highest), almost all label placement and a few line-name labels present on one side only.
 
 ## Must fix: Europe low-zoom tile weight (user, 2026-10-13)
+
+Superseded by the measured plan in `docs/16-low-zoom-tile-weight-plan.md`.
 
 Adding France, Switzerland and Italy (with Germany) made the zoomed-out views heavy: laptop views at z5 and z6 across Europe are 590 to 1,030 KB (France z5 936 KB, Lyon z6 1,026 KB, Switzerland z6 993 KB, Germany z6 600 KB), over the 600 KB budget, because the four countries' z0 to z8 overview tiles share the same tile addresses and the joined file puts them in one big tile (history: this was measured when `tile-join` did the join, and tippecanoe wrote the tiles; both are gone since 2026-10-14, and MLT with a single writer run measured 923 KB for the worst pilot-file laptop view, so the problem remains). Every region added in the same part of the world makes it worse (Paris z5 went from 60 KB to 906 KB). Not acceptable for release; the zoom-smoothness target (fast zoom must beat trains.theojaffee.net) applies. To do, before more countries are added:
 
