@@ -631,16 +631,26 @@ export function prefetchHighlights(map: MLMap) {
   const layers = hitLayers(TILES).filter((l) => map.getLayer(l))
   if (!layers.length) return
   const todo = new Map<string, () => Promise<unknown>>()
+  // A view returns thousands of track pieces, most of them pieces of a line already seen. regionOf is a point-in-outline test
+  // (China's outline has tens of thousands of vertices): ask it once per line or railway name, not once per piece (it was 1.8 s of a
+  // 4 s idle at Chengdu z10, throttle 4, all of it freezing the main thread just when the pointer starts to move).
+  const seen = new Set<string>()
   for (const f of map.queryRenderedFeatures({ layers })) {
     if (todo.size >= PREFETCH_MAX) break
-    const slug = regionOf(f)
     const ln = Number(String(f.properties.ln ?? '').split(',')[0])
-    if (Number.isFinite(ln) && ln > 0) todo.set(`${slug}|${ln}`, () => loadLineHighlight(slug, ln))
-    else if (f.properties.n) todo.set(`${slug}|n|${f.properties.n}`, () => loadNameHighlight(slug, String(f.properties.n)))
+    const isLine = Number.isFinite(ln) && ln > 0
+    const key = isLine ? `l${ln}` : f.properties.n ? `n${f.properties.n}` : ''
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    const slug = regionOf(f)
+    if (isLine) todo.set(`${slug}|${ln}`, () => loadLineHighlight(slug, ln))
+    else todo.set(`${slug}|n|${f.properties.n}`, () => loadNameHighlight(slug, String(f.properties.n)))
   }
   const jobs = [...todo.values()]
-  const run = async () => { for (let j = jobs.shift(); j; j = jobs.shift()) await j().catch(() => null) }
-  for (let i = 0; i < 3; i++) void run()   // three at a time
+  // two at a time (a shard is up to ~470 KB and r2.dev serves HTTP/1.1: six connections shared with the tiles); the rest is dropped as soon
+  // as the map moves again, so a pan's tile requests do not queue behind a prefetch nobody is waiting for
+  const run = async () => { while (!map.isMoving()) { const j = jobs.shift(); if (!j) break; await j().catch(() => null) } }
+  for (let i = 0; i < 2; i++) void run()
 }
 
 /** Line number badges: a rounded rectangle in the line's colour with a white outline, stretchable so icon-text-fit can size it to the number.
