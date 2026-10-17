@@ -51,7 +51,38 @@ def tiles_for(lon, lat, z, w, h):
     return tz, range(int(math.floor(x0)), int(math.floor(x1)) + 1), range(int(math.floor(y0)), int(math.floor(y1)) + 1)
 
 
+WORLD_VIEWS = {"Europe": (10, 50), "World": (0, 20), "Moscow": (37.62, 55.75), "Cairo": (31.24, 30.04), "Delhi": (77.2, 28.6), "Mumbai": (72.87, 19.07),
+               "Seoul": (126.98, 37.57), "Beijing": (116.4, 39.9), "Shanghai": (121.47, 31.23)}  # the views of docs/16-low-zoom-tile-weight-plan.md
+WORLD_ZOOMS = [2, 3, 4, 5, 6, 7, 8]
+
+
+def main_world(path):
+    """WORLD=<world.pmtiles>: compressed bytes of the named views at integer zooms 2 to 8, then the worst view over a 1 degree grid of centres inside
+    the file's bounds (docs/16-low-zoom-tile-weight-plan.md). A view whose tiles are not in the file (a subset build) reads 0."""
+    rd = Reader(MmapSource(open(path, "rb")))
+    hdr = rd.header()
+    b = [hdr["min_lon_e7"] / 1e7, hdr["min_lat_e7"] / 1e7, hdr["max_lon_e7"] / 1e7, hdr["max_lat_e7"] / 1e7]
+
+    def view_kb(lon, lat, z, w, h):
+        tz, xs, ys = tiles_for(lon, lat, z, w, h)
+        n = 2 ** tz
+        return sum(len(rd.get(tz, x, y) or b"") for x in xs for y in ys if 0 <= y < n and 0 <= x < n) / 1024
+
+    print(f"{'view':10} {'screen':16} " + " ".join(f"z{z:<5}" for z in WORLD_ZOOMS) + "   (KB, compressed)")
+    for name, (lon, lat) in WORLD_VIEWS.items():
+        for sname, (w, h) in SCREENS.items():
+            print(f"{name:10} {sname:16} " + " ".join(f"{view_kb(lon, lat, z, w, h):6.0f}" for z in WORLD_ZOOMS))
+    print(f"\nworst over a 1 degree grid of centres inside the file's bounds {b}")
+    for sname, (w, h) in SCREENS.items():
+        row = []
+        for z in WORLD_ZOOMS:
+            row.append(max(view_kb(lon, lat, z, w, h) for lon in range(math.floor(b[0]), math.ceil(b[2]) + 1) for lat in range(math.floor(b[1]), math.ceil(b[3]) + 1)))
+        print(f"{'worst':10} {sname:16} " + " ".join(f"{v:6.0f}" for v in row))
+
+
 def main():
+    if os.environ.get("WORLD"):
+        return main_world(os.environ["WORLD"])
     worst = 0
     readers = {}
     if os.environ.get("TILES"):

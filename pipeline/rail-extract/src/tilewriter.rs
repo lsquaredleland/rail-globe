@@ -26,6 +26,14 @@ const MAX_ZOOM: u8 = 14;
 const EXTENT: u16 = 4096;
 const SIMPLIFY: f64 = 2.0;
 const CHUNK: usize = 8_000;
+/// Tiles of zooms 0..=LOW_ZOOM are the overview (docs/16-low-zoom-tile-weight-plan.md): the track layer there is cleaned of repeated
+/// vertices and simplified with Douglas-Peucker after the join (`DP_TOLERANCE`, tile units of EXTENT), point and line layers are
+/// written with extent LOW_EXTENT (coordinates halved), and stations and complexes are left out of tiles up to NO_STATIONS_ZOOM
+/// (the style draws the first station dot at z6 and the first complex label at z8). Zooms above LOW_ZOOM are untouched.
+const LOW_ZOOM: u8 = 8;
+const LOW_EXTENT: u32 = 2048;
+const DP_TOLERANCE: f64 = 4.0;
+const NO_STATIONS_ZOOM: u8 = 5;
 
 /// a tile coordinate in tile units (clip buffer included, so well inside i16); 4 bytes a point instead of 40 as a GeoJSON position
 type Pt = [i16; 2];
@@ -212,6 +220,90 @@ fn coalesce(pieces: Vec<Piece>) -> Vec<Piece> {
     out
 }
 
+/// Douglas-Peucker on one line: a vertex stays when it is further than `tol` from the segment of its two kept neighbours (distance to
+/// the segment, not the infinite line, so an out-and-back spur is not flattened); both ends always stay, so joined lines stay joined
+fn douglas_peucker(pts: &[Pt], tol: f64) -> Vec<Pt> {
+    let n = pts.len();
+    if n < 3 {
+        return pts.to_vec();
+    }
+    let mut keep = vec![false; n];
+    keep[0] = true;
+    keep[n - 1] = true;
+    let mut stack = vec![(0usize, n - 1)];
+    let t2 = tol * tol;
+    while let Some((a, b)) = stack.pop() {
+        let (ax, ay) = (f64::from(pts[a][0]), f64::from(pts[a][1]));
+        let (dx, dy) = (f64::from(pts[b][0]) - ax, f64::from(pts[b][1]) - ay);
+        let l2 = dx * dx + dy * dy;
+        let (mut far, mut at) = (-1.0f64, a);
+        for (i, p) in pts.iter().enumerate().take(b).skip(a + 1) {
+            let (px, py) = (f64::from(p[0]) - ax, f64::from(p[1]) - ay);
+            let d2 = if l2 == 0.0 {
+                px * px + py * py
+            } else {
+                let t = ((px * dx + py * dy) / l2).clamp(0.0, 1.0);
+                (px - t * dx).powi(2) + (py - t * dy).powi(2)
+            };
+            if d2 > far {
+                far = d2;
+                at = i;
+            }
+        }
+        if far > t2 {
+            keep[at] = true;
+            stack.push((a, at));
+            stack.push((at, b));
+        }
+    }
+    pts.iter().zip(keep).filter(|(_, k)| *k).map(|(p, _)| *p).collect()
+}
+
+/// drop repeated consecutive vertices of every line, then the lines (and pieces) left with fewer than 2 distinct points
+fn dedupe_lines(pieces: &mut Vec<Piece>) {
+    for p in pieces.iter_mut() {
+        if let Geom::Lines(ls) = &mut p.geom {
+            for l in ls.iter_mut() {
+                l.dedup();
+            }
+            ls.retain(|l| l.len() >= 2);
+        }
+    }
+    pieces.retain(|p| !matches!(&p.geom, Geom::Lines(ls) if ls.is_empty()));
+}
+
+/// tile units of EXTENT -> LOW_EXTENT (half), rounding to the nearest unit
+fn halve(pieces: &mut [Piece]) {
+    let h = |p: &mut Pt| *p = [((i32::from(p[0]) + 1) >> 1) as i16, ((i32::from(p[1]) + 1) >> 1) as i16];
+    for p in pieces {
+        match &mut p.geom {
+            Geom::Points(l) => l.iter_mut().for_each(h),
+            Geom::Lines(ls) => ls.iter_mut().flatten().for_each(h),
+            Geom::Polys(_) => unreachable!("polygon layers keep their extent"),
+        }
+    }
+}
+
+/// the overview clean-up of one layer of a tile at zoom <= LOW_ZOOM (after `coalesce`); returns the layer's extent
+fn low_zoom_layer(name: &str, pieces: &mut Vec<Piece>) -> u32 {
+    if name == "track" {
+        // the overview has no per-way ids, so pieces that shrink to nothing can go
+        dedupe_lines(pieces);
+        for p in pieces.iter_mut() {
+            if let Geom::Lines(ls) = &mut p.geom {
+                ls.iter_mut().for_each(|l| *l = douglas_peucker(l, DP_TOLERANCE));
+            }
+        }
+    }
+    // polygon layers (airports) keep EXTENT: halving would collapse small rings
+    if pieces.iter().any(|p| matches!(p.geom, Geom::Polys(_))) {
+        return EXTENT as u32;
+    }
+    halve(pieces);
+    dedupe_lines(pieces);
+    LOW_EXTENT
+}
+
 /// the one type a property has in a layer (MLT allows one per column): Int is i32, Float is f64; mixed kinds widen to Str
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Kind {
@@ -286,10 +378,10 @@ fn tc(p: &Pt) -> Coord<i32> {
     Coord { x: i32::from(p[0]), y: i32::from(p[1]) }
 }
 
-/// MLT layers of one tile (`layers`: name, property types of the layer, pieces in draw order), concatenated
-fn encode(layers: Vec<(&str, &BTreeMap<String, Kind>, Vec<Piece>)>) -> Vec<u8> {
+/// MLT layers of one tile (`layers`: name, extent, property types of the layer, pieces in draw order), concatenated
+fn encode(layers: Vec<(&str, u32, &BTreeMap<String, Kind>, Vec<Piece>)>) -> Vec<u8> {
     let mut out = Vec::new();
-    for (name, kinds, pieces) in &layers {
+    for (name, extent, kinds, pieces) in &layers {
         // only the columns this tile uses
         let mut seen: BTreeSet<&str> = BTreeSet::new();
         for p in pieces {
@@ -298,7 +390,7 @@ fn encode(layers: Vec<(&str, &BTreeMap<String, Kind>, Vec<Piece>)>) -> Vec<u8> {
         let cols: Vec<(&str, Kind)> = kinds.iter().filter(|(k, _)| seen.contains(k.as_str())).map(|(k, v)| (k.as_str(), *v)).collect();
         let cells: Vec<Vec<Option<Cell>>> =
             pieces.iter().map(|p| cols.iter().map(|(k, kind)| p.props.get(*k).and_then(|v| cell(v, *kind))).collect()).collect();
-        let mut layer = LayerWriter::new(name, EXTENT as u32).expect("layer");
+        let mut layer = LayerWriter::new(name, *extent).expect("layer");
         let keys: Vec<PropertyKey> = cols
             .iter()
             .map(|(k, kind)| {
@@ -364,18 +456,40 @@ fn add_polygon<'w, 'a, 'f>(f: &'f mut FeatureWriter<'w, 'a>, rings: &[Vec<Pt>]) 
     Ok(f)
 }
 
-/// one tile's pieces per layer -> MLT layers in seq order (consecutive same-attribute pieces coalesced) -> gzip
-fn encode_tile(layers: &mut [Vec<Piece>], layer_names: &[&str], kinds: &[BTreeMap<String, Kind>], gz: &mut libdeflater::Compressor) -> Vec<u8> {
-    let layers: Vec<(&str, &BTreeMap<String, Kind>, Vec<Piece>)> = layers
+/// Is the overview clean-up on? Always, unless the environment has RAIL_LOWZOOM=off (the output is then byte-identical to the writer before
+/// docs/16 section 9: for comparing builds).
+fn lowzoom_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("RAIL_LOWZOOM").map_or(true, |v| v != "off"))
+}
+
+/// the first zoom whose tiles hold `layer`: stations and complexes are left out of tiles up to NO_STATIONS_ZOOM (vector_layers metadata)
+fn layer_minzoom(layer: &str, minzoom: u8) -> u8 {
+    if lowzoom_on() && matches!(layer, "stations" | "complexes") { minzoom.max(NO_STATIONS_ZOOM + 1) } else { minzoom }
+}
+
+/// one tile's pieces per layer -> MLT layers in seq order (consecutive same-attribute pieces coalesced; overview clean-up at z <= LOW_ZOOM) -> gzip.
+/// Empty when the tile has nothing left to draw (callers do not store it).
+fn encode_tile(z: u8, layers: &mut [Vec<Piece>], layer_names: &[&str], kinds: &[BTreeMap<String, Kind>], gz: &mut libdeflater::Compressor) -> Vec<u8> {
+    encode_tile_with(lowzoom_on(), z, layers, layer_names, kinds, gz)
+}
+
+fn encode_tile_with(low: bool, z: u8, layers: &mut [Vec<Piece>], layer_names: &[&str], kinds: &[BTreeMap<String, Kind>], gz: &mut libdeflater::Compressor) -> Vec<u8> {
+    let layers: Vec<(&str, u32, &BTreeMap<String, Kind>, Vec<Piece>)> = layers
         .iter_mut()
         .enumerate()
-        .filter(|(_, p)| !p.is_empty())
-        .map(|(li, p)| {
+        .filter(|(li, p)| !p.is_empty() && !(low && z <= NO_STATIONS_ZOOM && matches!(layer_names[*li], "stations" | "complexes")))
+        .filter_map(|(li, p)| {
             let mut p = std::mem::take(p);
             p.sort_by_key(|x| x.seq);
-            (layer_names[li], &kinds[li], coalesce(p))
+            let mut p = coalesce(p);
+            let extent = if low && z <= LOW_ZOOM { low_zoom_layer(layer_names[li], &mut p) } else { EXTENT as u32 };
+            (!p.is_empty()).then(|| (layer_names[li], extent, &kinds[li], p))
         })
         .collect();
+    if layers.is_empty() {
+        return Vec::new();
+    }
     // gzip here, in parallel: the pmtiles writer would compress every tile one after the other
     let raw = encode(layers);
     let mut out = vec![0u8; gz.gzip_compress_bound(raw.len())];
@@ -499,7 +613,7 @@ pub fn run(data: &Path, slugs: &[String], out: &Path, name: &str) {
     // ---- encode and gzip in parallel (order kept), then write
     let encoded: Vec<Vec<u8>> = buckets
         .par_iter_mut()
-        .map_init(|| libdeflater::Compressor::new(libdeflater::CompressionLvl::default()), |gz, (_, layers)| encode_tile(layers, &layer_names, &kinds, gz))
+        .map_init(|| libdeflater::Compressor::new(libdeflater::CompressionLvl::default()), |gz, (key, layers)| encode_tile(key.0, layers, &layer_names, &kinds, gz))
         .collect();
     eprintln!("[{:6.2}s] encoded", t0.elapsed().as_secs_f64());
 
@@ -507,7 +621,7 @@ pub fn run(data: &Path, slugs: &[String], out: &Path, name: &str) {
         kinds.iter().map(|m| m.iter().map(|(k, v)| (k.as_str(), v.field_type())).collect()).collect();
     let vector_layers: Vec<Value> = (0..layer_names.len())
         .filter(|&li| seq[li] > 0)
-        .map(|li| json!({"id": layer_names[li], "fields": fields[li], "minzoom": zooms[li].0, "maxzoom": zooms[li].1}))
+        .map(|li| json!({"id": layer_names[li], "fields": fields[li], "minzoom": layer_minzoom(layer_names[li], zooms[li].0), "maxzoom": zooms[li].1}))
         .collect();
     let meta = json!({"name": name, "format": "mlt", "minzoom": "0", "maxzoom": MAX_ZOOM.to_string(), "vector_layers": vector_layers,
         "generator": "rail-extract"});
@@ -522,7 +636,7 @@ pub fn run(data: &Path, slugs: &[String], out: &Path, name: &str) {
         .metadata(&meta.to_string())
         .create(std::fs::File::create(&path).expect("create pmtiles"))
         .expect("pmtiles writer");
-    for ((z, x, y), bytes) in buckets.iter().map(|b| b.0).zip(&encoded) {
+    for ((z, x, y), bytes) in buckets.iter().map(|b| b.0).zip(&encoded).filter(|(_, b)| !b.is_empty()) {
         w.add_raw_tile(TileCoord::new(z, x, y).expect("coord"), bytes).expect("add tile");
     }
     w.finalize().expect("finalize pmtiles");
@@ -532,7 +646,7 @@ pub fn run(data: &Path, slugs: &[String], out: &Path, name: &str) {
         done
     };
     let mb = std::fs::metadata(&path).map_or(0.0, |m| m.len() as f64 / 1e6);
-    eprintln!("[{:6.2}s] {} : {} tiles, {mb:.1} MB", t0.elapsed().as_secs_f64(), path.display(), encoded.len());
+    eprintln!("[{:6.2}s] {} : {} tiles, {mb:.1} MB", t0.elapsed().as_secs_f64(), path.display(), encoded.iter().filter(|b| !b.is_empty()).count());
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -671,17 +785,19 @@ fn world_pass(files: &[memmap2::Mmap], ents: &[Ent], layer_names: &[&str], kinds
     let mut order: Vec<(u64, TileKey)> = tiles.keys().map(|&(z, x, y)| (TileId::from(TileCoord::new(z, x, y).expect("coord")).value(), (z, x, y))).collect();
     order.sort_unstable();
     let mut buckets: Vec<(u64, Vec<Vec<Piece>>)> = order.iter().map(|(id, k)| (*id, tiles.remove(k).unwrap())).collect();
+    let zooms: Vec<u8> = order.iter().map(|(_, k)| k.0).collect();
     let encoded: Vec<Vec<u8>> = buckets
         .par_iter_mut()
-        .map_init(|| libdeflater::Compressor::new(libdeflater::CompressionLvl::default()), |gz, (_, layers)| encode_tile(layers, layer_names, kinds, gz))
+        .zip(&zooms)
+        .map_init(|| libdeflater::Compressor::new(libdeflater::CompressionLvl::default()), |gz, ((_, layers), z)| encode_tile(*z, layers, layer_names, kinds, gz))
         .collect();
     use std::io::Write;
-    for ((id, _), bytes) in buckets.iter().zip(&encoded) {
+    for ((id, _), bytes) in buckets.iter().zip(&encoded).filter(|(_, b)| !b.is_empty()) {
         spool.w.write_all(bytes).expect("write spool");
         spool.index.push((*id, spool.pos, u32::try_from(bytes.len()).expect("tile under 4 GB")));
         spool.pos += bytes.len() as u64;
     }
-    (cand.len(), encoded.len())
+    (cand.len(), encoded.iter().filter(|b| !b.is_empty()).count())
 }
 
 /// The tile input of every slug -> <out>/<name>.pmtiles in memory-bounded passes (see above). `deep` is the zoom whose tiles are the
@@ -842,7 +958,7 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
     let fields: Vec<BTreeMap<&str, &str>> = kinds.iter().map(|m| m.iter().map(|(k, v)| (k.as_str(), v.field_type())).collect()).collect();
     let vector_layers: Vec<Value> = (0..nl)
         .filter(|&li| seq[li] > 0)
-        .map(|li| json!({"id": layer_names[li], "fields": fields[li], "minzoom": zooms[li].0, "maxzoom": zooms[li].1}))
+        .map(|li| json!({"id": layer_names[li], "fields": fields[li], "minzoom": layer_minzoom(layer_names[li], zooms[li].0), "maxzoom": zooms[li].1}))
         .collect();
     let meta = json!({"name": name, "format": "mlt", "minzoom": "0", "maxzoom": MAX_ZOOM.to_string(), "vector_layers": vector_layers, "generator": "rail-extract"});
     let path = out.join(format!("{name}.tmp.pmtiles"));
@@ -941,7 +1057,7 @@ mod tests {
         assert_eq!(kinds["big"].stored(), Kind::Float);
         assert_eq!(kinds["ok"], Kind::Bool);
 
-        let bytes = encode(vec![("test", &kinds, pieces)]);
+        let bytes = encode(vec![("test", EXTENT as u32, &kinds, pieces)]);
 
         let layers = Parser::default().parse_layers(&bytes).expect("parse");
         assert_eq!(layers.len(), 1);
@@ -1015,7 +1131,7 @@ mod tests {
         assert!(area2(&gring(&outer)) < 0 && area2(&gring(&hole)) > 0, "fixture windings");
         let piece = Piece { seq: 0, geom: geom(Gv::Polygon(vec![ring(&outer), ring(&hole)])), props: props(json!({})) };
         let kinds = BTreeMap::new();
-        let bytes = encode(vec![("areas", &kinds, vec![piece])]);
+        let bytes = encode(vec![("areas", EXTENT as u32, &kinds, vec![piece])]);
         let mut dec = Decoder::default();
         let layers = Parser::default().parse_layers(&bytes).expect("parse");
         let ParsedLayer::Tag01(p) = layers.into_iter().next().expect("layer").decode_all(&mut dec).expect("decode") else { panic!("tag") };
@@ -1044,5 +1160,98 @@ mod tests {
         };
         assert_eq!(seqs(false), 0);
         assert_eq!(seqs(true), 1);
+    }
+
+    fn line_piece(seq: u64, l: &[[i16; 2]]) -> Piece {
+        Piece { seq, props: props(json!({})), geom: Geom::Lines(vec![l.to_vec()]) }
+    }
+
+    fn lines_of(p: &Piece) -> &Vec<Vec<Pt>> {
+        match &p.geom {
+            Geom::Lines(l) => l,
+            _ => panic!("lines"),
+        }
+    }
+
+    #[test]
+    fn dp_keeps_ends_and_drops_collinear_run() {
+        let run: Vec<Pt> = (0..10).map(|i| [i * 100, i * 50]).collect();
+        assert_eq!(douglas_peucker(&run, 4.0), vec![[0, 0], [900, 450]]);
+        // a real corner stays
+        assert_eq!(douglas_peucker(&[[0, 0], [100, 0], [100, 100]], 4.0).len(), 3);
+        // under 3 points: unchanged
+        assert_eq!(douglas_peucker(&[[0, 0], [5, 5]], 4.0), vec![[0, 0], [5, 5]]);
+        assert_eq!(douglas_peucker(&[[7, 7]], 4.0), vec![[7, 7]]);
+    }
+
+    #[test]
+    fn dp_closed_ring_keeps_far_vertices() {
+        // first == last (zero-length base): distance is to that point, so the far vertex stays and the near one goes
+        let ring: Vec<Pt> = vec![[0, 0], [1, 1], [200, 0], [0, 0]];
+        assert_eq!(douglas_peucker(&ring, 4.0), vec![[0, 0], [200, 0], [0, 0]]);
+    }
+
+    #[test]
+    fn dp_out_and_back_spur_is_not_flattened() {
+        // A -> B far along the line -> back to A': the infinite-line distance of B is 0, the segment distance is large
+        let spur: Vec<Pt> = vec![[0, 0], [500, 0], [1, 0]];
+        let out = douglas_peucker(&spur, 4.0);
+        assert_eq!(out, spur);
+        assert_eq!((out[0], *out.last().unwrap()), ([0, 0], [1, 0]));
+    }
+
+    #[test]
+    fn dedupe_drops_repeats_and_degenerate_lines() {
+        let mut ps = vec![
+            line_piece(0, &[[0, 0], [0, 0], [3, 3], [3, 3], [3, 3], [9, 9]]),
+            line_piece(1, &[[5, 5], [5, 5], [5, 5]]),
+        ];
+        dedupe_lines(&mut ps);
+        assert_eq!(ps.len(), 1);
+        assert_eq!(lines_of(&ps[0]), &vec![vec![[0, 0], [3, 3], [9, 9]]]);
+    }
+
+    #[test]
+    fn halve_rounds_up_including_negative_buffer_coordinates() {
+        let mut ps = vec![line_piece(0, &[[-80, -3], [-1, 0], [1, 2], [3, 4095]])];
+        halve(&mut ps);
+        // (x + 1) >> 1: -80 -> -40, -3 -> -1, -1 -> 0, 0 -> 0, 1 -> 1, 2 -> 1, 3 -> 2, 4095 -> 2048
+        assert_eq!(lines_of(&ps[0])[0], vec![[-40, -1], [0, 0], [1, 1], [2, 2048]]);
+    }
+
+    #[test]
+    fn low_zoom_track_layer_removes_collapsing_lines_and_halves() {
+        let mut ps = vec![
+            line_piece(0, &[[0, 0], [1, 1], [2, 0]]),         // DP keeps all three; halve -> [0,0],[1,1],[1,0]
+            line_piece(1, &[[100, 100], [101, 100], [100, 101]]), // DP keeps ends; halve -> [50,50],[51,50],[50,51]
+            line_piece(2, &[[11, 11], [12, 12]]),             // both ends halve to [6, 6]: removed
+        ];
+        let extent = low_zoom_layer("track", &mut ps);
+        assert_eq!(extent, LOW_EXTENT);
+        assert!(ps.iter().all(|p| p.seq != 2), "line that collapses after halve is removed");
+        assert!(ps.iter().all(|p| lines_of(p).iter().all(|l| l.windows(2).all(|w| w[0] != w[1]) && l.len() >= 2)));
+    }
+
+    #[test]
+    fn low_zoom_polygon_layer_keeps_extent_4096() {
+        let ring: Vec<Pt> = vec![[0, 0], [4, 0], [4, 4], [0, 0]];
+        let mut ps = vec![Piece { seq: 0, props: props(json!({})), geom: Geom::Polys(vec![vec![ring.clone()]]) }];
+        assert_eq!(low_zoom_layer("airports", &mut ps), EXTENT as u32);
+        match &ps[0].geom {
+            Geom::Polys(p) => assert_eq!(p[0][0], ring),
+            _ => panic!("polys"),
+        }
+    }
+
+    #[test]
+    fn tile_with_only_stations_below_z6_is_empty_and_off_switch_keeps_it() {
+        let names = ["track", "stations", "complexes"];
+        let kinds: Vec<BTreeMap<String, Kind>> = vec![BTreeMap::new(); 3];
+        let pt = |seq| Piece { seq, props: props(json!({})), geom: Geom::Points(vec![[10, 10]]) };
+        let mut gz = libdeflater::Compressor::new(libdeflater::CompressionLvl::default());
+        let mk = || vec![Vec::new(), vec![pt(0)], vec![pt(1)]];
+        assert!(encode_tile_with(true, 5, &mut mk(), &names, &kinds, &mut gz).is_empty(), "z5: only stations and complexes, tile skipped");
+        assert!(!encode_tile_with(true, 6, &mut mk(), &names, &kinds, &mut gz).is_empty(), "z6 keeps them");
+        assert!(!encode_tile_with(false, 5, &mut mk(), &names, &kinds, &mut gz).is_empty(), "switch off: old behaviour");
     }
 }

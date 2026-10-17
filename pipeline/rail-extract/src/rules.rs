@@ -232,22 +232,76 @@ pub fn rel_area_wanted<T: Tags + ?Sized>(t: &T) -> bool {
 
 // ---------------------------------------------------------------- names (pipeline/names.py)
 
-/// name:en, then int_name, then a Latin-script name:* (chars U+0000-U+024F or U+1E00-U+1EFF); else None
-pub fn english_name<'a>(t: &'a List<'a>) -> Option<&'a [u8]> {
-    if let Some(v) = t.get(b"name:en").filter(|v| !v.is_empty()) {
-        return Some(v);
+/// Latin script for labels: chars U+0000-U+024F or U+1E00-U+1EFF
+fn latin(v: &[u8]) -> bool {
+    std::str::from_utf8(v).map_or(false, |s| s.chars().all(|c| (c as u32) <= 0x24f || (0x1e00..=0x1eff).contains(&(c as u32))))
+}
+
+/// a name:* key that holds an English or romanised form of the name: name:en (also name:en-Latn, name:en_GB), or a transliteration of
+/// the local name (name:ja-Latn, name:ja_rm, name:zh-Latn-pinyin, name:*_pinyin, ...). Never name:etymology*, name:*:wikidata,
+/// name:left / name:right or the name of another language (name:de on a Czech station is German, not English).
+fn english_key(k: &[u8]) -> bool {
+    let Some(l) = k.strip_prefix(b"name:") else { return false };
+    if l.contains(&b':') {
+        return false;
     }
-    if let Some(v) = t.get(b"int_name").filter(|v| !v.is_empty()) {
-        return Some(v);
-    }
-    for (k, v) in &t.0 {
-        if k.starts_with(b"name:") && !v.is_empty() {
-            if let Ok(s) = std::str::from_utf8(v) {
-                if s.chars().all(|c| (c as u32) <= 0x24f || (0x1e00..=0x1eff).contains(&(c as u32))) {
-                    return Some(v);
-                }
-            }
+    let has = |w: &[u8]| l.windows(w.len()).any(|x| x == w);
+    l == b"en" || l.starts_with(b"en-") || l.starts_with(b"en_") || has(b"Latn") || l.ends_with(b"_rm") || has(b"pinyin") || has(b"romaji") || has(b"translit")
+}
+
+/// The English label of a feature, from its (key, value) tags: name:en, then int_name; for a name that is not Latin script (CJK,
+/// Cyrillic, Arabic, ...) also a romanised name:* (see english_key). None when the name is already Latin script and there is no
+/// name:en or int_name: the label is the name itself (a Latin name:de or name:fr is not English, and name:etymology:wikidata is a Q id).
+pub fn english_name_kv<'a>(tags: impl Iterator<Item = (&'a [u8], &'a [u8])>) -> Option<&'a [u8]> {
+    let (mut name, mut en, mut int, mut roman) = (None, None, None, None);
+    for (k, v) in tags {
+        if v.is_empty() {
+            continue;
+        }
+        match k {
+            b"name" => name = Some(v),
+            b"name:en" => en = en.or(Some(v)),
+            b"int_name" => int = Some(v),
+            _ if roman.is_none() && english_key(k) && latin(v) => roman = Some(v),
+            _ => {}
         }
     }
-    None
+    en.or(int).or_else(|| if name.map_or(false, latin) { None } else { roman })
+}
+
+pub fn english_name<'a>(t: &'a List<'a>) -> Option<&'a [u8]> {
+    english_name_kv(t.0.iter().copied())
+}
+
+#[cfg(test)]
+mod english_name_tests {
+    use super::*;
+    fn en(tags: &[(&str, &str)]) -> Option<String> {
+        let l = List(tags.iter().map(|(k, v)| (k.as_bytes(), v.as_bytes())).collect());
+        english_name(&l).map(|v| String::from_utf8(v.to_vec()).unwrap())
+    }
+    #[test]
+    fn explicit_english() {
+        assert_eq!(en(&[("name", "Wien Hbf"), ("name:en", "Vienna Central"), ("name:de", "Wien Hbf")]).as_deref(), Some("Vienna Central"));
+        assert_eq!(en(&[("name", "Praha"), ("int_name", "Prague")]).as_deref(), Some("Prague"));
+        assert_eq!(en(&[("name", "東京"), ("name:en", "Tokyo")]).as_deref(), Some("Tokyo"));
+    }
+    #[test]
+    fn latin_name_without_english_has_no_english_label() {
+        assert_eq!(en(&[("name", "Warszawa Zachodnia"), ("name:de", "Warschau Westbahnhof")]), None);
+        assert_eq!(en(&[("name", "Chicago Ogilvie"), ("name:etymology:wikidata", "Q735271")]), None);
+        assert_eq!(en(&[("name", "Roma Termini"), ("name:fr", "Rome")]), None);
+    }
+    #[test]
+    fn never_wikidata_or_other_language() {
+        assert_eq!(en(&[("name", "Бриус"), ("name:etymology:wikidata", "Q735271")]), None);
+        assert_eq!(en(&[("name", "Бриус"), ("name:de", "Brius")]), None);
+        assert_eq!(en(&[("name:etymology", "Ogilvie")]), None);
+    }
+    #[test]
+    fn non_latin_name_takes_a_romanisation() {
+        assert_eq!(en(&[("name", "渋谷"), ("name:ja-Latn", "Shibuya"), ("name:ja", "渋谷")]).as_deref(), Some("Shibuya"));
+        assert_eq!(en(&[("name", "渋谷"), ("name:ja_rm", "Shibuya")]).as_deref(), Some("Shibuya"));
+        assert_eq!(en(&[("name", "成都"), ("name:zh-Latn-pinyin", "Chengdu")]).as_deref(), Some("Chengdu"));
+    }
 }

@@ -17,6 +17,8 @@ use unicode_normalization::{char::canonical_combining_class, UnicodeNormalizatio
 const RADIUS_TRAIN: f64 = 300.0; // metres, tuned on the pilots
 const RADIUS_OTHER: f64 = 100.0;
 const GROUP_RADIUS: f64 = 300.0;
+const KEY_MERGE_RADIUS: f64 = 1000.0; // stations sharing a wikidata or uic_ref merge only within this distance
+const KEY_MERGE_RADIUS_NAMED: f64 = 3000.0; // ... or within this one when their normalised names are equal
 const LAND_DISC: f64 = 500.0; // railway land counts only near the station (landuse=railway polygons span whole corridors)
 const HS_NEAR: f64 = 80.0; // "next to high-speed track"
 const HS_MAJOR_PLATFORMS: i64 = 8;
@@ -28,8 +30,8 @@ const W_TRACK_CAP: f64 = 40.0;
 const W_LAND: f64 = 3.0;
 const W_BUILDING: f64 = 4.0;
 const W_TERMINUS: f64 = 10.0;
-const STOPWORDS: [&str; 26] = ["gare", "du", "de", "d", "la", "le", "les", "l", "des", "station", "paris", "stazione", "railway", "rer", "metro",
-    "subway", "bart", "caltrain", "amtrak", "light", "rail", "vta", "muni", "st", "saint", ""];
+const STOPWORDS: [&str; 29] = ["gare", "du", "de", "d", "la", "le", "les", "l", "des", "station", "paris", "stazione", "railway", "rer", "metro",
+    "subway", "bart", "caltrain", "amtrak", "light", "rail", "vta", "muni", "st", "saint", "bahnhof", "bhf", "di", ""];
 
 fn radius(m: &str) -> f64 {
     if m == "train" { RADIUS_TRAIN } else { RADIUS_OTHER }
@@ -65,17 +67,19 @@ fn track_mode(t: &str) -> &'static str {
 /// stations.py norm_name: lower case, accents off, bracketed parts and punctuation out, a trailing 站 off, stopwords out
 pub fn norm_name(name: &str) -> String {
     thread_local! {
-        static RE: (Regex, Regex, Regex) = (
+        static RE: (Regex, Regex, Regex, Regex) = (
             Regex::new(r"\(.*?\)").unwrap(),
             Regex::new(r"[^\p{L}\p{N}_一-鿿]+").unwrap(),   // Python's \w: letters, numbers, underscore
-            Regex::new(r"(地铁站|火车站|客站|站)$").unwrap(),
+            Regex::new(r"(地铁站|火车站|客站|站|駅)$").unwrap(),
+            Regex::new(r"^jr([぀-ヿ一-鿿])").unwrap(), // "JR宝塚駅" is 宝塚
         );
     }
     if name.is_empty() {
         return String::new();
     }
     let s: String = name.to_lowercase().nfkd().filter(|c| canonical_combining_class(*c) == 0).collect();
-    RE.with(|(paren, punct, tail)| {
+    RE.with(|(paren, punct, tail, jr)| {
+        let s = jr.replace(&s, "$1");
         let s = paren.replace_all(&s, " ");
         let s = punct.replace_all(&s, " ");
         let s = tail.replace(s.trim(), "");
@@ -83,23 +87,9 @@ pub fn norm_name(name: &str) -> String {
     })
 }
 
-/// names.py english_name over a property map
+/// the English label of a property map (rules::english_name_kv: name:en, int_name, a romanised name:* for a non-Latin name; else None)
 pub fn english_name(t: &Map<String, Value>) -> Option<String> {
-    let g = |k: &str| t.get(k).and_then(Value::as_str).filter(|v| !v.is_empty());
-    if let Some(v) = g("name:en") {
-        return Some(v.to_string());
-    }
-    if let Some(v) = g("int_name") {
-        return Some(v.to_string());
-    }
-    for (k, v) in t {
-        if let Some(v) = v.as_str() {
-            if k.starts_with("name:") && !v.is_empty() && v.chars().all(|c| (c as u32) <= 0x24f || (0x1e00..=0x1eff).contains(&(c as u32))) {
-                return Some(v.to_string());
-            }
-        }
-    }
-    None
+    crate::rules::english_name_kv(t.iter().filter_map(|(k, v)| Some((k.as_bytes(), v.as_str()?.as_bytes())))).and_then(|v| std::str::from_utf8(v).ok()).map(String::from)
 }
 
 pub fn ref_tokens(r: Option<&str>) -> BTreeSet<String> {
@@ -110,6 +100,62 @@ pub fn ref_tokens(r: Option<&str>) -> BTreeSet<String> {
 fn ref_key(r: &str) -> (bool, u128, String) {
     let num = !r.is_empty() && r.chars().all(|c| c.is_ascii_digit());
     (!num, if num { r.parse().unwrap_or(u128::MAX) } else { 0 }, r.to_string())
+}
+
+/// "1a" and "1b" are sections of platform 1: the platform's number is its digits when only one or two letters follow them
+fn plat_key(t: &str) -> String {
+    let d: String = t.chars().take_while(|c| c.is_ascii_digit()).collect();
+    let rest = &t[d.len()..];
+    if !d.is_empty() && (1..=2).contains(&rest.chars().count()) && rest.chars().all(|c| c.is_ascii_alphabetic()) { d } else { t.to_string() }
+}
+
+/// a bracket that names a line, mode or operator ("(National Rail)", "(Green line)", "(東武東上線)", "(A,C,E)"), not a place or a
+/// direction ("(Cheshire)", "(West)", "(Beverly Hills)")
+fn lineish(c: &str) -> bool {
+    thread_local! {
+        static RE: Regex = Regex::new(r"(?i)^(.*\b(line|ligne|linie|lijn)\b.*|m[eé]tro|u|s|u-?bahn|s-?bahn|tram|nr|national rail|underground|overground|rer|m\d+|.+線|.+线|国铁|國鐵|地铁|地鐵)$").unwrap();
+        static LET: Regex = Regex::new(r"^[A-Z0-9]{1,2}([,/ ]+[A-Z0-9]{1,2})*$").unwrap();
+    }
+    let c = c.trim();
+    RE.with(|r| r.is_match(c)) || LET.with(|r| r.is_match(c))
+}
+
+/// a station label cleaned of operator and format noise. Always: a leading "Bf. "/"Bhf. ", a trailing ", Bahnhof", the VBB form
+/// "Berlin, U Voltastraße" / "Berlin, S+U Wedding". Only when the shorter name is the name of a station within GROUP_RADIUS
+/// (`bare_near`, never region-wide: "103rd Street (Beverly Hills)" keeps its place): a trailing bracket that names a line, mode or
+/// operator (`is_op` = an operator or network of this station), and the Korean type words 기차역/기차 ("서울역 기차역")
+fn clean_name(name: &str, bare_near: &dyn Fn(&str) -> bool, is_op: &dyn Fn(&str) -> bool) -> String {
+    thread_local! {
+        static RE: (Regex, Regex) = (Regex::new(r"^[^,]+, (?:S\+U|U\+S|[US]) (\S.*)$").unwrap(), Regex::new(r"^(.*\S)\s*[(（]([^()（）]*)[)）]$").unwrap());
+    }
+    let mut n = name.trim();
+    if let Some(r) = n.strip_prefix("Bf. ").or_else(|| n.strip_prefix("Bhf. ")) {
+        n = r.trim();
+    }
+    if let Some(r) = n.strip_suffix(", Bahnhof") {
+        n = r.trim();
+    }
+    let vbb;
+    if let Some(c) = RE.with(|(v, _)| v.captures(n).map(|c| c[1].to_string())) {
+        vbb = c;
+        n = vbb.trim();
+    }
+    let mut cands: Vec<String> = Vec::new();
+    if let Some((bare, inner)) = RE.with(|(_, p)| p.captures(n).map(|c| (c[1].to_string(), c[2].to_string()))) {
+        if lineish(&inner) || is_op(inner.trim()) {
+            cands.push(bare);
+        }
+    }
+    let toks: Vec<&str> = n.split_whitespace().collect();
+    if toks.len() >= 2 {
+        if matches!(toks[toks.len() - 1], "기차역" | "기차") {
+            cands.push(toks[..toks.len() - 1].join(" "));
+        }
+        if matches!(toks[0], "기차역" | "기차") {
+            cands.push(toks[1..].join(" "));
+        }
+    }
+    cands.into_iter().find(|c| bare_near(c)).unwrap_or_else(|| n.to_string())
 }
 
 struct UF(Vec<usize>);
@@ -174,6 +220,7 @@ struct Station {
     pt: Point<f64>,
     norm: String,
     merged_from: usize,
+    stated: bool, // some feature's tags state the mode
 }
 
 /// what stations.py writes, kept in memory for the next steps
@@ -208,15 +255,22 @@ pub fn run(slug: &str, inp: &Input) -> Out {
             tracks.push(it);
         } else if rw == Some("platform") || pt == Some("platform") {
             platforms.push(it);
-        } else if it.p("building") == Some("train_station") {
-            buildings.push(it);
-        } else if it.p("landuse") == Some("railway") {
-            lands.push(it);
-        } else if matches!(rw, Some("station" | "halt" | "tram_stop")) || pt == Some("station") {
-            if rw == Some("construction") {
-                continue;
+        } else {
+            // a way can be a station AND a building (Boston South Station): it is both, so test the station tags first and keep the
+            // feature in `buildings` too (its footprint feeds the size score and the complex grouping)
+            let is_station = matches!(rw, Some("station" | "halt" | "tram_stop")) || pt == Some("station");
+            let is_building = it.p("building") == Some("train_station");
+            let is_land = it.p("landuse") == Some("railway");
+            // landuse=railway is a footprint too (Varanasi Junction is a station and railway land): the feature goes to each list it belongs to
+            if is_land && (is_station || !is_building) {
+                lands.push(It { f: it.f, g: it.g.clone(), modes: BTreeSet::new() });
             }
-            station_feats.push(it);
+            if is_building {
+                buildings.push(It { f: it.f, g: it.g.clone(), modes: BTreeSet::new() });
+            }
+            if is_station && rw != Some("construction") {
+                station_feats.push(it);
+            }
         }
     }
     let track_tree = Index::new(tracks.iter().map(|t| geomx::bbox(&t.g)));
@@ -237,7 +291,8 @@ pub fn run(slug: &str, inp: &Input) -> Out {
         }
         Some(track_mode(tracks[i].p("type").unwrap_or("")))
     };
-    let feature_modes = |it: &It| -> BTreeSet<String> {
+    // (modes, whether the tags state them): without a mode tag the mode comes from the nearest track, a guess that platforms may correct
+    let feature_modes = |it: &It| -> (BTreeSet<String>, bool) {
         let mut ms = BTreeSet::new();
         if let Some(m) = it.p("station").and_then(mode_key) {
             ms.insert(m.to_string());
@@ -250,10 +305,11 @@ pub fn run(slug: &str, inp: &Input) -> Out {
                 ms.insert(k.to_string());
             }
         }
-        if ms.is_empty() {
+        let stated = !ms.is_empty();
+        if !stated {
             ms.insert(nearest_track_mode(&it.g, 150.0).unwrap_or("train").to_string());
         }
-        ms
+        (ms, stated)
     };
 
     // ---- relation lookups
@@ -288,10 +344,16 @@ pub fn run(slug: &str, inp: &Input) -> Out {
     let mut by_area_ix: FxHashMap<String, usize> = FxHashMap::default();
     for (k, it) in station_feats.iter().enumerate() {
         let sa = it.p("_stop_area").filter(|v| !v.is_empty());
-        let modes = feature_modes(it);
+        let (modes, stated) = feature_modes(it);
         if let Some(&i) = sa.and_then(|a| by_area_ix.get(a)) {
             st[i].feats.push(k);
-            st[i].modes.extend(modes);
+            if stated && !st[i].stated {
+                st[i].modes.clear(); // a guessed mode gives way to a stated one
+            }
+            if stated || !st[i].stated {
+                st[i].modes.extend(modes);
+            }
+            st[i].stated |= stated;
             continue;
         }
         st.push(Station {
@@ -303,6 +365,7 @@ pub fn run(slug: &str, inp: &Input) -> Out {
             pt: Point::new(0.0, 0.0),
             norm: String::new(),
             merged_from: 1,
+            stated,
         });
         if let Some(a) = sa {
             by_area_ix.insert(a.to_string(), st.len() - 1);
@@ -331,6 +394,14 @@ pub fn run(slug: &str, inp: &Input) -> Out {
             st[i].platforms.push(k);
             plat_station_ix.insert(platforms[k].id().to_string(), plat_station.len());
             plat_station.push((platforms[k].id().to_string(), i));
+        }
+    }
+    // a station whose mode is only a guess (nearest track, often the tram in front of Basel SBB) takes the modes of its own mapped
+    // platforms: a main-line station with train platforms is a train station, not a tram stop
+    for s_ in st.iter_mut().filter(|s_| !s_.stated) {
+        let pm: BTreeSet<String> = s_.platforms.iter().flat_map(|&k| platforms[k].modes.iter().cloned()).filter(|m| matches!(m.as_str(), "train" | "subway" | "light_rail")).collect();
+        if !pm.is_empty() {
+            s_.modes = pm;
         }
     }
     let mut anchors: Vec<G> = Vec::new();
@@ -395,7 +466,8 @@ pub fn run(slug: &str, inp: &Input) -> Out {
         s_.norm = norm_name(name);
         let mut ks = BTreeSet::new();
         for &k in &s_.feats {
-            for key in ["wikidata", "uic_ref", "railway:ref"] {
+            // not railway:ref: it is a per-network abbreviation ("Ch" is Chociszew, Ciechanow, Chybie...), not an identifier
+            for key in ["wikidata", "uic_ref"] {
                 if let Some(v) = station_feats[k].p(key).filter(|v| !v.is_empty()) {
                     ks.insert((key.to_string(), v.to_string()));
                 }
@@ -409,10 +481,18 @@ pub fn run(slug: &str, inp: &Input) -> Out {
             key_index.entry(k).or_default().push(i);
         }
     }
+    // a shared id only merges stations that are also close: ids are copied between far-apart objects (uic_ref in Russia, wikidata in
+    // Poland), and an unlimited union fused up to 600 stations into one
     for idxs in key_index.values() {
-        for &a in &idxs[1..] {
-            if !st[a].modes.is_disjoint(&st[idxs[0]].modes) {
-                uf.union(idxs[0], a);
+        for (n, &a) in idxs.iter().enumerate() {
+            for &b in &idxs[n + 1..] {
+                if st[a].modes.is_disjoint(&st[b].modes) {
+                    continue;
+                }
+                let d = geomx::dist_pt(&Geometry::Point(st[a].pt), &st[b].pt);
+                if d <= KEY_MERGE_RADIUS || (d <= KEY_MERGE_RADIUS_NAMED && !st[a].norm.is_empty() && st[a].norm == st[b].norm) {
+                    uf.union(a, b);
+                }
             }
         }
     }
@@ -428,6 +508,34 @@ pub fn run(slug: &str, inp: &Input) -> Out {
             if geomx::dist_pt(&Geometry::Point(st[i].pt), &st[j].pt) <= r {
                 uf.union(i, j);
             }
+        }
+    }
+    // a station area with no platforms, stop area or second feature (a building also tagged railway=station: 三次駅 beside the node 三次,
+    // New York "Pennsylvania Station") joins the nearest same-mode station within 100 m of it, preferring one with platforms, when the
+    // names agree once normalised or the area has no name; else (named differently) the one station with platforms inside the area
+    for i in 0..st.len() {
+        if !st[i].areas.is_empty() || st[i].feats.len() != 1 {
+            continue;
+        }
+        let g = &station_feats[st[i].feats[0]].g;
+        if !matches!(g, Geometry::Polygon(_) | Geometry::MultiPolygon(_)) {
+            continue;
+        }
+        let mut cands: Vec<(bool, f64, usize)> = Vec::new();
+        for j in s_tree.near(g, 100.0) {
+            if j == i || st[j].modes.is_disjoint(&st[i].modes) {
+                continue;
+            }
+            let d = geomx::dist(g, &Geometry::Point(st[j].pt));
+            if d <= 100.0 {
+                cands.push((st[j].platforms.is_empty(), d, j));
+            }
+        }
+        cands.sort_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).unwrap());
+        let inside: Vec<usize> = cands.iter().filter(|c| !c.0 && geomx::contains_pt(g, &st[c.2].pt)).map(|c| c.2).collect();
+        let pick = cands.iter().find(|c| (st[i].norm.is_empty() && (st[i].platforms.is_empty() || st[c.2].platforms.is_empty())) || st[c.2].norm == st[i].norm).map(|c| c.2).or(if inside.len() == 1 && st[i].platforms.is_empty() { Some(inside[0]) } else { None });
+        if let Some(j) = pick {
+            uf.union(i, j);
         }
     }
     let mut stn: Vec<Station> = Vec::new(); // final stations
@@ -453,6 +561,7 @@ pub fn run(slug: &str, inp: &Input) -> Out {
             pt: lead.pt,
             norm: lead.norm.clone(),
             merged_from: ms.len(),
+            stated: ms.iter().any(|m| m.stated),
         });
     }
     let st = stn;
@@ -514,18 +623,21 @@ pub fn run(slug: &str, inp: &Input) -> Out {
         .par_iter()
         .map(|x| {
             let mp: Vec<usize> = x.platforms.iter().copied().filter(|&k| platforms[k].modes.contains("train")).collect();
-            let (mut toks, mut unreffed) = (BTreeSet::new(), 0i64);
-            for &k in &mp {
-                let t = ref_tokens(platforms[k].p("ref"));
-                if t.is_empty() {
-                    unreffed += 1;
-                } else {
-                    toks.extend(t);
+            // distinct platform numbers ("1a"/"1b" are one), plus every platform way without a ref
+            let count = |ix: &[usize]| -> i64 {
+                let (mut toks, mut unreffed) = (BTreeSet::new(), Vec::new());
+                for &k in ix {
+                    let t = ref_tokens(platforms[k].p("ref"));
+                    if t.is_empty() {
+                        unreffed.push(k);
+                    } else {
+                        toks.extend(t.iter().map(|t| plat_key(t)));
+                    }
                 }
-            }
-            let mainline_platforms = toks.len() as i64 + unreffed;
-            let all_toks: BTreeSet<String> = x.platforms.iter().flat_map(|&k| ref_tokens(platforms[k].p("ref"))).collect();
-            let platform_count = all_toks.len() as i64 + x.platforms.iter().filter(|&&k| ref_tokens(platforms[k].p("ref")).is_empty()).count() as i64;
+                toks.len() as i64 + unreffed.len() as i64
+            };
+            let mainline_platforms = count(&mp);
+            let platform_count = count(&x.platforms);
             // railway land and building holding the station's point or its platforms
             let mut probes = vec![x.pt];
             probes.extend(x.platforms.iter().take(60).filter_map(|&k| geomx::rep_point(&platforms[k].g)));
@@ -561,7 +673,11 @@ pub fn run(slug: &str, inp: &Input) -> Out {
                         }
                     }
                 }
-            } else if x.modes.contains("train") {
+            }
+            // no platform mapped, or none beside a mainline track (Nanjing South: one platform away from the tracks): look near the point
+            // (only when no platform has a heavy-rail or heritage track beside it (a metro track does not count): a heritage station next to a main line stays without passenger track)
+            let platform_by_track = mp.iter().any(|&k| track_tree.near(&platforms[k].g, 20.0).into_iter().any(|ti| matches!(track_mode(tracks[ti].p("type").unwrap_or("")), "train" | "other") && geomx::dist(&tracks[ti].g, &platforms[k].g) <= 20.0));
+            if near.is_empty() && x.modes.contains("train") && !platform_by_track {
                 for ti in mt_tree.near(&pg, 80.0) {
                     if geomx::dist(&tracks[main_tracks[ti]].g, &pg) <= 80.0 {
                         near.insert(tracks[main_tracks[ti]].id());
@@ -766,19 +882,36 @@ pub fn run(slug: &str, inp: &Input) -> Out {
     // ---- write
     // name: a stop area's name first, else the station's best-named feature (named first, then points); stations.py iterated the
     // stop areas as a set, in an order that changes between runs; here they are sorted
+    // is `cand` the name of a station within GROUP_RADIUS of x; is `c` an operator or network of x's features
+    let bare_near = |x: &Station, cand: &str| -> bool {
+        st_tree.near(&Geometry::Point(x.pt), GROUP_RADIUS).into_iter().any(|j| {
+            geomx::dist_pt(&Geometry::Point(x.pt), &st[j].pt) <= GROUP_RADIUS
+                && (st[j].feats.iter().any(|&k| station_feats[k].p("name") == Some(cand) || station_feats[k].p("name:en") == Some(cand))
+                    || st[j].areas.iter().any(|a| area_rows.get(a).map_or(false, |r| r["tags"]["name"].as_str() == Some(cand))))
+        })
+    };
+    let is_op = |x: &Station, c: &str| -> bool {
+        x.feats.iter().any(|&k| ["operator", "network", "operator:short", "brand"].iter().any(|key| station_feats[k].p(key).map_or(false, |v| v.split(';').any(|t| t.trim() == c))))
+    };
+    let label = |x: &Station, n: &str| clean_name(n, &|c| bare_near(x, c), &|c| is_op(x, c));
     let stn_name = |x: &Station| -> (Option<String>, Map<String, Value>) {
-        for sa in &x.areas {
-            if let Some(r) = area_rows.get(sa) {
-                if let Some(nm) = r["tags"]["name"].as_str().filter(|v| !v.is_empty()) {
-                    return (Some(nm.to_string()), r["tags"].as_object().cloned().unwrap_or_default());
-                }
-            }
-        }
         let best = x.feats.iter().copied().fold(None, |a: Option<usize>, k| {
             let rank = |k: usize| (station_feats[k].p("name").map_or(false, |v| !v.is_empty()), matches!(station_feats[k].g, Geometry::Point(_)));
             if a.map_or(true, |b| rank(k) > rank(b)) { Some(k) } else { a }
         }).unwrap();
-        (station_feats[best].p("name").map(String::from), station_feats[best].f.p.clone())
+        let own = station_feats[best].p("name").filter(|v| !v.is_empty());
+        let area = x.areas.iter().find_map(|sa| {
+            let r = area_rows.get(sa)?;
+            Some((r["tags"]["name"].as_str().filter(|v| !v.is_empty())?, r["tags"].as_object().cloned().unwrap_or_default()))
+        });
+        // the station's own name, not the stop area's (a mislabelled relation named Poznań Główny "Potęgowo"); the area's name only when
+        // the station has none, or when the area's name is the own name with a place in front ("Hannover Hauptbahnhof" for "Hauptbahnhof")
+        match (own, area) {
+            (Some(o), Some((a, at))) if a.to_lowercase().ends_with(&format!(" {}", o.to_lowercase())) => (Some(label(x, a)), at),
+            (Some(o), _) => (Some(label(x, o)), station_feats[best].f.p.clone()),
+            (None, Some((a, at))) => (Some(label(x, a)), at),
+            (None, None) => (None, station_feats[best].f.p.clone()),
+        }
     };
     let name_tags = |x: &Station| -> Map<String, Value> {
         let mut t = Map::new();
@@ -847,7 +980,7 @@ pub fn run(slug: &str, inp: &Input) -> Out {
         let mut sources: Vec<Value> = x.feats.iter().map(|&k| json!(station_feats[k].id())).collect();
         sources.extend(x.areas.iter().map(|a| json!(a)));
         let props = json!({
-            "id": sid_of(i), "complex": complex_of[i], "name": nm, "name_en": english_name(&merge(tg, name_tags(x))),
+            "id": sid_of(i), "complex": complex_of[i], "name": nm, "name_en": english_name(&merge(tg, name_tags(x))).map(|e| label(x, &e)),
             "modes": x.modes.iter().collect::<Vec<_>>(), "tier": z.tier, "score": f(z.score), "terminus": z.terminus,
             "mainline_platforms": z.mainline_platforms, "platform_count": z.platform_count,
             "land_ha": f(z.land_ha), "building_ha": f(z.building_ha), "mainline_track_ways": z.mainline_track_ways,
@@ -869,7 +1002,7 @@ pub fn run(slug: &str, inp: &Input) -> Out {
         }
         let modes: BTreeSet<&String> = idxs.iter().flat_map(|&i| st[i].modes.iter()).collect();
         let props = json!({
-            "id": cid, "name": nm, "name_en": english_name(&merge(tg, name_tags(x))), "tier": idxs.iter().map(|&i| sizes[i].tier).min(),
+            "id": cid, "name": nm, "name_en": english_name(&merge(tg, name_tags(x))).map(|e| label(x, &e)), "tier": idxs.iter().map(|&i| sizes[i].tier).min(),
             "terminus": idxs.iter().any(|&i| sizes[i].terminus), "station_count": idxs.len(), "modes": modes,
             "platform_count": idxs.iter().map(|&i| sizes[i].platform_count).sum::<i64>(), "line_count": lids.len(), "grouping": how,
             "station_ids": idxs.iter().map(|&i| sid_of(i)).collect::<Vec<_>>(),
@@ -888,4 +1021,59 @@ pub fn run(slug: &str, inp: &Input) -> Out {
         "routes_with_unmapped_stops": route_unmapped.len(), "routes_total": routes_total, "mapped_group_unions": mapped_pairs,
     });
     Out { stations: stations_out, complexes: complexes_out, route_order, report }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn platform_sections_count_once() {
+        assert_eq!(plat_key("1a"), "1");
+        assert_eq!(plat_key("12B"), "12");
+        assert_eq!(plat_key("3"), "3");
+        assert_eq!(plat_key("A"), "A");
+        assert_eq!(plat_key("1north"), "1north");
+    }
+
+    #[test]
+    fn labels_lose_noise_only_beside_the_bare_station() {
+        let near = |c: &str| ["Victoria", "池袋", "서울역", "Goregaon", "Baruth"].contains(&c);
+        let op = |c: &str| c == "Elizabeth";
+        let cn = |n: &str| clean_name(n, &near, &op);
+        assert_eq!(cn("Bf. Dresden Hbf"), "Dresden Hbf");
+        assert_eq!(cn("Dießen, Bahnhof"), "Dießen");
+        assert_eq!(cn("Berlin, U Voltastraße"), "Voltastraße");
+        assert_eq!(cn("Berlin, S+U Wedding"), "Wedding");
+        assert_eq!(cn("Victoria (National Rail)"), "Victoria");
+        assert_eq!(cn("池袋 (東武東上線)"), "池袋");
+        assert_eq!(cn("서울역 기차역"), "서울역");
+        assert_eq!(cn("Victoria (Elizabeth)"), "Victoria");
+        // places and directions are not lines; the bare station must be near
+        assert_eq!(cn("Goregaon (East)"), "Goregaon (East)");
+        assert_eq!(cn("Baruth (Mark)"), "Baruth (Mark)");
+        assert_eq!(cn("103rd Street (Beverly Hills)"), "103rd Street (Beverly Hills)");
+        assert_eq!(cn("Adlington (Cheshire)"), "Adlington (Cheshire)");
+        assert_eq!(cn("Liverpool Street (Elizabeth line)"), "Liverpool Street (Elizabeth line)");
+        assert_eq!(cn("기차 부전역"), "기차 부전역");
+    }
+
+    #[test]
+    fn japanese_and_german_suffixes_normalise() {
+        assert_eq!(norm_name("三次駅"), norm_name("三次"));
+        assert_eq!(norm_name("Bahnhof Mittweida"), norm_name("Mittweida"));
+        assert_eq!(norm_name("JR宝塚駅"), norm_name("宝塚"));
+        assert_eq!(norm_name("Stazione di Oristano"), norm_name("Oristano"));
+    }
+
+    #[test]
+    fn english_name_uses_the_shared_rules() {
+        let mut t = Map::new();
+        t.insert("name".into(), json!("Hauptbahnhof"));
+        t.insert("name:et".into(), json!("Waterloo metroojaam"));
+        t.insert("name:etymology:wikidata".into(), json!("Q735271"));
+        assert_eq!(english_name(&t), None);
+        t.insert("name:en".into(), json!("Central Station"));
+        assert_eq!(english_name(&t).as_deref(), Some("Central Station"));
+    }
 }

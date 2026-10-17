@@ -39,7 +39,7 @@ fn run(cfg: &Cfg, ways: &[(&str, &str)], rows: &[RelRow]) -> (Out, Vec<Value>) {
             }
         })
         .collect();
-    let out = classify("t", cfg, rows, &feats, &tracks, &FxHashSet::default(), &[]);
+    let out = classify("t", cfg, rows, &feats, &tracks, &[]);
     let typed = String::from_utf8(out.typed.clone()).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
     (out, typed)
 }
@@ -165,7 +165,7 @@ fn passenger_needs_evidence_beside_route_or_agency() {
         rel_members: vec![],
     }];
     let kinds_at = |cfg: &Cfg, pax: &[(i32, i32)]| -> Vec<(String, String)> {
-        let out = classify("t", cfg, &rows, &feats, &tracks, &FxHashSet::default(), pax);
+        let out = classify("t", cfg, &rows, &feats, &tracks, pax);
         String::from_utf8(out.typed).unwrap().lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).map(|v| (v["properties"]["type"].as_str().unwrap().to_string(), v["properties"]["type_source"].as_str().unwrap().to_string())).collect()
     };
     let kinds = |cfg: &Cfg| kinds_at(cfg, &[]);
@@ -225,7 +225,7 @@ fn short_piece_is_smoothed_past_a_siding() {
             TrackIn { start: spans[i].0, end: spans[i].1, pos: spans[i].2, props: FeatProps { tags: List(t), osm_id: format!("way/{}", i + 1) }, routes: Vec::new(), first: ll[0], ll: ll.clone() }
         })
         .collect();
-    let out = classify("t", &cfg_json(json!({})), &[], &feats, &tracks, &FxHashSet::default(), &[]);
+    let out = classify("t", &cfg_json(json!({})), &[], &feats, &tracks, &[]);
     let typed: Vec<Value> = String::from_utf8(out.typed).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
     let ty = |i: usize| (typed[i]["properties"]["type"].as_str().unwrap().to_string(), typed[i]["properties"]["type_source"].as_str().unwrap().to_string());
     assert_eq!(ty(1), ("regional".to_string(), "neighbour".to_string()), "{typed:?}");
@@ -260,7 +260,7 @@ fn intercity_chain_between_regional_track_becomes_regional() {
             TrackIn { start: spans[i].0, end: spans[i].1, pos: spans[i].2, props: FeatProps { tags: List(t), osm_id: format!("way/{}", i + 1) }, routes: Vec::new(), first: ll[0], ll: ll.clone() }
         })
         .collect();
-    let out = classify("t", &cfg_json(json!({})), &[], &feats, &tracks, &FxHashSet::default(), &[]);
+    let out = classify("t", &cfg_json(json!({})), &[], &feats, &tracks, &[]);
     let typed: Vec<Value> = String::from_utf8(out.typed).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
     let ty = |i: usize| typed[i]["properties"]["type"].as_str().unwrap().to_string();
     assert_eq!((ty(1), ty(2)), ("regional".to_string(), "regional".to_string()), "{typed:?}");
@@ -302,8 +302,115 @@ fn high_speed_route_type_needs_high_speed_track() {
             ll: vec![(i as i32 * 1_000_000, 0), (i as i32 * 1_000_000, 10_000)],
         })
         .collect();
-    let out = classify("t", &cfg_json(json!({})), &rows, &feats, &tracks, &FxHashSet::default(), &[]);
+    let out = classify("t", &cfg_json(json!({})), &rows, &feats, &tracks, &[]);
     let typed: Vec<Value> = String::from_utf8(out.typed).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
     let ty = |i: usize| typed[i]["properties"]["type"].as_str().unwrap().to_string();
     assert_eq!((ty(0), ty(1), ty(2)), ("high_speed".to_string(), "intercity".to_string(), "high_speed".to_string()), "{typed:?}");
+}
+
+/// the typed ways (tags, routes they list) of one classify call, each a separate 10 km piece; returns (types, lines.json)
+fn classify_ways(ways: &[(Vec<(&[u8], &[u8])>, Vec<&str>)], rows: &[RelRow]) -> (Vec<String>, Vec<Value>) {
+    let mut feats = Vec::new();
+    let mut spans = Vec::new();
+    for i in 0..ways.len() {
+        let l = format!("{{\"type\":\"Feature\",\"properties\":{{\"osm_id\":\"way/{}\"}},\"geometry\":null}}\n", i + 1);
+        spans.push((feats.len(), feats.len() + l.len(), feats.len() + l.find("},\"geometry\"").unwrap()));
+        feats.extend_from_slice(l.as_bytes());
+    }
+    let tracks: Vec<TrackIn> = ways
+        .iter()
+        .enumerate()
+        .map(|(i, (t, r))| TrackIn {
+            start: spans[i].0,
+            end: spans[i].1,
+            pos: spans[i].2,
+            props: FeatProps { tags: List(t.clone()), osm_id: format!("way/{}", i + 1) },
+            routes: r.iter().map(|x| x.to_string()).collect(),
+            first: ((i % 600) as i32 * 100_000, (i / 600) as i32 * 1_000_000),
+            ll: vec![((i % 600) as i32 * 100_000, (i / 600) as i32 * 1_000_000), ((i % 600) as i32 * 100_000, (i / 600) as i32 * 1_000_000 + 10_000)],
+        })
+        .collect();
+    let out = classify("t", &cfg_json(json!({})), rows, &feats, &tracks, &[]);
+    let typed: Vec<Value> = String::from_utf8(out.typed).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let lines: Vec<Value> = serde_json::from_slice(&out.lines).unwrap();
+    (typed.iter().map(|f| f["properties"]["type"].as_str().unwrap().to_string()).collect(), lines)
+}
+
+fn route(id: &str, tags: &[(&str, &str)]) -> RelRow {
+    let mut t: Vec<(String, String)> = vec![("route".into(), "train".into())];
+    t.extend(tags.iter().map(|(k, v)| (k.to_string(), v.to_string())));
+    RelRow { id: id.into(), route: true, master: false, tags: Owned(t), rel_members: vec![] }
+}
+
+/// railway=narrow_gauge is typed from usage and routes like standard gauge: public use is passenger, industrial is freight, heritage is Other
+#[test]
+fn narrow_gauge_is_typed_from_usage_and_routes() {
+    let ng = |extra: &[(&'static [u8], &'static [u8])]| {
+        let mut t: Vec<(&[u8], &[u8])> = vec![(b"railway", b"narrow_gauge")];
+        t.extend_from_slice(extra);
+        (t, vec![])
+    };
+    let mut routed = ng(&[]);
+    routed.1 = vec!["relation/1"];
+    let ways = [
+        ng(&[(b"usage", b"industrial")]),
+        ng(&[(b"usage", b"tourism")]),
+        ng(&[(b"usage", b"branch"), (b"railway:traffic_mode", b"passenger")]), // (a lone dead-end piece with no station would be judged freight)
+        ng(&[(b"usage", b"main"), (b"railway:traffic_mode", b"passenger")]),
+        ng(&[]),
+        routed,
+        ng(&[(b"usage", b"main"), (b"service", b"yard")]),
+    ];
+    let (types, _) = classify_ways(&ways, &[route("relation/1", &[("service", "regional")])]);
+    assert_eq!(types, ["freight", "other", "regional", "intercity", "other", "regional", "yard"]);
+}
+
+/// service=international;long_distance: the most prominent class any value gives
+#[test]
+fn route_service_with_several_values() {
+    let ty = |svc: &str| {
+        let rows = [route("relation/1", &[("service", svc)])];
+        let (_, lines) = classify_ways(&[(vec![(b"railway", b"rail")], vec!["relation/1"])], &rows);
+        lines[0]["type"].as_str().unwrap().to_string()
+    };
+    assert_eq!(ty("international;long_distance"), "intercity");
+    assert_eq!(ty("regional;tourism"), "regional");
+    assert_eq!(ty("commuter; long_distance"), "intercity");
+    assert_eq!(ty("international;national"), "intercity");
+    assert_eq!(ty("tourism"), "other");
+    assert_eq!(ty("highspeed"), "high_speed");
+}
+
+/// a route relation that is not running yet is not a line, and its ways get no route type
+#[test]
+fn route_under_construction_is_not_service() {
+    for name in ["Tren Alameda-Melipilla (en construcción)", "Sabarimala Line (under construction)", "Santiago-Batuco (proyectado)"] {
+        assert!(route_under_construction(&route("relation/1", &[("name", name)]).tags), "{name}");
+    }
+    assert!(route_under_construction(&route("relation/1", &[("state", "construction")]).tags));
+    assert!(!route_under_construction(&route("relation/1", &[("name", "Tren Santiago-Valparaíso")]).tags));
+    let ways = [(vec![(&b"railway"[..], &b"rail"[..]), (b"usage", b"main"), (b"railway:traffic_mode", b"passenger")], vec!["relation/1"])];
+    let (types, lines) = classify_ways(&ways, &[route("relation/1", &[("name", "Tren Alameda-Melipilla (en construcción)"), ("service", "regional")])]);
+    assert!(lines.is_empty(), "{lines:?}");
+    assert_eq!(types, ["intercity"]); // its own tags, not the route's Regional
+    let (_, lines) = classify_ways(&ways, &[route("relation/1", &[("name", "Tren Alameda-Melipilla")])]);
+    assert_eq!(lines.len(), 1);
+}
+
+/// a route is High-speed by track only when most of its length is high-speed track
+#[test]
+fn route_is_high_speed_by_track_only_for_a_majority() {
+    let hs: (Vec<(&[u8], &[u8])>, Vec<&str>) = (vec![(b"railway", b"rail"), (b"highspeed", b"yes")], vec!["relation/1"]);
+    let plain: (Vec<(&[u8], &[u8])>, Vec<&str>) = (vec![(b"railway", b"rail")], vec!["relation/1"]);
+    let line_type = |ways: &[(Vec<(&[u8], &[u8])>, Vec<&str>)]| classify_ways(ways, &[route("relation/1", &[])]).1[0]["type"].as_str().unwrap().to_string();
+    assert_eq!(line_type(&[hs.clone(), plain.clone(), plain.clone()]), "regional"); // one third: a regional train that crosses a high-speed link
+    assert_eq!(line_type(&[hs.clone(), hs.clone(), plain.clone()]), "high_speed");
+    assert_eq!(line_type(&[hs.clone()]), "high_speed");
+    // a long route with a little high-speed track (GWR London - Penzance) is Intercity
+    let mut long = vec![hs.clone()];
+    long.extend(std::iter::repeat(plain.clone()).take(1600)); // each piece is 0.11 km: 176 km, 0.11 km of it high-speed
+    assert_eq!(line_type(&long), "intercity");
+    // track under construction counts for neither the total nor the high-speed share
+    let building: (Vec<(&[u8], &[u8])>, Vec<&str>) = (vec![(b"railway", b"construction"), (b"construction", b"rail"), (b"highspeed", b"yes")], vec!["relation/1"]);
+    assert_eq!(line_type(&[plain.clone(), plain.clone(), building.clone(), building.clone(), building.clone()]), "regional");
 }

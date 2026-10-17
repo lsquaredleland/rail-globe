@@ -583,7 +583,6 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
 
     let way_res: Vec<WayRes> = ext.par_iter().zip(ways.par_iter()).map(|(&i, w)| way_feature(wi[i as usize].id, w, &ctx)).collect();
     let mut tracks: Vec<classify::TrackIn> = Vec::new();
-    let mut hs_routes: FxHashSet<String> = FxHashSet::default(); // routes on track tagged highspeed=yes
     // how many track ways end at each point: a way that no other track touches at either end, and is tiny, is a stray piece
     let mut track_ends: FxHashMap<(i32, i32), u32> = FxHashMap::default();
     for (k, r) in way_res.iter().enumerate() {
@@ -610,9 +609,6 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
                 let id = wi[ext[k] as usize].id;
                 let routes: Vec<String> = ctx.way_routes.get(&id).map(|s| s.iter().cloned().collect()).unwrap_or_default();
                 let tl = List(ways[k].tags.clone());
-                if is(&tl, b"highspeed", b"yes") {
-                    hs_routes.extend(routes.iter().cloned());
-                }
                 if !is_track && (is(&tl, b"railway", b"station") || is(&tl, b"railway", b"halt") || is(&tl, b"public_transport", b"station")) && !is(&tl, b"railway:traffic_mode", b"freight") && passenger_station(&tl, cfg) {
                     // a station mapped as an area or a line: a point in its middle
                     if let Some(&q) = ways[k].ll.get(ways[k].ll.len() / 2) {
@@ -818,7 +814,7 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
                     rel_members: r.rel_members.clone(),
                 })
                 .collect();
-            let out = classify::classify(&reg.slug, cfg, &rel_rows, &feats, &tracks, &hs_routes, &pax_stations);
+            let out = classify::classify(&reg.slug, cfg, &rel_rows, &feats, &tracks, &pax_stations);
             wr("features.typed.geojsonl", &out.typed);
             wr("lines.json", &out.lines);
             wr("classify_report.json", &out.report);

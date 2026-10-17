@@ -118,15 +118,21 @@ fn config_group(config_dir: &Path, slug: &str) -> Option<String> {
     })
 }
 
+/// True when the config file itself starts from a template (has an `extends` key).
+fn extends_template(path: &Path) -> bool {
+    fs::read_to_string(path).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).map_or(false, |v| v.get("extends").is_some())
+}
+
 /// Fill the slug-specific keys of the template from the region's outline properties: stat_name <- name_en (else name),
 /// stat_local <- name, stat_auto.country <- country. The generic configs written by hand for the world build had exactly these.
 pub fn fill_default(cfg: &mut Map<String, Value>, props: &Value) {
     let name = props["name"].as_str().unwrap_or("");
     let en = props["name_en"].as_str().unwrap_or(name);
-    cfg.insert("stat_name".into(), Value::from(en));
-    cfg.insert("stat_local".into(), Value::from(name));
+    // explicit config values win; only missing keys are filled (an own-file config that extends _default sets none of them)
+    cfg.entry("stat_name").or_insert_with(|| Value::from(en));
+    cfg.entry("stat_local").or_insert_with(|| Value::from(name));
     if let Some(Value::Object(auto)) = cfg.get_mut("stat_auto") {
-        auto.insert("country".into(), props["country"].clone());
+        auto.entry("country").or_insert_with(|| props["country"].clone());
     }
 }
 
@@ -166,13 +172,16 @@ pub fn build(slug: &str, paths: &Paths) -> Vec<String> {
     let dir = paths.data.join(slug);
     let (cfg_path, is_default) = config_path(&paths.config, slug);
     let mut inp = load(&dir, &cfg_path);
-    if is_default {
+    // a file of its own that says "extends" gets the same fill for the keys it leaves out; the hand-written pilot configs (no extends) stay as written
+    if is_default || extends_template(&cfg_path) {
         let outline = paths.regions.iter().map(|d| d.join(format!("{slug}.geojson"))).find(|p| p.exists());
         let props = outline
             .and_then(|p| serde_json::from_str::<Value>(&fs::read_to_string(p).ok()?).ok())
             .map_or(Value::Null, |v| v["properties"].clone());
         fill_default(&mut inp.cfg, &props);
-        log.push(format!("  config: pipeline/config/_default.json (no {slug}.json)"));
+        if is_default {
+            log.push(format!("  config: pipeline/config/_default.json (no {slug}.json)"));
+        }
     }
     log.extend(stale_exemption_warnings(&dir).into_iter().map(|w| format!("  WARNING: {w}")));
     lap(&mut log, &mut t, format!("read {} features, {} relations, {} stop positions", inp.feats.len(), inp.rels.len(), inp.stops.len()));
@@ -212,6 +221,29 @@ mod tests {
         assert_eq!(cfg["stat_local"], "Österreich");
         assert_eq!(cfg["stat_auto"], serde_json::json!({"levels": ["4"], "country": "AT"}));
         assert_eq!(cfg["high_speed_min_kmh"], 200);
+    }
+
+    #[test]
+    fn own_file_with_only_extends_gets_default_names() {
+        let dir = std::env::temp_dir().join(format!("site_own_cfg_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("_default.json"), include_str!("../../config/_default.json")).unwrap();
+        std::fs::write(dir.join("xx.json"), r#"{"extends":"_default"}"#).unwrap();
+        std::fs::write(dir.join("yy.json"), r#"{"extends":"_default","stat_name":"Mine","stat_auto":{"country":"ZZ"}}"#).unwrap();
+        let props: Value = serde_json::from_str(r#"{"name":"Xland","name_en":"Xlandia","country":"XX"}"#).unwrap();
+        let (p, is_default) = config_path(&dir, "xx");
+        assert!(!is_default && extends_template(&p));
+        let mut cfg = crate::config::load_file(&p);
+        fill_default(&mut cfg, &props);
+        assert_eq!(cfg["stat_name"], "Xlandia");
+        assert_eq!(cfg["stat_local"], "Xland");
+        assert_eq!(cfg["stat_auto"], serde_json::json!({"levels": ["4"], "country": "XX"}));
+        let mut cfg = crate::config::load_file(&dir.join("yy.json"));
+        fill_default(&mut cfg, &props);
+        assert_eq!(cfg["stat_name"], "Mine");
+        assert_eq!(cfg["stat_local"], "Xland");
+        assert_eq!(cfg["stat_auto"]["country"], "ZZ");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

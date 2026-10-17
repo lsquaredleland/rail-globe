@@ -35,12 +35,17 @@ fn route_mode_type(m: &str) -> Option<&'static str> {
 }
 
 fn railway_type(rw: &str) -> Option<&'static str> {
-    route_mode_type(rw).or(if rw == "narrow_gauge" { Some("other") } else { None })
+    route_mode_type(rw)
 }
 
+/// The type of a route's `service` tag. Several values (`international;long_distance`) take the most prominent type any of them gives.
 fn service_type(s: &str) -> Option<&'static str> {
+    highest(s.split(';').filter_map(|v| service_type_one(v.trim())))
+}
+
+fn service_type_one(s: &str) -> Option<&'static str> {
     Some(match s {
-        "high_speed" => "high_speed",
+        "high_speed" | "highspeed" | "high-speed" => "high_speed", // KTX relations in Korea say service=highspeed
         "long_distance" | "night" => "intercity",
         "regional" | "commuter" => "regional",
         "tourism" => "other",
@@ -356,7 +361,7 @@ fn highest<'a>(types: impl Iterator<Item = &'a str>) -> Option<&'a str> {
 }
 
 /// type of one route relation: (type, source); first matching rule wins
-fn route_type(t: &Owned, cfg: &Cfg, track_hs: bool) -> (String, &'static str) {
+fn route_type(t: &Owned, cfg: &Cfg, track_hs: HsTrack) -> (String, &'static str) {
     for (r, ty) in &cfg.type_overrides {
         if r.matches(t) {
             return (ty.clone(), "override");
@@ -367,11 +372,15 @@ fn route_type(t: &Owned, cfg: &Cfg, track_hs: bool) -> (String, &'static str) {
     }
     let net = t.g("network").unwrap_or("");
     let svc = t.g("service");
+    let hs_net = cfg.hs_networks.iter().any(|r| r.is_match(net));
+    let national = svc.map_or(false, |s| s.split(';').any(|v| matches!(v.trim(), "national" | "international")));
     if let Some(s) = svc.and_then(service_type) {
+        if s == "intercity" && national && hs_net {
+            return ("high_speed".into(), "service+network"); // service=international;long_distance on a high-speed network
+        }
         return (s.into(), "service");
     }
-    let hs_net = cfg.hs_networks.iter().any(|r| r.is_match(net));
-    if matches!(svc, Some("national" | "international")) {
+    if national {
         return ((if hs_net { "high_speed" } else { "intercity" }).into(), "service+network");
     }
     if hs_net {
@@ -384,8 +393,10 @@ fn route_type(t: &Owned, cfg: &Cfg, track_hs: bool) -> (String, &'static str) {
             return ("intercity".into(), "train_number");
         }
     }
-    if track_hs {
-        return ("high_speed".into(), "track");
+    match track_hs {
+        HsTrack::Majority => return ("high_speed".into(), "track"),
+        HsTrack::LongPartial => return ("intercity".into(), "track"),
+        HsTrack::No => {}
     }
     ("regional".into(), "default")
 }
@@ -444,7 +455,8 @@ fn own_tag_type<T: Get + ?Sized>(p: &T, cfg: &Cfg) -> (String, &'static str) {
     if usage == Some("branch") {
         return ("regional".into(), "tags");
     }
-    ("regional".into(), "default")
+    // narrow gauge with no usage: nothing says it carries the public (mine, peat, park and miniature railways are mapped this way too)
+    (if rw == "narrow_gauge" { "other" } else { "regional" }.into(), "default")
 }
 
 const PASSENGER_NAME_WORDS: [&str; 9] = ["联络线", "直通线", "环线", "高铁", "高速", "客专", "客运专线", "城际", "动车"];
@@ -592,7 +604,7 @@ fn freight_by_evidence(tracks: &[TrackIn], cand: &[bool], pax: &[(i32, i32)]) ->
     // branch that runs beside a main line does not get the main line's stations.
     let mut owner: Vec<Option<(f64, usize)>> = vec![None; stations.len()];
     for (ti, t) in tracks.iter().enumerate() {
-        if t.props.g("railway") != Some("rail") || t.props.g("service").map_or(false, |v| SERVICE_TRACK.contains(&v)) {
+        if !matches!(t.props.g("railway"), Some("rail" | "narrow_gauge")) || t.props.g("service").map_or(false, |v| SERVICE_TRACK.contains(&v)) {
             continue;
         }
         let pts: Vec<(f64, f64)> = t.ll.iter().filter(|p| p.0 != i32::MIN).map(|&p| deg(p)).collect();
@@ -750,15 +762,7 @@ fn or<'a>(a: Option<&'a str>, b: Option<&'a str>) -> Option<&'a str> {
 }
 
 fn english(t: &Owned) -> Option<&str> {
-    if let Some(v) = t.g("name:en").filter(|v| !v.is_empty()) {
-        return Some(v);
-    }
-    if let Some(v) = t.g("int_name").filter(|v| !v.is_empty()) {
-        return Some(v);
-    }
-    t.0.iter()
-        .find(|(k, v)| k.starts_with("name:") && !v.is_empty() && v.chars().all(|c| (c as u32) <= 0x24f || (0x1e00..=0x1eff).contains(&(c as u32))))
-        .map(|(_, v)| v.as_str())
+    crate::rules::english_name_kv(t.0.iter().map(|(k, v)| (k.as_bytes(), v.as_bytes()))).and_then(|v| std::str::from_utf8(v).ok())
 }
 
 /// Counter.most_common(): by count, ties in first-seen order
@@ -775,8 +779,53 @@ fn bump(v: &mut Vec<(String, i64)>, k: &str) {
     }
 }
 
-pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[TrackIn], hs_routes: &FxHashSet<String>, pax: &[(i32, i32)]) -> Out {
-    let routes: Vec<&RelRow> = rows.iter().filter(|r| r.route).collect();
+/// A route relation that is not running yet: it says so in its name ("(en construccion)", "under construction", "proyectado", "planned")
+/// or in `state` / `railway`. Such a relation is no service: it is not a line and gives its ways no route type.
+pub fn route_under_construction(t: &Owned) -> bool {
+    use std::sync::OnceLock;
+    static NAME: OnceLock<Regex> = OnceLock::new();
+    let re = NAME.get_or_init(|| {
+        Regex::new(r"(?i)construcci[oó]n|\bconstruction\b|en obras|proyectad|\bplanned\b|\bproposed\b|em constru[cç][aã]o|in costruzione|\bim bau\b|en cours de construction|w budowie|v výstavbě").unwrap()
+    });
+    matches!(t.g("state"), Some("construction" | "proposed" | "planned"))
+        || matches!(t.g("railway"), Some("construction" | "proposed"))
+        || t.g("name").map_or(false, |n| re.is_match(n))
+}
+
+/// A route is High-speed "by track" (no service or network rule decided) only when at least this share of its length is high-speed track.
+const HS_TRACK_SHARE: f64 = 0.5;
+/// A route with some high-speed track, but under HS_TRACK_SHARE of it, is Intercity when it is at least this long (a GWR or CrossCountry
+/// service that runs part of its way on a fast line), else Regional (a commuter service that crosses a high-speed link).
+const LONG_ROUTE_KM: f64 = 150.0;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HsTrack {
+    No,
+    LongPartial,
+    Majority,
+}
+
+pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[TrackIn], pax: &[(i32, i32)]) -> Out {
+    let routes: Vec<&RelRow> = rows.iter().filter(|r| r.route && !route_under_construction(&r.tags)).collect();
+    let hs_routes: rustc_hash::FxHashMap<String, HsTrack> = {
+        // route -> (km of track, km of high-speed track: highspeed=yes, or high-speed by its own tags); track under construction counts for neither
+        let mut len: rustc_hash::FxHashMap<&str, (f64, f64)> = rustc_hash::FxHashMap::default();
+        for tr in tracks.iter().filter(|tr| !tr.routes.is_empty() && !matches!(tr.props.g("railway"), Some("construction" | "proposed"))) {
+            let km = ll_km(&tr.ll);
+            let hs = tr.props.g("highspeed") == Some("yes") || own_tag_type(&tr.props, cfg).0 == "high_speed";
+            for r in &tr.routes {
+                let e = len.entry(r.as_str()).or_default();
+                e.0 += km;
+                if hs {
+                    e.1 += km;
+                }
+            }
+        }
+        len.into_iter()
+            .filter(|(_, (_, hs))| *hs > 0.0)
+            .map(|(r, (all, hs))| (r.to_string(), if hs >= HS_TRACK_SHARE * all { HsTrack::Majority } else if all >= LONG_ROUTE_KM { HsTrack::LongPartial } else { HsTrack::No }))
+            .collect()
+    };
     let route_pos: rustc_hash::FxHashMap<&str, usize> = routes.iter().enumerate().map(|(i, r)| (r.id.as_str(), i)).collect();
     let masters: rustc_hash::FxHashMap<&str, &RelRow> = rows.iter().filter(|r| r.master).map(|r| (r.id.as_str(), r)).collect();
     let mut route_master: rustc_hash::FxHashMap<String, &str> = rustc_hash::FxHashMap::default();
@@ -786,7 +835,7 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         }
     }
     let mut ex_stats: Vec<ExStats> = cfg.exemptions.iter().map(|_| ExStats::default()).collect();
-    let rtype: Vec<(String, &'static str)> = routes.iter().map(|r| route_type(&r.tags, cfg, hs_routes.contains(&r.id))).collect();
+    let rtype: Vec<(String, &'static str)> = routes.iter().map(|r| route_type(&r.tags, cfg, hs_routes.get(&r.id).copied().unwrap_or(HsTrack::No))).collect();
 
     // lines: route_master where one exists, else the route; master type = most prominent of its routes
     let mut line_ids: Vec<&str> = Vec::new();
@@ -893,7 +942,7 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
     let mut by_name: std::collections::HashMap<String, (u32, u32)> = std::collections::HashMap::new(); // name -> (freight ways, ways) with no passenger route
     for tr in tracks {
         let p = &tr.props;
-        if p.g("railway") != Some("rail") || tr.routes.iter().any(|r| route_line_type(r).is_some()) {
+        if !matches!(p.g("railway"), Some("rail" | "narrow_gauge")) || tr.routes.iter().any(|r| route_line_type(r).is_some()) {
             continue;
         }
         let Some(name) = p.g("name").filter(|n| !n.is_empty()) else { continue };
@@ -908,7 +957,7 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         .iter()
         .map(|tr| {
             let p = &tr.props;
-            p.g("railway") == Some("rail")
+            matches!(p.g("railway"), Some("rail" | "narrow_gauge"))
                 && tr.ll.len() >= 2
                 && !tr.routes.iter().any(|r| route_line_type(r).is_some())
                 && p.g("service").map_or(true, |v| !SERVICE_TRACK.contains(&v))
@@ -951,8 +1000,9 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
             own = Some(o.clone());
             match best {
                 Some(b) => (b, "route"),
-                None if rw == "rail" && matches!(o.as_str(), "intercity" | "regional") && mostly_freight(p.g("name")) => ("freight".into(), "name"),
-                None if by_evidence.contains_key(&ti) => ("freight".into(), by_evidence[&ti]),
+                None if matches!(rw, "rail" | "narrow_gauge") && matches!(o.as_str(), "intercity" | "regional") && mostly_freight(p.g("name")) => ("freight".into(), "name"),
+                // narrow gauge with no station is as likely a heritage or park railway as a freight one: Other, not Freight
+                None if by_evidence.contains_key(&ti) => ((if rw == "narrow_gauge" { "other" } else { "freight" }).into(), by_evidence[&ti]),
                 None => (o, src),
             }
         };
@@ -964,13 +1014,13 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
     if let Some(mode) = cfg.needs_evidence {
         let passenger = |t: &str| matches!(t, "intercity" | "regional" | "high_speed");
         let routed: Vec<usize> = (0..tracks.len())
-            .filter(|&i| tracks[i].props.g("railway") == Some("rail") && tracks[i].ll.len() >= 2 && decided[i].as_ref().map_or(false, |d| d.s == "route" && passenger(&d.t)))
+            .filter(|&i| matches!(tracks[i].props.g("railway"), Some("rail" | "narrow_gauge")) && tracks[i].ll.len() >= 2 && decided[i].as_ref().map_or(false, |d| d.s == "route" && passenger(&d.t)))
             .collect();
         let targets: Vec<usize> = (0..tracks.len())
             .filter(|&i| {
                 let p = &tracks[i].props;
                 tracks[i].ll.iter().filter(|q| q.0 != i32::MIN).count() >= 2   // a way with no usable geometry keeps its type
-                    && p.g("railway") == Some("rail")
+                    && matches!(p.g("railway"), Some("rail" | "narrow_gauge"))
                     && !matches!(p.g("railway:traffic_mode"), Some("passenger" | "mixed"))
                     && decided[i].as_ref().map_or(false, |d| matches!(d.s, "tags" | "default") && matches!(d.t.as_str(), "intercity" | "regional"))
                     && !p.g("operator").map_or(false, |o| cfg.passenger_operators.iter().any(|r| r.is_match(o)))
@@ -983,7 +1033,7 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         for ti in targets {
             if !kept.contains(&ti) {
                 if let Some(d) = decided[ti].as_mut() {
-                    d.t = "freight".into();
+                    d.t = if tracks[ti].props.g("railway") == Some("narrow_gauge") { "other" } else { "freight" }.into(); // no evidence it is freight either (a heritage line tagged usage=branch)
                     d.s = "no-evidence";
                 }
             }
