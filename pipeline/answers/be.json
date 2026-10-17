@@ -1,0 +1,47 @@
+{
+  "_comment": "Draft answer list for docs/qa/west-europe.md (2026-10-16), written from general knowledge; tier_max=1 means must be tier 1. Review before trusting. 2026-10-17 review: 'forced': true = restates a config override; 'source' = Wikipedia page for independent entries; '_known_failure' = real, understood bug.",
+  "stations": [
+    {
+      "match": "Bruxelles-Midi",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Antwerpen-Centraal",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Bruxelles-Nord",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Belgium"
+    },
+    {
+      "match": "^Liège-Guillemins",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Belgium"
+    },
+    {
+      "match": "^Leuven",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Belgium"
+    },
+    {
+      "match": "^Bruxelles-Central",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Brussels-Central_railway_station",
+      "_known_failure": "Bruxelles-Central is one of the busiest Belgian stations (Wikipedia source) but scores 23.6 (tier 3), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    }
+  ],
+  "lines": [
+    {
+      "match": "^Eurostar: Paris",
+      "type": "high_speed",
+      "forced": true
+    }
+  ]
+}

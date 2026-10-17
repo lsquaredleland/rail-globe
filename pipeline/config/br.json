@@ -1,0 +1,26 @@
+{
+  "extends": "_evidence-routes",
+  "_comment": "Brazil: the routes-mode evidence template (docs/15-argentina-africa-freight.md, applied 2026-10-17 on the user's decision) plus the keys below. docs/qa/americas-africa-asia.md.",
+  "stat_name": "Brazil",
+  "stat_local": "Brasil",
+  "stat_auto": {
+    "country": "BR"
+  },
+  "exemptions": [
+    {
+      "id": "tourist-trains",
+      "match": {
+        "name_re": "^(Estrada de Ferro Engenheiro Bley|Ramal de Curitiba|Trem das [AÁ]guas|Trem da Serra da Mantiqueira)$",
+        "type": "regional",
+        "type_source": "route"
+      },
+      "action": {
+        "type": "other"
+      },
+      "reason": "Serra Verde Express (Curitiba-Morretes, on Rumo's freight line), Trem das Aguas and Trem da Serra da Mantiqueira are tourist and heritage trains; the route relations make the track Regional.",
+      "source": "https://www.openstreetmap.org/relation/2599219",
+      "added": "2026-10-17",
+      "expect_min": 20
+    }
+  ]
+}

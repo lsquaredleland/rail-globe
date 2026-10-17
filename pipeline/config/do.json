@@ -1,0 +1,9 @@
+{
+  "extends": "_evidence-routes",
+  "stat_name": "Dominican Republic",
+  "stat_local": "República Dominicana",
+  "stat_auto": {
+    "country": "DO"
+  },
+  "_comment": "Dominican Republic: the routes-mode evidence template (docs/15-argentina-africa-freight.md, applied 2026-10-17 on the user's decision) plus the keys below. docs/qa/americas-africa-asia.md."
+}

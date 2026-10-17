@@ -1,0 +1,20 @@
+{
+  "extends": "_default",
+  "_comment": "Uzbekistan. Only exemptions (docs/qa/east-europe.md).",
+  "exemptions": [
+    {
+      "id": "uz-samarkand-qarshi-not-hsr",
+      "match": {
+        "name_re": "^Samarkand-Qarshi$",
+        "type": "high_speed"
+      },
+      "action": {
+        "type": "intercity"
+      },
+      "reason": "Conventional Samarkand-Qarshi line mapped highspeed=yes but maxspeed=165, below the 200 km/h floor; Afrosiyob is 250 km/h only on Tashkent-Samarkand-Bukhara.",
+      "source": "https://www.openstreetmap.org/way/137629247",
+      "added": "2026-10-16",
+      "expect_min": 20
+    }
+  ]
+}

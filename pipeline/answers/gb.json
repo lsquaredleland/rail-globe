@@ -1,0 +1,73 @@
+{
+  "_comment": "Draft answer list for docs/qa/west-europe.md (2026-10-16), written from general knowledge; tier_max=1 means must be tier 1. Review before trusting. 2026-10-17 review: 'forced': true = restates a config override; 'source' = Wikipedia page for independent entries; '_known_failure' = real, understood bug.",
+  "stations": [
+    {
+      "match": "St\\.? Pancras",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^(London )?Waterloo$",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Birmingham New Street",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Manchester Piccadilly",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Edinburgh Waverley",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Liverpool Street",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Great_Britain"
+    },
+    {
+      "match": "^(London )?Victoria( \\(National Rail\\))?$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Great_Britain"
+    },
+    {
+      "match": "^Glasgow Central",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Great_Britain"
+    },
+    {
+      "match": "^London Bridge",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Great_Britain",
+      "_known_failure": "London Bridge is one of the busiest stations in Britain (Wikipedia source) but scores 48.6 (tier 2), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    },
+    {
+      "match": "^(London )?Euston$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Great_Britain",
+      "_known_failure": "London Euston (the main-line station, named by its own name since the 2026-10-17 label fix) is one of the busiest stations in Britain (Wikipedia source) but scores 46.6 (tier 2), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    }
+  ],
+  "lines": [
+    {
+      "match": "^Eurostar",
+      "type": "high_speed",
+      "forced": true
+    },
+    {
+      "match": "^Jubilee line",
+      "type": "metro"
+    }
+  ]
+}

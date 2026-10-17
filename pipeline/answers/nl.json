@@ -1,0 +1,54 @@
+{
+  "_comment": "Draft answer list for docs/qa/west-europe.md (2026-10-16), written from general knowledge; tier_max=1 means must be tier 1. Review before trusting. 2026-10-17 review: 'forced': true = restates a config override; 'source' = Wikipedia page for independent entries; '_known_failure' = real, understood bug.",
+  "stations": [
+    {
+      "match": "^Amsterdam Centraal",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Utrecht Centraal",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Rotterdam Centraal",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Den Haag Centraal",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_the_Netherlands"
+    },
+    {
+      "match": "^Eindhoven Centraal",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_the_Netherlands",
+      "_known_failure": "Eindhoven Centraal is a top-10 Dutch station (Wikipedia source) but scores 49.0 (tier 2), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    },
+    {
+      "match": "^Arnhem Centraal",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_the_Netherlands",
+      "_known_failure": "Arnhem Centraal is a top-10 Dutch station (Wikipedia source) but scores 50.0 (tier 2), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    },
+    {
+      "match": "^Schiphol Airport",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_the_Netherlands",
+      "_known_failure": "Schiphol Airport is the 3rd busiest Dutch station (Wikipedia source) but scores 24.5 (tier 3), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    }
+  ],
+  "lines": [
+    {
+      "match": "^Eurostar: Amsterdam",
+      "type": "high_speed",
+      "forced": true
+    }
+  ]
+}

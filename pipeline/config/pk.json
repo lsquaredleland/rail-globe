@@ -1,0 +1,14 @@
+{
+  "extends": "_default",
+  "_comment": "pk: generic rules from _default plus main_terminals (stations forced to tier 1: the size score cannot rank them because their platforms and buildings are not mapped). Written 2026-10-17 (docs/qa/americas-africa-asia.md).",
+  "stat_name": "Pakistan",
+  "stat_local": "پاکستان",
+  "stat_auto": {
+    "country": "PK"
+  },
+  "main_terminals": [
+    "لاہور جَنْکْشَن",
+    "کراچی چھاؤنی",
+    "کراچی شہر"
+  ]
+}

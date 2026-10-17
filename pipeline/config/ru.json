@@ -1,0 +1,49 @@
+{
+  "extends": "_default",
+  "_comment": "Russia. Only exemptions (docs/qa/east-europe.md).",
+  "exemptions": [
+    {
+      "id": "ru-freight-yekaterinburg-bypass",
+      "match": {
+        "name_re": "^Грузовой обход Екатеринбурга",
+        "type_source": "tags"
+      },
+      "action": {
+        "freight": true
+      },
+      "reason": "Yekaterinburg freight bypass (Грузовой обход = freight bypass) typed Intercity from usage=main.",
+      "source": "https://www.openstreetmap.org/way/35223764",
+      "added": "2026-10-16",
+      "expect_min": 10
+    },
+    {
+      "id": "ru-elga-coal-railway",
+      "match": {
+        "name_re": "^Улак - Эльга",
+        "operator_re": "Мечел",
+        "type_source": "tags"
+      },
+      "action": {
+        "freight": true
+      },
+      "reason": "Ulak-Elga: 321 km private coal line (Mechel) from the BAM to the Elga deposit, no passenger service; typed Intercity from usage=main.",
+      "source": "https://www.coalage.com/us-news/mechel-finishes-railway-to-massive-elga-coal-complex/",
+      "added": "2026-10-16",
+      "expect_min": 5
+    },
+    {
+      "id": "ru-industrial-bauxite-vorkuta",
+      "match": {
+        "operator_re": "Боксит Тимана|Воркутинское транспортное предприятие",
+        "type_source": "tags"
+      },
+      "action": {
+        "freight": true
+      },
+      "reason": "Bauxite mine and Vorkuta coal-transport company railways typed Regional from usage=branch.",
+      "source": "https://www.openstreetmap.org/way/220354379",
+      "added": "2026-10-16",
+      "expect_min": 10
+    }
+  ]
+}

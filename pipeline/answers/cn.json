@@ -1,0 +1,84 @@
+{
+  "_comment": "Draft answer list (docs/qa/east-asia-oceania.md, 2026-10-16), from general knowledge; run against data/world with check.DATA overridden. Review before trusting. 2026-10-17 review: 'forced': true = restates a config override; 'source' = Wikipedia page for independent entries; '_known_failure' = real, understood bug.",
+  "stations": [
+    {
+      "match": "^北京南站?$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^上海虹桥",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^广州南站?$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^深圳北$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^南京南站?$",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^郑州站?$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^杭州东站?",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^武汉$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^天津$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^唐山$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Tangshan_railway_station"
+    },
+    {
+      "match": "^徐州东",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Xuzhou_East_railway_station",
+      "_known_failure": "Xuzhou East is a major Jinghu/Longhai high-speed crossing (Wikipedia source) but scores 25.3 (tier 2), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    },
+    {
+      "match": "^衡阳东",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Hengyang_East_railway_station",
+      "_known_failure": "Hengyang East is a major Jingguang/Hu-Kun high-speed junction (Wikipedia source) but scores 41.7 (tier 2), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    }
+  ],
+  "lines": [
+    {
+      "match": "^上海地铁2号线$",
+      "type": "metro"
+    }
+  ]
+}

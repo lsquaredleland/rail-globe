@@ -20,7 +20,7 @@
       ]
     },
     {
-      "match": "^成都西站$",
+      "match": "^成都西站?$",
       "mode": "train",
       "tier_max": 1
     },
@@ -32,7 +32,8 @@
     {
       "match": "^成都$",
       "mode": "train",
-      "tier_max": 1
+      "tier_max": 1,
+      "_known_failure": "Chengdu station scores 23.0 (tier 3) from its mapped platforms and track: failed before the 2026-10-17 session too and is reported as the known pilot failure; not fixed, see docs/17 A17"
     },
     {
       "match": "^春熙路$",

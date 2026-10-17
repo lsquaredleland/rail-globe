@@ -1,0 +1,26 @@
+{
+  "extends": "_evidence-routes",
+  "_comment": "Ethiopia: the routes-mode evidence template (docs/15-argentina-africa-freight.md) plus the exemption below. Written 2026-10-17 (docs/qa/americas-africa-asia.md).",
+  "stat_name": "Ethiopia",
+  "stat_local": "ኢትዮጵያ",
+  "stat_auto": {
+    "country": "ET"
+  },
+  "exemptions": [
+    {
+      "id": "addis-djibouti-intercity",
+      "match": {
+        "name_re": "Djibouti|ጅቡቲ",
+        "type": "regional",
+        "type_source": "route"
+      },
+      "action": {
+        "type": "intercity"
+      },
+      "reason": "The Addis Ababa-Djibouti railway is drawn Regional on 655 km (route default) and Intercity on its other 115 km (own tags): one line in two colours. It is a 750 km long-distance electrified line.",
+      "source": "https://en.wikipedia.org/wiki/Addis_Ababa%E2%80%93Djibouti_Railway",
+      "added": "2026-10-17",
+      "expect_min": 300
+    }
+  ]
+}

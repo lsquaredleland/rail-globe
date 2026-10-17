@@ -1,0 +1,25 @@
+{
+  "extends": "_evidence-routes",
+  "_comment": "South Africa: the routes-mode evidence template (docs/15-argentina-africa-freight.md) plus the exemptions below. Written 2026-10-17 (docs/qa/americas-africa-asia.md).",
+  "stat_name": "South Africa",
+  "stat_local": "South Africa",
+  "stat_auto": {
+    "country": "ZA"
+  },
+  "exemptions": [
+    {
+      "id": "gautrain-not-high-speed",
+      "match": {
+        "operator_re": "^Gautrain$",
+        "type": "high_speed"
+      },
+      "action": {
+        "type": "regional"
+      },
+      "reason": "Gautrain ways carry highspeed=yes in OSM but the line runs at 160 km/h at most; the project's high-speed floor outside China is 200 km/h. Its route masters are Regional.",
+      "source": "https://en.wikipedia.org/wiki/Gautrain",
+      "added": "2026-10-17",
+      "expect_min": 100
+    }
+  ]
+}

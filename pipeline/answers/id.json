@@ -1,0 +1,62 @@
+{
+  "_comment": "Draft answer list (docs/qa/east-asia-oceania.md, 2026-10-16), from general knowledge; run against data/world with check.DATA overridden. Review before trusting. 2026-10-17 review: 'forced': true = restates a config override; 'source' = Wikipedia page for independent entries; '_known_failure' = real, understood bug.",
+  "stations": [
+    {
+      "match": "^(Stasiun )?Gambir$",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "Manggarai",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "Bandung",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Halim$",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Stasiun Jakarta Kota",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Jakarta_Kota_railway_station"
+    },
+    {
+      "match": "^Yogyakarta$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Yogyakarta_Tugu_railway_station"
+    },
+    {
+      "match": "^Surabaya Gubeng",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_railway_stations_in_Indonesia"
+    },
+    {
+      "match": "^Surabaya Pasarturi",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Surabaya_Pasarturi_railway_station",
+      "_known_failure": "Surabaya Pasarturi is one of Surabaya's two main intercity stations (Wikipedia source) but scores 23.0 (tier 3), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    }
+  ],
+  "lines": [
+    {
+      "match": "^Jakarta–Bandung high speed rail",
+      "type": "high_speed",
+      "source": "https://en.wikipedia.org/wiki/Jakarta%E2%80%93Bandung_high-speed_railway"
+    },
+    {
+      "match": "^MRT North-South Line",
+      "type": "metro",
+      "source": "https://en.wikipedia.org/wiki/Jakarta_MRT"
+    }
+  ]
+}

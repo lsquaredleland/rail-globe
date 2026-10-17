@@ -1,0 +1,26 @@
+{
+  "extends": "_evidence-routes",
+  "_comment": "Kenya: the routes-mode evidence template (docs/15-argentina-africa-freight.md) plus the exemption below. Written 2026-10-17 (docs/qa/americas-africa-asia.md).",
+  "stat_name": "Kenya",
+  "stat_local": "Kenya",
+  "stat_auto": {
+    "country": "KE"
+  },
+  "exemptions": [
+    {
+      "id": "sgr-intercity",
+      "match": {
+        "name_re": "Standard Gauge Railway|^SGR |SGR$",
+        "type": "regional",
+        "type_source": "route"
+      },
+      "action": {
+        "type": "intercity"
+      },
+      "reason": "The Madaraka Express (Nairobi-Mombasa, Nairobi-Naivasha/Suswa standard gauge) is the long-distance train; its route relations carry no service tag, so the default types it Regional, the same colour as the Nairobi commuter lines.",
+      "source": "https://en.wikipedia.org/wiki/Madaraka_Express",
+      "added": "2026-10-17",
+      "expect_min": 200
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "extends": "_evidence-routes",
+  "_comment": "New Zealand (docs/qa/east-asia-oceania.md). Before: Main South Line, Marton-New Plymouth, Stillwater-Ngakawau and North Auckland Line (freight only) typed Intercity from tags alone. Passenger services (Northern Explorer, Capital Connection, Te Huia, Coastal Pacific, TranzAlpine, Wairarapa Connection, Auckland and Wellington suburban) are mapped as routes; mode routes, docs/15.",
+  "passenger_operator_re": [
+    "(?i)\\b(Auckland One Rail|Transdev Auckland|Auckland Transport|Metlink|Transdev Wellington|Great Journeys|KiwiRail Scenic|Greater Wellington)\\b"
+  ],
+  "exemptions": [
+    {
+      "id": "wairarapa-connection",
+      "match": { "name_re": "^Wairarapa Line$", "type_source": "no-evidence" },
+      "action": { "freight": false },
+      "reason": "Wellington-Masterton Wairarapa Connection (Metlink) runs on the whole Wairarapa Line; part of the line has no passenger route member in OSM, so the evidence rule typed 80 km Freight.",
+      "source": "https://en.wikipedia.org/wiki/Wairarapa_Connection",
+      "added": "2026-10-16",
+      "expect_min": 20
+    }
+  ]
+}

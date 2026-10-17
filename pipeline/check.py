@@ -1,7 +1,13 @@
 """Phase 2 'Done when' check: run the hand-made answer list against a region's output.
-Usage: python3 check.py [slug ...]   (default: all three). Exit code 1 if anything fails.
+Usage: python3 check.py [--data DIR] [slug ...]   (default: the three pilots in data/). Exit code 1 if anything fails.
+Answer entries: "forced": true marks an entry that only restates a config override (main_terminals, main_station_re,
+type_overrides), so it cannot catch a regression of the generic rules; the summary counts forced and independent
+entries apart. "_known_failure": "reason" marks a real, understood bug: printed KNOWN (not a failure); if it starts
+to pass it prints NOW PASSING (not a failure either; remove the marker).
        python3 check.py --exemptions [--data DIR] [slug ...]   only the stale-exemption check (default: every region in DIR with a
-       classify_report.json): fails when an exemption in pipeline/config matched fewer features than its expect_min.
+       classify_report.json): fails when an exemption in pipeline/config matched fewer features than its expect_min, or when a
+       config exemption id is missing from the report (stale build). A region with no report prints NO REPORT and fails
+       only if its config lists exemptions.
        See docs/12-config-and-exemptions.md."""
 import json, re, sys
 from pathlib import Path
@@ -10,10 +16,11 @@ HERE = Path(__file__).resolve().parent
 DATA = HERE.parent / "data"
 
 
-def load(slug):
-    st = [json.loads(l)["properties"] for l in open(DATA / slug / "stations.geojsonl")]
-    cx = {json.loads(l)["properties"]["id"]: json.loads(l)["properties"] for l in open(DATA / slug / "complexes.geojsonl")}
-    lines = json.load(open(DATA / slug / "lines.json"))
+def load(slug, data=None):
+    DATA_ = data or DATA
+    st = [json.loads(l)["properties"] for l in open(DATA_ / slug / "stations.geojsonl")]
+    cx = {json.loads(l)["properties"]["id"]: json.loads(l)["properties"] for l in open(DATA_ / slug / "complexes.geojsonl")}
+    lines = json.load(open(DATA_ / slug / "lines.json"))
     return st, cx, lines
 
 
@@ -45,50 +52,100 @@ def check_line(rule, lines):
     return not bad, f'{c[0]["name"]} -> {c[0]["type"]}' + (f' | {len(bad)} of {len(c)} not {rule["type"]}' if bad else "")
 
 
+def config_exemption_ids(slug):
+    """Exemption ids in pipeline/config/<slug>.json and its extends chain (exemptions and +exemptions)."""
+    ids, name, seen = [], slug, set()
+    while name and name not in seen:
+        seen.add(name)
+        p = HERE / "config" / f"{name}.json"
+        if not p.exists():
+            break
+        cfg = json.load(open(p))
+        ids += [e["id"] for k in ("exemptions", "+exemptions") for e in cfg.get(k, [])]
+        name = cfg.get("extends")
+    return ids
+
+
 def check_exemptions(slug, data=DATA):
-    """Read data/<slug>/classify_report.json; returns the number of stale exemptions (printed, one line per exemption)."""
+    """Read <data>/<slug>/classify_report.json; returns the number of failing exemptions (stale, or missing from the report)."""
     path = data / slug / "classify_report.json"
-    rep = json.load(open(path)).get("exemptions", {}) if path.exists() else {}
+    want = config_exemption_ids(slug)
+    if not path.exists():
+        if want:
+            print(f"  FAIL exempt  NO REPORT: {slug} config lists {len(want)} exemption(s) ({', '.join(want)}) but {path} does not exist")
+            return len(want)
+        print(f"  NO REPORT {slug}: no classify_report.json and no exemptions in its config (nothing to check)")
+        return 0
+    rep = json.load(open(path)).get("exemptions") or {}
     stale = 0
     for ex_id, e in rep.items():
         ok = e["expect_min_met"]
         stale += not ok
         print(f'  {"PASS" if ok else "FAIL"} exempt  {ex_id:40} matched {e["matched"]} ({e["tracks"]} track, {e["lines"]} line, {e["km"]} km), expect_min {e["expect_min"]}')
+    for ex_id in want:
+        if ex_id not in rep:
+            stale += 1
+            print(f"  FAIL exempt  {ex_id:40} MISSING from {path} (region {slug}): config lists it, report does not; rebuild with `rail-extract cut {slug}`")
     return stale
 
 
-def main_exemptions(args):
+def pop_data(args):
     data = DATA
     if "--data" in args:
         i = args.index("--data")
         data = Path(args[i + 1])
         del args[i:i + 2]
+    return data
+
+
+def main_exemptions(args):
+    data = pop_data(args)
     slugs = args or sorted(p.parent.name for p in data.glob("*/classify_report.json"))
     failed = 0
     for slug in slugs:
         print(f"== {slug} exemptions")
         failed += check_exemptions(slug, data)
-    print(f"\n{'ALL PASS' if not failed else str(failed) + ' STALE'}")
+    print(f"\n{'ALL PASS' if not failed else str(failed) + ' STALE/MISSING'}")
     return 1 if failed else 0
 
 
-def main(slugs):
-    failed = 0
+def main(args):
+    data = pop_data(args)
+    slugs = args or ["sf-bay-area", "chengdu", "paris"]
+    failed = known = now = 0
+    tot = {"forced": 0, "independent": 0}
     for slug in slugs:
         ans = json.load(open(HERE / "answers" / f"{slug}.json"))
-        st, cx, lines = load(slug)
+        st, cx, lines = load(slug, data)
         print(f"== {slug}")
-        for kind, fn, args in (("station", check_station, (st, cx)), ("line", check_line, (lines,))):
+        n = {"forced": 0, "independent": 0}
+        for kind, fn, args_ in (("station", check_station, (st, cx)), ("line", check_line, (lines,))):
             for rule in ans[kind + "s"]:
-                ok, msg = fn(rule, *args)
-                failed += not ok
-                print(f'  {"PASS" if ok else "FAIL"} {kind:7} {rule["match"]:40} {msg}')
-        failed += check_exemptions(slug)
-    print(f"\n{'ALL PASS' if not failed else str(failed) + ' FAILED'}")
+                ok, msg = fn(rule, *args_)
+                kf = rule.get("_known_failure")
+                cls = "forced" if rule.get("forced") else "independent"
+                n[cls] += 1
+                if ok and kf:
+                    tag, now = "NOW PASSING", now + 1
+                    msg += f" | remove _known_failure: {kf}"
+                elif ok:
+                    tag = "PASS"
+                elif kf:
+                    tag, known = "KNOWN", known + 1
+                    msg += f" | known: {kf}"
+                else:
+                    tag, failed = "FAIL", failed + 1
+                print(f'  {tag:11} {kind:7} {cls[0].upper()} {rule["match"]:40} {msg}')
+        failed += check_exemptions(slug, data)
+        tot["forced"] += n["forced"]
+        tot["independent"] += n["independent"]
+        print(f'  ({n["independent"]} independent, {n["forced"]} forced entries)')
+    print(f"\n{tot['independent']} independent + {tot['forced']} forced entries; {known} KNOWN failures, {now} NOW PASSING")
+    print(f"{'ALL PASS' if not failed else str(failed) + ' FAILED'}")
     return 1 if failed else 0
 
 
 if __name__ == "__main__":
     if sys.argv[1:2] == ["--exemptions"]:
         sys.exit(main_exemptions(sys.argv[2:]))
-    sys.exit(main(sys.argv[1:] or ["sf-bay-area", "chengdu", "paris"]))
+    sys.exit(main(sys.argv[1:]))

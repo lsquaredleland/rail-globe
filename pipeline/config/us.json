@@ -109,6 +109,29 @@
       "source": "https://www.bts.gov/browse-statistical-products-and-data/ntad-datasets (North American Rail Network Lines, PASSNGR)",
       "added": "2026-10-16",
       "expect_min": 20
+    },
+    {
+      "id": "pueblo-test-tracks",
+      "match": {
+        "name_re": "^(Railroad Test Track - RTT|VECTORR High Speed Rail Test Track)$",
+        "type": "high_speed"
+      },
+      "action": {
+        "type": "other"
+      },
+      "reason": "Transportation Technology Center (Pueblo, Colorado) test loops mapped as route relations, drawn as high-speed passenger rail in the middle of the plains. No scheduled passenger service.",
+      "source": "https://en.wikipedia.org/wiki/Transportation_Technology_Center",
+      "added": "2026-10-17",
+      "expect_min": 2
+    },
+    {
+      "id": "commuter-lines-not-intercity",
+      "match": { "name_re": "^(NJ Transit North Jersey Coast Line|SEPTA Trenton Line|SEPTA Wilmington/Newark Line|CTrail Shore Line East)$", "type": "intercity" },
+      "action": { "type": "regional" },
+      "reason": "Commuter services that run mostly on the Northeast Corridor and are at least 150 km long in the cut: the long-route rule (high-speed track under half of the route, route at least 150 km) types them Intercity, but they are commuter lines. Amtrak Keystone Service stays Intercity.",
+      "source": "https://en.wikipedia.org/wiki/North_Jersey_Coast_Line",
+      "added": "2026-10-17",
+      "expect_min": 2
     }
   ],
   "+track_type_overrides": [

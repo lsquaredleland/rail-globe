@@ -1,0 +1,5 @@
+{
+  "extends": "_default",
+  "_comment": "Taiwan (docs/qa/east-asia-oceania.md). Taipei Main (tier 3, score 14.7), Banqiao, Kaohsiung and Zuoying were tier 3: platforms of the underground and shared THSR/TRA/MRT stations are barely mapped. Forced to tier 1 by name (docs/00-overview.md, major station rules).",
+  "main_station_re": "^(台北車站|臺北車站|台北|臺北|板橋|南港|桃園|新竹|台中|臺中|彰化|嘉義|台南|臺南|左營|高雄)$"
+}

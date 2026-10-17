@@ -1,0 +1,12 @@
+{
+  "extends": "_default",
+  "_comment": "ir: generic rules from _default plus main_terminals (stations forced to tier 1: the size score cannot rank them because their platforms and buildings are not mapped). Written 2026-10-17 (docs/qa/americas-africa-asia.md).",
+  "stat_name": "Iran",
+  "stat_local": "ایران",
+  "stat_auto": {
+    "country": "IR"
+  },
+  "main_terminals": [
+    "ایستگاه راه آهن تهران"
+  ]
+}

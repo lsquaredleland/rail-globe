@@ -1,0 +1,40 @@
+{
+  "_comment": "Draft answer list for docs/qa/west-europe.md (2026-10-16), written from general knowledge; tier_max=1 means must be tier 1. Review before trusting. 2026-10-17 review: 'forced': true = restates a config override; 'source' = Wikipedia page for independent entries; '_known_failure' = real, understood bug.",
+  "stations": [
+    {
+      "match": "^Wien Hauptbahnhof",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Vienna_Hauptbahnhof"
+    },
+    {
+      "match": "^Graz Hauptbahnhof",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Graz_Hauptbahnhof"
+    },
+    {
+      "match": "^Linz Hauptbahnhof",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Linz_Hauptbahnhof"
+    },
+    {
+      "match": "^Wien Meidling",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Wien_Meidling_railway_station",
+      "_known_failure": "Wien Meidling is a major Vienna junction (Wikipedia source) but scores 52.0 (tier 2), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    }
+  ],
+  "lines": [
+    {
+      "match": "^U1 Oberlaa",
+      "type": "metro"
+    },
+    {
+      "match": "^Railjet Xpress Wien . Bregenz",
+      "type": "high_speed"
+    }
+  ]
+}

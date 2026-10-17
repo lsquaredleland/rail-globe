@@ -1,0 +1,20 @@
+{
+  "extends": "_default",
+  "_comment": "Thailand (docs/qa/east-asia-oceania.md).",
+  "exemptions": [
+    {
+      "id": "airport-rail-link-not-high-speed",
+      "match": {
+        "name_re": "^(รถไฟฟ้าเอราวัน|AERA)",
+        "type": "high_speed"
+      },
+      "action": {
+        "type": "regional"
+      },
+      "reason": "Airport Rail Link (Bangkok) ways carry highspeed=yes in OSM and belong to the 'High-Speed Rail Linking Three Airports' relation, but ARL is a 160 km/h commuter/airport line (UIC 200 km/h floor not met). Real high-speed track in Thailand is only the Bangkok-Nakhon Ratchasima line, still under construction.",
+      "source": "https://en.wikipedia.org/wiki/Airport_Rail_Link_(Bangkok)",
+      "added": "2026-10-16",
+      "expect_min": 10
+    }
+  ]
+}

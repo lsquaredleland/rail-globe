@@ -1,0 +1,39 @@
+{
+  "extends": "_default",
+  "_comment": "Mongolia (data/regions/mn.geojson). Generic rules from _default.json; stat names are the ones the template filled in. Only exemptions here: docs/qa/east-europe.md. Routes mode was tried and rejected (it demotes the Trans-Mongolian main line).",
+  "stat_name": "Mongolia",
+  "stat_local": "Монгол улс ᠮᠤᠩᠭᠤᠯ ᠤᠯᠤᠰ",
+  "stat_auto": {
+    "country": "MN"
+  },
+  "exemptions": [
+    {
+      "id": "mn-coal-railways-intercity",
+      "match": {
+        "name_re": "^(Таван-Толгой|Зүүнбаян-Ханги)",
+        "type": "intercity"
+      },
+      "action": {
+        "freight": true
+      },
+      "reason": "Tavan Tolgoi-Gashuunsukhait (opened 2022) and Zuunbayan-Khangi are coal/freight railways with no passenger trains; typed Intercity/Regional from usage=main and no tags.",
+      "source": "https://www.railwaygazette.com/freight/mongolian-heavy-haul-coal-railway-opens/62586.article",
+      "added": "2026-10-16",
+      "expect_min": 1
+    },
+    {
+      "id": "mn-coal-railways-regional",
+      "match": {
+        "name_re": "^(Таван-Толгой|Зүүнбаян-Ханги)",
+        "type": "regional"
+      },
+      "action": {
+        "freight": true
+      },
+      "reason": "Tavan Tolgoi-Gashuunsukhait (opened 2022) and Zuunbayan-Khangi are coal/freight railways with no passenger trains; typed Intercity/Regional from usage=main and no tags.",
+      "source": "https://www.railwaygazette.com/freight/mongolian-heavy-haul-coal-railway-opens/62586.article",
+      "added": "2026-10-16",
+      "expect_min": 1
+    }
+  ]
+}

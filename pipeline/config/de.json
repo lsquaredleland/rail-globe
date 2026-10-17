@@ -21,11 +21,30 @@
       "type": "metro"
     }
   ],
-  "main_terminals": [],
+  "main_terminals": [
+    "Berlin Hauptbahnhof",
+    "Köln Hauptbahnhof"
+  ],
   "stat_auto": {
     "country": "DE",
     "levels": [
       "4"
     ]
-  }
+  },
+  "exemptions": [
+    {
+      "id": "freight-bypass-lines",
+      "match": {
+        "name_re": "^(Güterumgehungsbahn|Leipziger Güterring|Gütergleis|Güterbahn|Güterumfahrung Freiburg|Eisenbahn-Umfahrung Münster)$",
+        "type_source": "tags"
+      },
+      "action": {
+        "freight": true
+      },
+      "reason": "Freight bypasses and freight rings that carry usage=main in OSM and so get Intercity from their own tags, with no passenger route on them (Hamburg Güterumgehungsbahn, Leipziger Güterring, Güterumfahrung Freiburg). Their names say Güter (goods).",
+      "source": "https://de.wikipedia.org/wiki/G%C3%BCterumgehungsbahn_Hamburg",
+      "added": "2026-10-16",
+      "expect_min": 20
+    }
+  ]
 }

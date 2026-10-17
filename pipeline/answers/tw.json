@@ -1,0 +1,65 @@
+{
+  "_comment": "Draft answer list (docs/qa/east-asia-oceania.md, 2026-10-16), from general knowledge; run against data/world with check.DATA overridden. Review before trusting. 2026-10-17 review: 'forced': true = restates a config override; 'source' = Wikipedia page for independent entries; '_known_failure' = real, understood bug.",
+  "stations": [
+    {
+      "match": "^(台北車站|臺北車站)$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^板橋$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^新?左營$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^高雄(車站)?$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^南港$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^中壢$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Zhongli_railway_station",
+      "_known_failure": "Zhongli is one of the busiest Taiwan Railway stations (Wikipedia source) but scores 7.0 (tier 3), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    },
+    {
+      "match": "^樹林$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Shulin_railway_station",
+      "_known_failure": "Shulin is one of the busiest Taiwan Railway stations (Wikipedia source) but scores 23.4 (tier 3), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    }
+  ],
+  "lines": [
+    {
+      "match": "^台灣高鐵 603",
+      "type": "high_speed"
+    },
+    {
+      "match": "^捷運板南線$",
+      "type": "metro",
+      "source": "https://en.wikipedia.org/wiki/Bannan_line"
+    },
+    {
+      "match": "^高雄捷運橘線$",
+      "type": "metro",
+      "source": "https://en.wikipedia.org/wiki/Orange_line_(Kaohsiung_MRT)"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "extends": "_default",
+  "_comment": "South Korea (docs/qa/east-asia-oceania.md). KTX route relations carry network=KTX / 'KTX 호남선' ... and no service tag, so relation/11314591 and 11314592 (KTX Honam via Seodaejeon) were Regional by default. network ^KTX is High-speed; ITX and Mugunghwa networks are not matched. stat names are the ones the template filled from the outline.",
+  "stat_name": "South Korea",
+  "stat_local": "대한민국",
+  "stat_auto": { "country": "KR", "levels": ["4"] },
+  "high_speed_networks_re": ["^KTX( |$)"]
+}

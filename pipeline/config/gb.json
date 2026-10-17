@@ -1,0 +1,32 @@
+{
+  "extends": "_default",
+  "_comment": "United Kingdom (data/regions/gb.geojson). Generic rules from _default.json; stat names are the ones the template filled in before this file existed. Only exemptions here: docs/qa/west-europe.md.",
+  "stat_name": "United Kingdom",
+  "stat_local": "United Kingdom",
+  "stat_auto": {
+    "country": "GB"
+  },
+  "exemptions": [
+    {
+      "id": "uk-test-tracks-and-miniature-railways",
+      "match": {
+        "name_re": "^(Old Dalby Test Track|High Marnham Test Track|Coventry VLR Test Track|VLR Test Track|Rhyl Miniature Railway)$"
+      },
+      "action": {
+        "type": "other"
+      },
+      "reason": "Railway test tracks (Rail Innovation and Development Centre at Old Dalby, High Marnham, the Coventry very light rail test track) carry no public service. Old Dalby was drawn as High-speed (125 mph in its tags) and High Marnham as Regional; the Coventry test track made Coventry a city with light rail in the search index. Rhyl Miniature Railway (381 mm, railway=light_rail) made St Asaph a city with light rail in the search index.",
+      "source": "https://en.wikipedia.org/wiki/Old_Dalby_Test_Track",
+      "added": "2026-10-16",
+      "expect_min": 3
+    }
+  ],
+  "type_overrides": [
+    {
+      "match": {
+        "name_re": "^(ICE|TGV|Eurostar|Thalys)\\b"
+      },
+      "type": "high_speed"
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "_comment": "Draft answer list (docs/qa/east-asia-oceania.md, 2026-10-16), from general knowledge; run against data/world with check.DATA overridden. Review before trusting. 2026-10-17 review: 'forced': true = restates a config override; 'source' = Wikipedia page for independent entries; '_known_failure' = real, understood bug.",
+  "stations": [
+    {
+      "match": "^Central$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^Flinders Street( Station)?$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^Roma Street$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^Perth$",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^Parramatta$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Parramatta_railway_station",
+      "_known_failure": "Parramatta is one of the busiest Sydney stations (Wikipedia source) but scores 16.6 (tier 3), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    },
+    {
+      "match": "^Town Hall",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Town_Hall_railway_station,_Sydney",
+      "_known_failure": "Sydney Town Hall is one of the busiest Sydney stations (Wikipedia source) but scores 21.5 (tier 3), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    },
+    {
+      "match": "^Melbourne Central",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Melbourne_Central_railway_station",
+      "_known_failure": "Melbourne Central is one of the busiest Melbourne stations (Wikipedia source) but scores 12.0 (tier 3), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    }
+  ],
+  "lines": [
+    {
+      "match": "^Train Indian Pacific$",
+      "type": "intercity"
+    },
+    {
+      "match": "^The Ghan$",
+      "type": "other",
+      "_note": "Decision 2026-10-17: Other. The Ghan is a Journey Beyond luxury tourist train (about 2 departures a week), and docs/01-features.md puts tourist and heritage rail in Other, so Other is the rule-consistent answer. Indian Pacific (same operator, same class of service) is typed Intercity in the data and should arguably be Other too; left as is until the user decides (docs/qa/east-asia-oceania.md item 21)."
+    },
+    {
+      "match": "^Metro North West",
+      "type": "metro",
+      "source": "https://en.wikipedia.org/wiki/Sydney_Metro"
+    }
+  ]
+}

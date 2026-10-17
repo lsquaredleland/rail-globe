@@ -1,5 +1,5 @@
 {
-  "_comment": "All of Italy (data/regions/it.geojson).",
+  "_comment": "All of Italy (data/regions/it.geojson). main_terminals: Torino Porta Susa is the city's high-speed station but its OSM station has no platforms mapped (score 8): docs/qa/west-europe.md.",
   "stat_name": "Italy",
   "stat_local": "Italia",
   "china": false,
@@ -13,11 +13,24 @@
     "^Eurostar"
   ],
   "type_overrides": [],
-  "main_terminals": [],
+  "main_terminals": [
+    "Porta Susa"
+  ],
   "stat_auto": {
     "country": "IT",
     "levels": [
       "4"
     ]
-  }
+  },
+  "exemptions": [
+    {
+      "id": "sardinia-monserrato-mandas-isili",
+      "match": { "name_re": "^Linea Monserrato ?- ?Mandas ?- ?Isili$", "type": "other" },
+      "action": { "type": "regional" },
+      "reason": "ARST regional passenger line Monserrato San Gottardo - Mandas - Isili (still in service, hydrogen trains due 2026); about 48 ways, 9 of them usage=tourism (always Other) and the rest with no usage (Other by default). Sassari-Alghero (no 2026 confirmation of service) and the Trenino Verde lines (Mandas-Arbatax, Isili-Sorgono, Macomer-Bosa) stay Other.",
+      "source": "https://it.wikipedia.org/wiki/Ferrovie_della_Sardegna",
+      "added": "2026-10-17",
+      "expect_min": 40
+    }
+  ]
 }

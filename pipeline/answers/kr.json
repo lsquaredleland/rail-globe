@@ -1,0 +1,53 @@
+{
+  "_comment": "Draft answer list (docs/qa/east-asia-oceania.md, 2026-10-16), from general knowledge; run against data/world with check.DATA overridden. Review before trusting. 2026-10-17 review: 'forced': true = restates a config override; 'source' = Wikipedia page for independent entries; '_known_failure' = real, understood bug.",
+  "stations": [
+    {
+      "match": "Seoul Station",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "Dongdaegu",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "Suseo",
+      "mode": "train",
+      "tier_max": 1,
+      "_known_failure": "Suseo (SRT terminus) scores 4.5 (tier 3): few platforms mapped; size score only (docs/qa/east-asia-oceania.md)"
+    },
+    {
+      "match": "^대전역?$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Daejeon_station"
+    },
+    {
+      "match": "^(기차역 )?부산$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Busan_station"
+    },
+    {
+      "match": "^용산",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Yongsan_station"
+    },
+    {
+      "match": "^광명$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Gwangmyeong_station",
+      "_known_failure": "Gwangmyeong KTX is a major KTX station (Wikipedia source) but scores 32.2 (tier 2), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    }
+  ],
+  "lines": [
+    {
+      "match": "^경부고속철도$",
+      "type": "high_speed",
+      "source": "https://en.wikipedia.org/wiki/Gyeongbu_high-speed_railway"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "extends": "_default",
+  "_comment": "in: generic rules from _default plus main_terminals (stations forced to tier 1: the size score cannot rank them because their platforms and buildings are not mapped). Written 2026-10-17 (docs/qa/americas-africa-asia.md).",
+  "stat_name": "India",
+  "stat_local": "India",
+  "stat_auto": {
+    "country": "IN"
+  },
+  "main_terminals": [
+    "New Delhi",
+    "Mumbai Central",
+    "Hazrat Nizamuddin Junction",
+    "Ahmedabad Junction",
+    "Pune Junction",
+    "Patna Junction",
+    "Jaipur Junction"
+  ]
+}

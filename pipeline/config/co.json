@@ -1,0 +1,41 @@
+{
+  "extends": "_evidence-routes",
+  "stat_name": "Colombia",
+  "stat_local": "Colombia",
+  "stat_auto": {
+    "country": "CO"
+  },
+  "_comment": "Colombia: the routes-mode evidence template (docs/15-argentina-africa-freight.md, applied 2026-10-17 on the user's decision) plus the keys below. docs/qa/americas-africa-asia.md.",
+  "exemptions": [
+    {
+      "id": "turistren-sabana",
+      "match": {
+        "operator_re": "Turistren",
+        "type": "freight",
+        "type_source": "no-evidence"
+      },
+      "action": {
+        "type": "other"
+      },
+      "reason": "Turistren (Bogota-Zipaquira-Nemocon, Ferrocarril de la Sabana and del Norte) is a tourist train, not scheduled passenger service; routes mode would call its track freight, but it is a heritage service (type Other).",
+      "source": "https://es.wikipedia.org/wiki/Turistren",
+      "added": "2026-10-17",
+      "expect_min": 3
+    },
+    {
+      "id": "sabana-line-no-operator",
+      "match": {
+        "name_re": "^Ferrocarril de [Ll]a Sabana$",
+        "type": "freight",
+        "type_source": "no-evidence"
+      },
+      "action": {
+        "type": "other"
+      },
+      "reason": "Ways of the same Turistren line with no operator tag.",
+      "source": "https://es.wikipedia.org/wiki/Turistren",
+      "added": "2026-10-17",
+      "expect_min": 2
+    }
+  ]
+}

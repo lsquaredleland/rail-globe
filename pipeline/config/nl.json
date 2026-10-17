@@ -1,0 +1,17 @@
+{
+  "extends": "_default",
+  "_comment": "Netherlands (data/regions/nl.geojson). Generic rules from _default.json; stat names are the ones the template filled in before this file existed. Only the high-speed line names here: docs/qa/west-europe.md.",
+  "stat_name": "Netherlands",
+  "stat_local": "Nederland",
+  "stat_auto": {
+    "country": "NL"
+  },
+  "type_overrides": [
+    {
+      "match": {
+        "name_re": "^(ICE|TGV|Eurostar|Thalys)\\b"
+      },
+      "type": "high_speed"
+    }
+  ]
+}

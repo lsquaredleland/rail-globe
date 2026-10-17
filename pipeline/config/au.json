@@ -1,0 +1,8 @@
+{
+  "extends": "_evidence-routes",
+  "_comment": "Australia (docs/qa/east-asia-oceania.md). Before: 12,348 km of Intercity typed from tags alone, mostly freight (Pilbara iron-ore railways Mount Newman, Hamersley, Roy Hill, Robe River, Fortescue; Goonyella coal; WA grain lines). Passenger services are well mapped as route relations (NSW TrainLink, Queensland Rail Travel, V/Line, Transperth, Journey Beyond), so unrouted main-line track needs evidence (mode routes, docs/15).",
+  "passenger_operator_re": [
+    "(?i)\\b(Sydney Trains|NSW TrainLink|Sydney Metro|Metro Trains|Transperth|Transwa|Adelaide Metro|Journey Beyond|Great Southern Rail|Canberra Metro|Yarra Trams)\\b"
+  ],
+  "main_station_re": "^(Central|Southern Cross|Flinders Street|Roma Street|Perth)( [Ss]tation)?$"
+}

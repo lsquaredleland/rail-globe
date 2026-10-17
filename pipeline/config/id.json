@@ -1,0 +1,5 @@
+{
+  "extends": "_default",
+  "_comment": "Indonesia (docs/qa/east-asia-oceania.md). Gambir and the other big Java terminals score tier 3 because their platforms and land areas are poorly mapped; forced to tier 1 by name (docs/00-overview.md, major station rules).",
+  "main_station_re": "^(Stasiun )?(Gambir|Pasar Senen|Jakarta Kota|Tanah Abang|Kereta Api Bandung|Bandung|Yogyakarta|Surabaya Gubeng|Semarang Tawang|Solo Balapan|Malang)$"
+}

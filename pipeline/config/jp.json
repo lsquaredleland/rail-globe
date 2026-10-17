@@ -1,0 +1,5 @@
+{
+  "extends": "_default",
+  "_comment": "Japan (docs/qa/east-asia-oceania.md). Hakata and Shin-Yokohama (Shinkansen hubs) scored tier 3 (score 21 of 60 needed): OSM maps few of their platforms. Forced to tier 1 by name (docs/00-overview.md, major station rules); train mode only, so the subway stations of the same name are untouched. Shibuya is left out: its complex also holds the Tokyu and Metro members, which the pattern would promote.",
+  "main_station_re": "^(博多|新横浜|札幌|仙台|京都|近鉄京都|横浜|金沢|静岡|浜松|岐阜|富山|新函館北斗|長崎|大分)$"
+}

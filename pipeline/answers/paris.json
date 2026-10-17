@@ -22,7 +22,7 @@
       ]
     },
     {
-      "match": "Gare de L'Est",
+      "match": "Gare de [Ll]'Est",
       "mode": "train",
       "tier_max": 1,
       "terminus": true

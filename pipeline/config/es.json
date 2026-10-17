@@ -1,0 +1,14 @@
+{
+  "extends": "_default",
+  "_comment": "Spain (data/regions/es.geojson). Generic rules from _default.json; stat names are the ones the template filled in before this file existed. main_terminals: high-speed stations whose platforms are not mapped in OSM (0 platforms), so the size score cannot rank them: docs/qa/west-europe.md.",
+  "stat_name": "Spain",
+  "stat_local": "España",
+  "stat_auto": {
+    "country": "ES"
+  },
+  "main_terminals": [
+    "Sevilla - Santa Justa",
+    "Málaga María Zambrano",
+    "Córdoba Julio Anguita"
+  ]
+}

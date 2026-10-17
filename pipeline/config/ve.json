@@ -1,0 +1,26 @@
+{
+  "extends": "_evidence-routes",
+  "stat_name": "Venezuela",
+  "stat_local": "Venezuela",
+  "stat_auto": {
+    "country": "VE"
+  },
+  "_comment": "Venezuela: the routes-mode evidence template (docs/15-argentina-africa-freight.md, applied 2026-10-17 on the user's decision) plus the keys below. docs/qa/americas-africa-asia.md.",
+  "exemptions": [
+    {
+      "id": "caracas-cua-railway",
+      "match": {
+        "name_re": "^L[ií]nea 1, Ferrocarril Ezequiel Zamora$",
+        "type": "freight",
+        "type_source": "no-evidence"
+      },
+      "action": {
+        "type": "regional"
+      },
+      "reason": "Caracas-Charallave-Cua (Ferrocarril Ezequiel Zamora, IFE) is a passenger line; 51 km are on its route relation, 8 ways of the same line have none and routes mode would call them freight.",
+      "source": "https://en.wikipedia.org/wiki/Caracas%E2%80%93Cua_railway",
+      "added": "2026-10-17",
+      "expect_min": 4
+    }
+  ]
+}

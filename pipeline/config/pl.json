@@ -1,0 +1,20 @@
+{
+  "extends": "_default",
+  "_comment": "Poland. Only exemptions (docs/qa/east-europe.md); everything else from _default.",
+  "exemptions": [
+    {
+      "id": "pl-freight-bypasses",
+      "match": {
+        "name_re": "^Towarowa Obwodnica (Poznania|Bydgoszczy)$",
+        "type_source": "tags"
+      },
+      "action": {
+        "freight": true
+      },
+      "reason": "Freight bypasses (name: 'Towarowa Obwodnica' = freight bypass) typed Intercity from usage=main alone; no passenger route runs on them.",
+      "source": "https://www.openstreetmap.org/way/21408913",
+      "added": "2026-10-16",
+      "expect_min": 10
+    }
+  ]
+}

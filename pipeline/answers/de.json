@@ -1,0 +1,86 @@
+{
+  "_comment": "Draft answer list for docs/qa/west-europe.md (2026-10-16), written from general knowledge; tier_max=1 means must be tier 1. Review before trusting. 2026-10-17 review: 'forced': true = restates a config override; 'source' = Wikipedia page for independent entries; '_known_failure' = real, understood bug.",
+  "stations": [
+    {
+      "match": "^Berlin Hauptbahnhof",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^Köln Hauptbahnhof",
+      "mode": "train",
+      "tier_max": 1,
+      "forced": true
+    },
+    {
+      "match": "^Frankfurt \\(Main\\) Hauptbahnhof",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^München Hauptbahnhof$",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Hamburg Hauptbahnhof",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Stuttgart Hauptbahnhof",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Düsseldorf Hauptbahnhof",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Leipzig H(bf|auptbahnhof)",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Germany"
+    },
+    {
+      "match": "^Dortmund Hbf",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Germany"
+    },
+    {
+      "match": "^Essen Hauptbahnhof",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Germany"
+    },
+    {
+      "match": "^Bremen Hauptbahnhof",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Germany",
+      "_known_failure": "Bremen Hbf is a top-20 German station (Wikipedia source) but scores 59.0 (tier 2), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    }
+  ],
+  "lines": [
+    {
+      "match": "^ICE 1 Köln",
+      "type": "high_speed"
+    },
+    {
+      "match": "^U1: Fellbach",
+      "type": "metro",
+      "forced": true
+    },
+    {
+      "match": "^U1: Norderstedt",
+      "type": "metro"
+    },
+    {
+      "match": "^U1: Ginnheim",
+      "type": "metro"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "extends": "_default",
+  "_comment": "Ukraine. Only exemptions (docs/qa/east-europe.md).",
+  "exemptions": [
+    {
+      "id": "ua-freight-lviv-bypass",
+      "match": {
+        "name_re": "^Вантажний обхід Львова",
+        "type_source": "tags"
+      },
+      "action": {
+        "freight": true
+      },
+      "reason": "Lviv freight bypass (Вантажний обхід = freight bypass) typed Intercity from usage=main.",
+      "source": "https://www.openstreetmap.org/way/22950470",
+      "added": "2026-10-16",
+      "expect_min": 3
+    },
+    {
+      "id": "ua-sugar-plant-siding",
+      "match": {
+        "operator_re": "Теофіпольський цукровий",
+        "type_source": "tags"
+      },
+      "action": {
+        "freight": true
+      },
+      "reason": "Sugar factory private railway typed Regional from usage=branch.",
+      "source": "https://www.openstreetmap.org/way/197180799",
+      "added": "2026-10-16",
+      "expect_min": 3
+    }
+  ]
+}

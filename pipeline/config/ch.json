@@ -19,5 +19,22 @@
     "levels": [
       "4"
     ]
-  }
+  },
+  "exemptions": [
+    {
+      "id": "narrow-gauge-public-railways",
+      "match": {
+        "operator_re": "^(RhB|MGB|AVA|ZB|AB|RBS|BAM|JB - BOB|BOB|MOB|CJ|asm)$",
+        "type": "other",
+        "type_source": "default"
+      },
+      "action": {
+        "type": "regional"
+      },
+      "reason": "Rhaetian Railway, Matterhorn Gotthard, Aare Seeland, zb and the other metre-gauge railways are scheduled public passenger lines. Most of their track is typed from usage=branch/main or its route relations; the remaining short pieces are mapped railway=narrow_gauge with neither usage nor a route relation of their own, which the generic narrow-gauge rule leaves as Other (type_source default; the usage=tourism pieces, e.g. the Schynige Platte rack railway, stay Other)",
+      "source": "https://en.wikipedia.org/wiki/Rhaetian_Railway",
+      "added": "2026-10-16",
+      "expect_min": 25
+    }
+  ]
 }

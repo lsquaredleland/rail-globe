@@ -1,0 +1,40 @@
+{
+  "_comment": "Draft answer list for docs/qa/west-europe.md (2026-10-16), written from general knowledge; tier_max=1 means must be tier 1. Review before trusting. 2026-10-17 review: 'forced': true = restates a config override; 'source' = Wikipedia page for independent entries; '_known_failure' = real, understood bug.",
+  "stations": [
+    {
+      "match": "^Zürich Hauptbahnhof",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Bern$|^Bern Bahnhof",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Basel SBB",
+      "mode": "train",
+      "tier_max": 1
+    },
+    {
+      "match": "^Genève$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Switzerland"
+    },
+    {
+      "match": "^Luzern$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Switzerland"
+    },
+    {
+      "match": "^Lausanne$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Switzerland",
+      "_known_failure": "Lausanne is a top-5 Swiss station (Wikipedia source) but scores 49.1 (tier 2), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    }
+  ],
+  "lines": []
+}
