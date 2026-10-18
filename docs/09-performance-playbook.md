@@ -113,3 +113,18 @@ The first sweep above (no regression) never saw it because it hovered after the 
 ## maplibre-gl is pinned to 6.14.0
 
 `app/package.json` pins `maplibre-gl` to the exact version 6.14.0 (no caret): label drawing from system fonts (the `text-font` stacks, first family carries the weight) is MapLibre's own code, so look at labels in a few scripts (Latin, Hangul, Arabic) before changing the pin.
+
+## Glyph files against glyph-free (2026-10-17)
+
+Decision: the app is glyph-free (`docs/00-overview.md`, 2026-10-17). Measured on production builds, headless Chrome 60 Hz, CPU throttle 4, 2 runs after 1 warm-up, load average 2.5 to 3.2. A = glyph files for non-CJK scripts plus local CJK; B = no `glyphs` property, all text local.
+
+| | A (glyph files + local CJK) | B (glyph-free) |
+| --- | --- | --- |
+| Glyph bytes, world z2 | 21 files, 745 KB raw / 409 KB gzipped | 0 |
+| Glyph bytes, Paris z11 / Cairo z9 (after the world view) | 43 KB / 102 KB gzipped | 0 |
+| Chengdu East, zoom bench | missed 4, max frame 75 ms, 1 long task (82 ms) | missed 8.5, max frame 125 ms, 2 long tasks (185 ms) |
+| Shenzhen, zoom bench | missed 1, max frame 33 ms, no long task | missed 3, max frame 66.6 ms, 1 long task (70 ms) |
+
+Earlier history on the pilot set: local CJK font against the server's glyphs: quick bench 27.2 missed frames to 2.8 with server glyphs, Chengdu East 18 to 1.5, max frame 91 to 17 ms (`docs/06`); glyph files for everything against local CJK (A): 0 missed frames / 16.8 ms max frame before, 3 / 66.7 ms after.
+
+Caveats: two runs, one noisy pair (the 125 ms in B), headless 60 Hz only, macOS fonts only (Helvetica, PingFang SC, Hiragino Sans, Apple SD Gothic Neo); Windows, Android and a headed 120 Hz run were not measured. Visual check: Latin (Paris), Hangul (Seoul) and shaped Arabic (Cairo) look the same in both; about five Paris labels collide differently. Re-measure the first-zoom hitch on real devices (`docs/11`).
