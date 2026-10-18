@@ -13,7 +13,7 @@
 #   verify    check the output on disk (read only); stops the run on a failure
 #   upload    r2/sync.sh in copy mode: adds and updates files in R2, deletes nothing, so the live app keeps working
 #   deploy    git push origin main, which makes Vercel build the app (only with --push)
-#   prune     r2/sync.sh: now delete what the new build no longer has (old shard files, stale objects)
+#   prune     r2/sync.sh: now delete what the new build no longer has (old shard files, stale objects, slugs in data/world/dropped.txt)
 #   live      check R2 and the site over HTTPS (read only)
 #
 # Credentials: r2/.env (gitignored, see r2/.env.example) or the environment. Nothing here reads or prints them.
@@ -97,7 +97,7 @@ fi
 if want glyphs; then
   say "glyphs"
   run npm --prefix pipeline/glyphs install --no-audit --no-fund
-  run node pipeline/glyphs/build-glyphs.mjs --data "$DATA/world" --tiles world --out "$DATA/../glyphs"
+  run node pipeline/glyphs/build-glyphs.mjs --data "$DATA/world" --tiles world --out "$DATA/../glyphs-v2"
 fi
 
 if want verify; then
@@ -107,7 +107,7 @@ if want verify; then
   size=$(stat -f %z "$tiles" 2>/dev/null || stat -c %s "$tiles")
   [ "$size" -ge "$min" ] || fail "$tiles is only $size bytes (expected at least $min)"
   for f in places.json search.json; do [ -f "$root/$f" ] || fail "missing $root/$f"; done
-  [ -d app/public/glyphs/"Noto Sans Regular" ] || fail "no app/public/glyphs: run with --glyphs (the app cannot draw labels without them)"
+  [ -d app/public/glyphs-v2/"Noto Sans Regular" ] || fail "no app/public/glyphs-v2: run with --glyphs (the app cannot draw labels without them)"
   # every region folder is in the shard layout (shards.json) and has no old per-record files
   bad=0; n=0
   for d in "$root"/*/; do
@@ -127,6 +127,17 @@ if want verify; then
 fi
 
 SYNC_FLAGS=(-P); [ "$DRY" = 1 ] && SYNC_FLAGS+=(--dry-run)
+
+if want upload || want prune; then
+  # slugs the build left out on purpose (data/world/dropped.txt): a leftover local folder is removed so it is never uploaded (r2/sync.sh also filters them out)
+  while read -r d; do
+    [ -n "$d" ] || continue
+    if [ -e "$DATA/world/$d" ] || [ -e "$DATA/world/$d.boundary.geojson" ] || [ -e "$DATA/world/$d.pmtiles" ]; then
+      printf '+ rm -rf %s\n' "$DATA/world/$d $DATA/world/$d.*"
+      [ "$DRY" = 1 ] || rm -rf "${DATA:?}/world/$d" "${DATA:?}/world/$d".*
+    fi
+  done < <(r2/dropped-slugs.sh)
+fi
 
 if want upload; then
   say "upload: R2, copy mode (adds and updates, deletes nothing)"
@@ -154,7 +165,7 @@ if want live; then
   code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-15' -H "Origin: $SITE" "$DATA_ORIGIN/$tiles"); [ "$code" = 206 ] && echo "ok: $tiles range request 206" || fail "$tiles range request returned $code"
   code=$(curl -s -o /dev/null -w '%{http_code}' "$DATA_ORIGIN/${prefix}it/shards.json"); [ "$code" = 200 ] && echo "ok: ${prefix}it/shards.json" || fail "${prefix}it/shards.json returned $code"
   acao=$(curl -sI -H "Origin: $SITE" "$DATA_ORIGIN/$tiles" | tr -d '\r' | grep -i '^access-control-allow-origin' || true); [ -n "$acao" ] && echo "ok: CORS ($acao)" || fail "no CORS header for $SITE"
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$DATA_ORIGIN/glyphs/Noto%20Sans%20Regular/0-255.pbf"); [ "$code" = 200 ] && echo "ok: glyphs" || fail "glyphs returned $code"
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$DATA_ORIGIN/glyphs-v2/Noto%20Sans%20Regular/0-255.pbf"); [ "$code" = 200 ] && echo "ok: glyphs" || fail "glyphs returned $code"
   csp=$(curl -sI "$SITE" | tr -d '\r' | grep -ic '^content-security-policy' || true); [ "$csp" = 1 ] && echo "ok: $SITE serves its CSP" || fail "$SITE did not answer with a Content-Security-Policy header"
 fi
 

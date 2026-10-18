@@ -15,6 +15,7 @@ app/dist/
 app/public/data/
 # generated map glyphs (pipeline/glyphs/build-glyphs.mjs) and its fonts / node_modules
 app/public/glyphs/
+app/public/glyphs-v2/
 pipeline/glyphs/node_modules/
 pipeline/glyphs/fonts/
 

@@ -1,17 +1,19 @@
 // Subset map glyphs: writes app/public/glyphs/<fontstack>/<start>-<end>.pbf holding ONLY the characters the map can draw.
 //
 //   cd pipeline/glyphs && npm install && node build-glyphs.mjs [--data ../../app/public/data] [--tiles pilot,americas] [--out ../../app/public/glyphs] [--allow-empty]
-//   --out must end in a folder named 'glyphs' (it is deleted first). Without a tile source in --data it stops with an error;
+//   --out must end in a folder named 'glyphs' or 'glyphs-vN' (it is deleted first; the app reads glyphs-v2). Without a tile source in --data it stops with an error;
 //   --allow-empty builds ASCII + places.json only.
 //   --tiles NAMES: the <name>.pmtiles files of --data to read (default pilot,americas). For the world build:
-//       node build-glyphs.mjs --data ../../app/public/data/world --tiles world --out <dir>/glyphs     (reads world.pmtiles and world/places.json)
+//       node build-glyphs.mjs --data ../../app/public/data/world --tiles world --out ../../app/public/glyphs-v2     (reads world.pmtiles and world/places.json)
+//   --dump FILE also writes the label strings per country for coverage.mjs.
 //
 // 1. Character set: every code point in the label properties (n, ne, lb, lbe, rf) of every tile of the --tiles files,
 //    the names in places.json (written by `rail-extract places`, which `build` and `world` run last), printable ASCII,
 //    and the upper-case form of each (country names are drawn in capitals).
 //    Rerun after any rebuild that adds regions or names; the tile glyph files are tied to the tile data.
-// 2. Fonts, in priority order per code point: Noto Sans (Latin, Greek, Cyrillic), Noto Sans CJK SC (Han, kana, hangul, CJK and
-//    fullwidth punctuation), then, for the few code points neither has (Arabic, Lao, Tibetan, Mongolian, Yi ...), the OpenFreeMap
+// 2. Han, kana, Hangul and CJK punctuation are NOT in the files: the map draws them with a system font (localIdeographFontFamily, MapView.tsx).
+//    Arabic presentation forms are added for every Arabic letter present, because MapLibre shapes Arabic into them before asking for glyphs.
+//    Fonts, in priority order per code point: Noto Sans (Latin, Greek, Cyrillic), Noto Sans CJK SC (leftovers), then, for the code points neither has (Arabic, Lao, Tibetan, Mongolian, Yi ...), the OpenFreeMap
 //    glyph server's Noto Sans, which is what the map drew those with before. Fonts are downloaded once into fonts/ (sha256 checked).
 // 3. fontnik renders each 256-code-point range with SDF; the result is filtered to the character set and merged.
 import fs from 'node:fs'
@@ -21,7 +23,7 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import fontnik from 'fontnik'
 import Pbf from 'pbf'
-import { bytesToHeader } from 'pmtiles'
+import { bytesToHeader, tileIdToZxy } from 'pmtiles'
 import { buildSync } from 'esbuild'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -31,7 +33,10 @@ const OUT = arg('--out', path.resolve(here, '../../app/public/glyphs'))
 const FONTS = path.join(here, 'fonts')
 const TILES = (process.argv.includes('--tiles') ? process.argv[process.argv.indexOf('--tiles') + 1] : 'pilot,americas').split(',').filter(Boolean)
 const ALLOW_EMPTY = process.argv.includes('--allow-empty')
-if (path.basename(OUT) !== 'glyphs') { console.error(`refusing --out ${OUT}: its folder name must be 'glyphs' (the folder is deleted before writing)`); process.exit(2) }
+if (!/^glyphs(-v\d+)?$/.test(path.basename(OUT))) { console.error(`refusing --out ${OUT}: its folder name must be 'glyphs' or 'glyphs-vN' (the folder is deleted before writing)`); process.exit(2) }
+// --dump FILE: also write the label strings per country (tile centre in a country bbox of search.json; z>=6 tiles only) for coverage.mjs
+const DUMP = arg('--dump', null)
+
 
 // @maplibre/mlt is published for bundlers (extensionless relative imports), which Node cannot load: bundle it once into fonts/
 fs.mkdirSync(FONTS, { recursive: true })
@@ -52,6 +57,9 @@ const STACKS = {
   'Noto Sans Bold': ['NotoSans-Bold.ttf', 'NotoSansCJKsc-Bold.otf'],
 }
 const OFM_FONTS = 'https://tiles.openfreemap.org/fonts'
+// Code points MapLibre draws locally (system font, no glyph file) when the map option localIdeographFontFamily is set: the BMP part of
+// codePointUsesLocalIdeographFontFamily in maplibre-gl 6.14.0 (Han, kana, Hangul, Bopomofo, CJK symbols, fullwidth forms, vertical forms). They are left out of the files.
+const LOCAL_DRAWN = /[\u02EA\u02EB\u1100-\u11FF\u2E80-\u2FDF\u3000-\u30FF\u3105-\u312F\u3131-\u318E\u31A0-\u4DBF\u4E00-\uA48C\uA490-\uA4C6\uA960-\uA97C\uAC00-\uD7C6\uD7CB-\uD7FB\uF900-\uFA6D\uFA70-\uFAD9\uFE10-\uFE1F\uFE30-\uFE4F\uFF00-\uFFEF]/
 const LABEL_KEYS = ['n', 'ne', 'lb', 'lbe', 'rf']
 
 async function ensureFonts() {
@@ -88,7 +96,7 @@ function* pmtilesTiles(file) {
   }
   function* walk(off, len) {
     for (const e of parse(un(rd(off, len)))) {
-      if (e.run > 0) yield un(rd(h.tileDataOffset + e.off, e.len))
+      if (e.run > 0) yield { id: e.id, buf: un(rd(h.tileDataOffset + e.off, e.len)) }
       else yield* walk(h.leafDirectoryOffset + e.off, e.len)
     }
   }
@@ -96,7 +104,18 @@ function* pmtilesTiles(file) {
   fs.closeSync(fd)
 }
 
+const byCountry = {}
+let COUNTRIES = []
+function countryOfTile(id) {
+  const [z, x, y] = tileIdToZxy(id)
+  if (z < 6) return null
+  const n = 2 ** z, lon = (x + 0.5) / n * 360 - 180, lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 0.5) / n))) * 180 / Math.PI
+  let best = null
+  for (const c of COUNTRIES) if (lon >= c.b[0] && lon <= c.b[2] && lat >= c.b[1] && lat <= c.b[3] && (!best || c.a < best.a)) best = c
+  return best ? best.cc : null
+}
 function collectChars() {
+  if (DUMP) COUNTRIES = JSON.parse(fs.readFileSync(path.join(DATA, 'search.json'), 'utf8')).filter((r) => r[3] === 'country').map((r) => ({ cc: r[11], b: [r[6], r[7], r[8], r[9]], a: (r[8] - r[6]) * (r[9] - r[7]) }))
   const cps = new Set()
   const add = (s) => { if (typeof s === 'string') for (const c of s) cps.add(c.codePointAt(0)) }
   for (let c = 0x20; c < 0x7f; c++) cps.add(c)
@@ -105,11 +124,12 @@ function collectChars() {
     const file = path.join(DATA, `${name}.pmtiles`)
     if (!fs.existsSync(file)) { console.error(`skip ${name}.pmtiles (missing)`); continue }
     let tiles = 0
-    for (const buf of pmtilesTiles(file)) {
+    for (const { id, buf } of pmtilesTiles(file)) {
+      const cc = DUMP ? countryOfTile(id) : null
       for (const layer of decodeTile(new Uint8Array(buf))) {
         for (const k of LABEL_KEYS) {
           const v = layer.getPropertyVector(k)
-          if (v) for (let i = 0; i < v.size; i++) add(v.getValue(i))
+          if (v) for (let i = 0; i < v.size; i++) { const s = v.getValue(i); add(s); if (cc && typeof s === 'string') (byCountry[cc] ||= new Set()).add(s) }
         }
       }
       tiles++
@@ -125,6 +145,7 @@ function collectChars() {
   if (fs.existsSync(places)) for (const r of JSON.parse(fs.readFileSync(places, 'utf8'))) { add(r[4]); add(r[5]) }
   for (const c of [...cps]) { const u = String.fromCodePoint(c).toUpperCase(); if ([...u].length === 1) cps.add(u.codePointAt(0)) }
   cps.delete(0xfe0f) // variation selector: never drawn as a glyph
+  if (DUMP) fs.writeFileSync(DUMP, JSON.stringify(Object.fromEntries(Object.entries(byCountry).map(([k, v]) => [k, [...v]]))))
   return cps
 }
 
@@ -179,33 +200,44 @@ async function ofmRange(stack, range) {
 
 await ensureFonts()
 const cps = collectChars()
-const bmp = [...cps].filter((c) => c <= 0xffff).sort((a, b) => a - b)
+// MapLibre shapes Arabic-script text into presentation forms (U+FB50-FDFF, U+FE70-FEFE) before it asks for glyphs, so those forms are drawn too:
+// add every form whose letters (compatibility decomposition) are all in the set. The OpenFreeMap server's Noto Sans has them.
+function addArabicForms(set) {
+  for (const c of [...Array(0xfdff - 0xfb50 + 1).keys()].map((i) => i + 0xfb50).concat([...Array(0xfefe - 0xfe70 + 1).keys()].map((i) => i + 0xfe70))) {
+    const d = String.fromCodePoint(c).normalize('NFKC')
+    if (d !== String.fromCodePoint(c) && [...d].every((ch) => set.has(ch.codePointAt(0)))) set.add(c)
+  }
+  return set
+}
+addArabicForms(cps)
+const bmp = [...cps].filter((c) => c <= 0xffff && !LOCAL_DRAWN.test(String.fromCodePoint(c))).sort((a, b) => a - b)
 const astral = [...cps].filter((c) => c > 0xffff)
-console.error(`${cps.size} code points (${astral.length} above U+FFFF, not in 16-bit glyph ranges: skipped)`)
+console.error(`${cps.size} code points (${astral.length} above U+FFFF, not in 16-bit glyph ranges: skipped; ${cps.size - bmp.length - astral.length} drawn locally by MapLibre)`)
 
 fs.rmSync(OUT, { recursive: true, force: true })
-const ranges = [...new Set(bmp.map((c) => c >> 8))]
 const report = {}
-for (const [stack, files] of Object.entries(STACKS)) {
+const jobs = Object.entries(STACKS).map(([stack, files]) => [stack, files, stack, new Set(bmp), () => false])
+for (const [stack, files, ofmStack, set, skip] of jobs) {
   const fonts = files.map((f) => fs.readFileSync(path.join(FONTS, f)))
   fs.mkdirSync(path.join(OUT, stack), { recursive: true })
   const src = { 'Noto Sans': 0, 'Noto Sans CJK SC': 0, OpenFreeMap: 0 }
   const missing = []
-  let bytes = 0
+  let bytes = 0, gzipBytes = 0, brBytes = 0, nfiles = 0
+  const ranges = [...new Set([...set].map((c) => c >> 8))].filter((r) => !skip(r)).sort((a, b) => a - b)
   for (const r of ranges) {
     const start = r * 256, end = start + 255, name = `${start}-${end}`
-    const need = new Set(bmp.filter((c) => c >> 8 === r))
+    const need = new Set([...set].filter((c) => c >> 8 === r))
     const got = new Map()
     const take = (map, label) => { for (const [id, g] of map) if (need.has(id) && !got.has(id)) { got.set(id, g); src[label]++ } }
     take(readGlyphs(await fontnikRange(fonts[0], start, end)), 'Noto Sans')
     if (got.size < need.size) take(readGlyphs(await fontnikRange(fonts[1], start, end)), 'Noto Sans CJK SC')
-    if (got.size < need.size) take(await ofmRange(stack, name), 'OpenFreeMap')
+    if (got.size < need.size) take(await ofmRange(ofmStack, name), 'OpenFreeMap')
     for (const id of need) if (!got.has(id)) missing.push(id)
     const buf = writeGlyphs(stack, name, [...got.values()].sort((a, b) => a.id - b.id))
     fs.writeFileSync(path.join(OUT, stack, `${name}.pbf`), buf)
-    bytes += buf.length
+    bytes += buf.length; nfiles++
+    gzipBytes += zlib.gzipSync(buf).length; brBytes += zlib.brotliCompressSync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 6 } }).length
   }
-  report[stack] = { files: ranges.length, bytes, gzipBytes: 0, sources: src, missing: missing.map((c) => 'U+' + c.toString(16).toUpperCase().padStart(4, '0') + ' ' + String.fromCodePoint(c)) }
-  for (const r of ranges) report[stack].gzipBytes += zlib.gzipSync(fs.readFileSync(path.join(OUT, stack, `${r * 256}-${r * 256 + 255}.pbf`))).length
+  report[stack] = { files: nfiles, bytes, gzipBytes, brotliBytes: brBytes, sources: src, missing: missing.map((c) => 'U+' + c.toString(16).toUpperCase().padStart(4, '0') + ' ' + String.fromCodePoint(c)) }
 }
 console.log(JSON.stringify({ codePoints: cps.size, bmp: bmp.length, astralSkipped: astral.map((c) => String.fromCodePoint(c)), report }, null, 1))
