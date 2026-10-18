@@ -1,0 +1,25 @@
+{
+  "extends": "_default",
+  "_comment": "United Arab Emirates. Only exemptions (docs/17-action-items.md A11).",
+  "stat_name": "United Arab Emirates",
+  "stat_local": "الإمارات العربية المتحدة",
+  "stat_auto": {
+    "country": "AE"
+  },
+  "exemptions": [
+    {
+      "id": "etihad-rail-not-high-speed",
+      "match": {
+        "name_re": "Etihad Rail|الاتحاد للقطارات|Gharbia Main Line",
+        "type": "high_speed"
+      },
+      "action": {
+        "type": "intercity"
+      },
+      "reason": "Etihad Rail is a mixed freight and conventional passenger line: the passenger trains run at up to 200 km/h on a freight main line (design maxspeed=200), which is the high-speed floor but not high-speed rail; the Abu Dhabi-Dubai 350 km/h project is not built. The Al Gharbia Main Line (Ghuweifat-Ruwais) is a freight line.",
+      "source": "https://en.wikipedia.org/wiki/Etihad_Rail",
+      "added": "2026-10-17",
+      "expect_min": 100
+    }
+  ]
+}

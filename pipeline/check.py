@@ -1,5 +1,7 @@
 """Phase 2 'Done when' check: run the hand-made answer list against a region's output.
 Usage: python3 check.py [--data DIR] [slug ...]   (default: the three pilots in data/). Exit code 1 if anything fails.
+Without --data a slug is read from data/world/<slug> when that folder exists (a world slug), else from data/<slug> (the pilots);
+the legacy top-level data/{br,ca,ch,co,de,it,mx,us,ve} are never read that way. With --data DIR every slug is read from DIR/<slug>.
 Answer entries: "forced": true marks an entry that only restates a config override (main_terminals, main_station_re,
 type_overrides), so it cannot catch a regression of the generic rules; the summary counts forced and independent
 entries apart. "_known_failure": "reason" marks a real, understood bug: printed KNOWN (not a failure); if it starts
@@ -16,8 +18,15 @@ HERE = Path(__file__).resolve().parent
 DATA = HERE.parent / "data"
 
 
+def data_for(slug, data=None):
+    """The folder that holds <slug>: DIR when --data was given, else data/world for a world slug, else data/ (pilots)."""
+    if data:
+        return data
+    return DATA / "world" if (DATA / "world" / slug).is_dir() else DATA
+
+
 def load(slug, data=None):
-    DATA_ = data or DATA
+    DATA_ = data_for(slug, data)
     st = [json.loads(l)["properties"] for l in open(DATA_ / slug / "stations.geojsonl")]
     cx = {json.loads(l)["properties"]["id"]: json.loads(l)["properties"] for l in open(DATA_ / slug / "complexes.geojsonl")}
     lines = json.load(open(DATA_ / slug / "lines.json"))
@@ -66,9 +75,9 @@ def config_exemption_ids(slug):
     return ids
 
 
-def check_exemptions(slug, data=DATA):
+def check_exemptions(slug, data=None):
     """Read <data>/<slug>/classify_report.json; returns the number of failing exemptions (stale, or missing from the report)."""
-    path = data / slug / "classify_report.json"
+    path = data_for(slug, data) / slug / "classify_report.json"
     want = config_exemption_ids(slug)
     if not path.exists():
         if want:
@@ -90,7 +99,7 @@ def check_exemptions(slug, data=DATA):
 
 
 def pop_data(args):
-    data = DATA
+    data = None
     if "--data" in args:
         i = args.index("--data")
         data = Path(args[i + 1])
@@ -100,7 +109,9 @@ def pop_data(args):
 
 def main_exemptions(args):
     data = pop_data(args)
-    slugs = args or sorted(p.parent.name for p in data.glob("*/classify_report.json"))
+    slugs = args or sorted(p.parent.name for p in (data or DATA / "world").glob("*/classify_report.json"))
+    if not args and not data:
+        slugs += [p for p in ("sf-bay-area", "chengdu", "paris") if (DATA / p / "classify_report.json").exists()]
     failed = 0
     for slug in slugs:
         print(f"== {slug} exemptions")

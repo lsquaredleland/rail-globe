@@ -4,5 +4,48 @@
   "passenger_operator_re": [
     "(?i)\\b(Sydney Trains|NSW TrainLink|Sydney Metro|Metro Trains|Transperth|Transwa|Adelaide Metro|Journey Beyond|Great Southern Rail|Canberra Metro|Yarra Trams)\\b"
   ],
-  "main_station_re": "^(Central|Southern Cross|Flinders Street|Roma Street|Perth)( [Ss]tation)?$"
+  "main_station_re": "^(Central|Southern Cross|Flinders Street|Roma Street|Perth)( [Ss]tation)?$",
+  "type_overrides": [
+    {
+      "match": {
+        "name_re": "^The Ghan$"
+      },
+      "type": "intercity",
+      "reason": "Decision 2026-10-17 (docs/17 A2): The Ghan and the Indian Pacific (both Journey Beyond) are the only long-distance passenger rail across Australia, so both are Intercity, not Other (the service=tourism tag would make it Other).",
+      "source": "https://en.wikipedia.org/wiki/The_Ghan",
+      "added": "2026-10-17"
+    }
+  ],
+  "exemptions": [
+    {
+      "id": "perth-midland-line",
+      "match": {
+        "name_re": "^Midland Line$",
+        "type": "intercity"
+      },
+      "action": {
+        "type": "regional"
+      },
+      "reason": "The Transperth Midland Line (Perth to Midland) is shared with Journey Beyond's Indian Pacific and Transwa's long-distance trains, so the track took the most prominent route type (Intercity) while the rest of the Transperth network is Regional. The suburban line is drawn consistently Regional; the Indian Pacific, Prospector and AvonLink lines stay Intercity.",
+      "source": "https://en.wikipedia.org/wiki/Midland_line,_Perth",
+      "added": "2026-10-17",
+      "expect_min": 20
+    },
+    {
+      "id": "perth-midland-line-unnamed",
+      "match": {
+        "osm_ids": [
+          "way/1417664590"
+        ],
+        "type": "intercity"
+      },
+      "action": {
+        "type": "regional"
+      },
+      "reason": "Unnamed way on the Transperth Midland Line (Transperth and Journey Beyond routes) that the name rule above misses.",
+      "source": "https://en.wikipedia.org/wiki/Midland_line,_Perth",
+      "added": "2026-10-17",
+      "expect_min": 1
+    }
+  ]
 }

@@ -21,6 +21,46 @@
         "network_re": "^Ouigo Train Classique"
       },
       "type": "intercity"
+    },
+    {
+      "match": {
+        "network_re": "^TER ",
+        "name_re": "^TER K9[24]"
+      },
+      "type": "high_speed",
+      "reason": "TER Hauts-de-France K92+/K94+ run on the high-speed line (docs/17 A21-3: kept High-speed)"
+    },
+    {
+      "match": {
+        "network_re": "^TER ",
+        "name_re": "^TER K9[0135-9]"
+      },
+      "type": "intercity",
+      "reason": "TER Hauts-de-France K90+ and its siblings stay Intercity (docs/17 A21-3)"
+    },
+    {
+      "match": {
+        "network_re": "^TER Auvergne-Rh",
+        "name_re": "^TER 2[123] :"
+      },
+      "type": "light_rail",
+      "reason": "Lyon ouest lyonnais tram-train (TER 21-23). A21-3: TER tram-train lines stay Light rail; the blanket TER rule below must not turn them Regional."
+    },
+    {
+      "match": {
+        "network_re": "^TER ",
+        "name_re": "^TER Aléop T[12] "
+      },
+      "type": "light_rail",
+      "reason": "Nantes tram-train (Aléop T1, T2). A21-3: TER tram-train lines stay Light rail; the blanket TER rule below must not turn them Regional."
+    },
+    {
+      "match": {
+        "network_re": "^TER ",
+        "name_re": "^TER "
+      },
+      "type": "regional",
+      "reason": "A21-3: the 150 km rule made long TER routes Intercity (TER 31 Bordeaux-Limoges 226 km, TER 32 294 km, TER 33 191 km, TER 2 Paris-Montluçon); a TER is a regional train whatever its length. name_re '^TER ' as well keeps TGV/ICE/IC routes that carry a TER network tag out of it. Placed after the K9x exceptions (first match wins)."
     }
   ],
   "main_terminals": [

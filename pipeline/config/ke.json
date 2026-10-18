@@ -21,6 +21,42 @@
       "source": "https://en.wikipedia.org/wiki/Madaraka_Express",
       "added": "2026-10-17",
       "expect_min": 200
+    },
+    {
+      "id": "mgr-nairobi-mombasa-stale",
+      "match": {
+        "osm_ids": [
+          "way/4775779", "way/69250406", "way/69250458", "way/99693925", "way/116725263", "way/159475733",
+          "way/159475738", "way/180167827", "way/180168055", "way/180311381", "way/180311385",
+          "way/239559205", "way/239559206", "way/251028002", "way/251028009", "way/251029062",
+          "way/251029064", "way/277120049", "way/489543884", "way/489543885", "way/489543886",
+          "way/489543887", "way/591022978", "way/627846257", "way/795780381", "way/849363136",
+          "way/849363137", "way/870818909", "way/870818910", "way/891041250", "way/891041251",
+          "way/949222129", "way/949222130", "way/949222131", "way/949222132", "way/980698326",
+          "way/1072594743", "way/1072594744", "way/1072748050", "way/1072844851", "way/1072844852",
+          "way/1072844858", "way/1072844859", "way/1073395636", "way/1073395637", "way/1074126759",
+          "way/1074126760", "way/1074126765", "way/1074126766", "way/1074324686", "way/1074324687",
+          "way/1074324688", "way/1074324689", "way/1074324713", "way/1074324714", "way/1094737267",
+          "way/1217865409", "way/1459111910", "way/1459111911", "way/1459111912", "way/1459111913",
+          "way/1459111914", "way/1459111915", "way/1459111916", "way/1459111917", "way/1459111918",
+          "way/1459111919", "way/1459111920", "way/1459111921", "way/1459111922", "way/1459111923",
+          "way/1459111924", "way/1459111925", "way/1459111926", "way/1459111927", "way/1459111928",
+          "way/1459111929", "way/1459111930", "way/1459111931", "way/1513933026", "way/1513933027",
+          "way/1513933028", "way/1513933029", "way/1513933033", "way/1513933034", "way/1513933039",
+          "way/1513933040", "way/1513933044", "way/1513933045", "way/1513933047", "way/1513933048",
+          "way/1513933050", "way/1513933051", "way/1514601023", "way/1514601024", "way/1526868796",
+          "way/1526868797"
+        ],
+        "type": "regional",
+        "type_source": "route"
+      },
+      "action": {
+        "freight": true
+      },
+      "reason": "The old metre-gauge Nairobi-Mombasa route relations (relation/1789208 and relation/13180874, 'Mombasa-Nairobi Railway', no service tag) have no passenger train on them: the Madaraka Express runs on the standard gauge line, and the metre-gauge line carries freight. Only ways that belong to these two relations alone are listed; the Nairobi commuter ways stay Regional.",
+      "source": "https://www.openstreetmap.org/relation/1789208",
+      "added": "2026-10-17",
+      "expect_min": 60
     }
   ]
 }

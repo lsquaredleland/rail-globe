@@ -1,0 +1,12 @@
+{
+  "extends": "_default",
+  "_comment": "Jordan (docs/17-action-items.md A21-1, docs/07-freight-detection.md). No passenger rail runs: the Aqaba Railway Corporation line (phosphate) is freight and the Hejaz Jordan Railway has no regular service (tourist trains only). Before: 443 km of narrow-gauge usage=main|branch typed Intercity from tags alone. unrouted_main_type freight turns the unlabelled usage=main track Freight; track_type_overrides (the ones that act on ways; type_overrides only acts on route relations and Jordan has none) type the named operators and the Hejaz line.",
+  "stat_name": "Jordan",
+  "stat_local": "الأردن",
+  "stat_auto": { "country": "JO" },
+  "unrouted_main_type": "freight",
+  "track_type_overrides": [
+    { "match": { "operator_re": "^Aqaba Railway" }, "type": "freight" },
+    { "match": { "name_re": "Hejaz|Hijaz|الحجازي" }, "type": "other" }
+  ]
+}

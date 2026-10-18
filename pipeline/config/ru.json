@@ -44,6 +44,21 @@
       "source": "https://www.openstreetmap.org/way/220354379",
       "added": "2026-10-16",
       "expect_min": 10
+    },
+    {
+      "id": "ru-gazprom-yamal-railway",
+      "match": {
+        "operator_re": "Газпром",
+        "type": "intercity",
+        "type_source": "tags"
+      },
+      "action": {
+        "freight": true
+      },
+      "reason": "Obskaya-Bovanenkovo-Karskaya (Yamal railway, Gazprom Transport): private freight line to the Bovanenkovo gas field, no public passenger service; typed Intercity from usage=main.",
+      "source": "https://en.wikipedia.org/wiki/Obskaya%E2%80%93Bovanenkovo_Railway",
+      "added": "2026-10-17",
+      "expect_min": 100
     }
   ]
 }

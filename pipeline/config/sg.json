@@ -1,0 +1,28 @@
+{
+  "extends": "_default",
+  "_comment": "Singapore. Only exemptions (docs/17-action-items.md A11).",
+  "stat_name": "Singapore",
+  "stat_local": "Singapore",
+  "stat_auto": {
+    "country": "SG"
+  },
+  "exemptions": [
+    {
+      "id": "sg-lrt-light-rail",
+      "match": {
+        "osm_ids": [
+          "relation/9663921",
+          "relation/9664087"
+        ],
+        "type": "monorail"
+      },
+      "action": {
+        "type": "light_rail"
+      },
+      "reason": "The Bukit Panjang and Punggol LRT lines are tagged route_master=monorail and railway=monorail in OSM (the Sengkang LRT is not); they are automated rubber-tyred light rail, the same class as the Sengkang LRT already typed Light rail. An exemption on the two route masters retypes their tracks too (tracks take the route type). Sentosa Express and the Changi Skytrain stay Monorail.",
+      "source": "https://en.wikipedia.org/wiki/Light_Rail_Transit_(Singapore)",
+      "added": "2026-10-17",
+      "expect_min": 2
+    }
+  ]
+}

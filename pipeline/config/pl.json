@@ -15,6 +15,21 @@
       "source": "https://www.openstreetmap.org/way/21408913",
       "added": "2026-10-16",
       "expect_min": 10
+    },
+    {
+      "id": "pl-coal-trunk-freight",
+      "match": {
+        "name_re": "^Magistrala (Węglowa|Podsudecka)$",
+        "type": "intercity",
+        "type_source": "tags"
+      },
+      "action": {
+        "freight": true
+      },
+      "reason": "Magistrala Weglowa (lines 131 and 201) and the Magistrala Podsudecka (line 137) are freight trunk lines; only the sections that have no passenger route relation are changed, the sections with passenger service keep the route type.",
+      "source": "https://pl.wikipedia.org/wiki/Magistrala_W%C4%99glowa",
+      "added": "2026-10-17",
+      "expect_min": 200
     }
   ]
 }

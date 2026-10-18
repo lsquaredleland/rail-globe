@@ -54,8 +54,8 @@
     },
     {
       "match": "^The Ghan$",
-      "type": "other",
-      "_note": "Decision 2026-10-17: Other. The Ghan is a Journey Beyond luxury tourist train (about 2 departures a week), and docs/01-features.md puts tourist and heritage rail in Other, so Other is the rule-consistent answer. Indian Pacific (same operator, same class of service) is typed Intercity in the data and should arguably be Other too; left as is until the user decides (docs/qa/east-asia-oceania.md item 21)."
+      "type": "intercity",
+      "source": "https://en.wikipedia.org/wiki/The_Ghan"
     },
     {
       "match": "^Metro North West",

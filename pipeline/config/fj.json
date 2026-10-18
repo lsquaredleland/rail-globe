@@ -1,0 +1,8 @@
+{
+  "extends": "_default",
+  "_comment": "Fiji (docs/17-action-items.md A21-1, docs/07-freight-detection.md). Fiji has no public passenger railway (one tourist line, Coral Coast Railway); the narrow-gauge (610 mm) usage=main track is the Fiji Sugar Corporation cane tramways. Before: 161 km typed Intercity from tags alone. unrouted_main_type freight types it Freight.",
+  "stat_name": "Fiji",
+  "stat_local": "Viti",
+  "stat_auto": { "country": "FJ" },
+  "unrouted_main_type": "freight"
+}

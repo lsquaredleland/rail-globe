@@ -38,7 +38,7 @@
   "track_type_overrides": [
     {
       "match": {
-        "name_re": "^(抚乐线|东吴支线|来合铁路|朔黄线)$"
+        "name_re": "^(抚乐线|东吴支线|来合铁路|朔黄线|昆河线|河口中越铁路桥)$"
       },
       "type": "freight"
     }
