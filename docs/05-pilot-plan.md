@@ -48,4 +48,6 @@ What the checker covers, per region touched:
 
 How to report: a short table of what was checked, what passed, what failed (with the number and the reference), and what was not checked. A failure caused by OSM tagging (for example Stuttgart's U-Bahn tagged `light_rail`) is fixed with a per-region rule in `config/<slug>.json` and added to the answer list so it stays fixed.
 
+Where it reads (2026-10-17): without `--data`, a world slug is read from `data/world/<slug>` and the pilots (`sf-bay-area`, `chengdu`, `paris`) from `data/<slug>`; `python3 pipeline/check.py` and `python3 pipeline/check.py --exemptions` need no `--data`. `--data DIR` still reads every slug from `DIR/<slug>` (scratch cuts). The legacy top-level `data/{br,ca,ch,co,de,it,mx,us,ve}` are not read.
+
 Status: `check.py` covers items 1 and part of 2 today; items 3 to 6 are to be built into a single `pipeline/verify.py` (random city sampler, reference table, build diff) in phase 5, and run from then on after every build.

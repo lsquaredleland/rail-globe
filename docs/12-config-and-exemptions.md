@@ -94,7 +94,7 @@ Ids are OSM ids in the form kept on every feature: `way/123`, `relation/456` (a 
 python3 pipeline/check.py --exemptions [--data DIR] [slug ...]
 ```
 
-Reads `<DIR>/<slug>/classify_report.json` (default: every region in `data/`), prints one line per exemption and exits 1 if any is stale. The normal `python3 pipeline/check.py` (answer lists) also prints and counts them for its regions.
+Reads `<DIR>/<slug>/classify_report.json`. Without `--data` (2026-10-17) a world slug is read from `data/world/<slug>` and the pilots from `data/<slug>`, and the default slug list is every region in `data/world` plus the pilots; the legacy top-level `data/{br,ca,...}` folders are ignored. A newly added exemption shows as MISSING until `data/world/<slug>` is re-cut, prints one line per exemption and exits 1 if any is stale. The normal `python3 pipeline/check.py` (answer lists) also prints and counts them for its regions.
 
 ## Current use
 

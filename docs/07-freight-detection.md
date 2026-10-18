@@ -21,7 +21,7 @@ Applied to each track way; "unrouted" means no passenger route relation (`route=
 2. **Service track** (`service=siding|yard|spur|crossover`) is Yard.
 3. **Route relations.** Track on a passenger route takes the most prominent route type, whatever its own tags say.
 4. **Name share** (`classify.rs`, `mostly_freight`). A named railway whose unrouted ways are Freight on 90% or more, with at least 5 of them, is Freight on all of them. Fixes the untagged ways of a tagged freight line (Haoji: 119 ways).
-5. **Per-line overrides** (`track_type_overrides` in the config) for lines nothing else catches. China: 抚乐线 (Fujiang), 东吴支线, 来合铁路.
+5. **Per-line overrides** (`track_type_overrides` in the config) for lines nothing else catches. China: 抚乐线 (Fujiang), 东吴支线, 来合铁路, 昆河线 (Kunming-Hekou metre gauge: passenger service stopped 2003, only freight and a short sightseeing train; 214 km Intercity before, 2026-10-17). Narrow gauge with `usage=main` and no passenger anywhere is typed by the region: `unrouted_main_type: "freight"` in `jo.json` (Jordan: Aqaba Railway freight, Hejaz line Other) and `fj.json` (Fiji sugar-cane tramways). Czechia's 760 mm Jindřichův Hradec lines (71 km, Regional) are real passenger lines and stay.
 6. **Station evidence** (`freight_by_evidence`). An unrouted Intercity or Regional railway (ways of one name and ref; unnamed ways joined end to end) is Freight when it is a branch (it has a dead end), it is under 15 km, and no passenger station serves it.
    - A station belongs to the track nearest to it within 200 m, service track not counted, so a branch beside a main line does not get the main line's stations.
    - A station within 800 m of where the railway joins another track belongs to that track (a freight branch starts in a passenger yard).
@@ -87,6 +87,8 @@ It hides real passenger lines wherever route relations are thin: China keeps its
 - NARN `C` (commuter) is inherited by freight lines that share track with commuter trains; `T` is tourist; Canadian Ontario Northland, Algoma Central and Gaspe codes are probably stale (suspended service).
 - Acela's network tag is `Amtrak`, so a `^Acela` network match never fires; a route-derived High-speed type applied to every slow way on a route (NEC at 30 to 125 mph, Metro-North) is wrong: high-speed should need the track's own speed.
 - Rocky Mountaineer (Mountain, Laggan, Prince George Subdivisions), Texas State Railroad, Great Smoky Mountains Railroad, Napa Valley and Cuyahoga Valley are tourist railways, not passenger service.
+
+Also (2026-10-17, A21): a route's `service=car_shuttle` (Eurotunnel Le Shuttle) is Other, not a passenger type. Where a long-distance route shares suburban track (Perth Midland Line with the Indian Pacific, Wellington to Waikanae with the Capital Connection), the track takes the most prominent route type, so the suburban line was part Intercity; `au.json` and `nz.json` carry exemptions (`perth-midland-line`, `wellington-kapiti-line`, the latter by way id because the main trunk keeps one name) that set that track to Regional. The Ghan is Intercity like the Indian Pacific (`au.json` `type_overrides`, decision A2). French `TER ` routes are Regional whatever their length (`fr.json` `type_overrides`, after exceptions that keep TER K92+/K94+ High-speed, K90+ Intercity and the tram-train TER 21-23 Lyon, Aléop T1/T2 Light rail).
 
 ## Ideas not done
 

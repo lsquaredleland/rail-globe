@@ -36,7 +36,7 @@ A static web map of passenger rail built from OpenStreetMap, made for comparing 
 - Anything not covered by the docs: check `docs/06-open-questions.md`; if it is not there, ask before deciding.
 - Do not add GTFS, live data, or any server component. v1 is fully static.
 - After any change that can alter the data, run the data checker and report the result before saying it is done: see "Automatic data check" in `docs/05-pilot-plan.md` (answer lists, major stations, random city spot checks, aggregates, diff against the last build).
-- Develop on the three pilot extracts (SF Bay Area, Chengdu, Paris). Never run a world build unless asked.
+- The app reads only the world build, so after a change that can alter the data, rebuild the world (default, since 2026-10-17); use the three pilot extracts (SF Bay Area, Chengdu, Paris) for specific testing. Publishing (`pipeline/publish.sh`) deploys the live site and still needs the user's go.
 
 ## Stack (summary)
 

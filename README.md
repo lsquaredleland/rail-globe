@@ -108,4 +108,4 @@ Research notes, not decisions or commitments. v1 stays GTFS-free and fully stati
 
 ## Status
 
-World build deployed 2026-10-16 (R2 r2.dev + Vercel, `pipeline/publish.sh`); custom domain and the low-zoom tile budget (`docs/16-low-zoom-tile-weight-plan.md`) are open. The pilot regions remain the data-check regions. Phases and their "Done when" tests are in `docs/05-pilot-plan.md`; undecided items are in `docs/06-open-questions.md`. Never run a world build unless asked (see "Optional: the world build" above).
+World build deployed 2026-10-16 (R2 r2.dev + Vercel, `pipeline/publish.sh`); custom domain and the low-zoom tile budget (`docs/16-low-zoom-tile-weight-plan.md`) are open. The pilot regions remain the data-check regions. Phases and their "Done when" tests are in `docs/05-pilot-plan.md`; undecided items are in `docs/06-open-questions.md`. The world build is the default after data-changing work (since 2026-10-17); use the pilot extracts for specific testing; publishing still needs the user's go.
