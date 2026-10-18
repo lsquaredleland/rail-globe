@@ -1,5 +1,7 @@
 # Pipeline
 
+> Current path: `pipeline/publish.sh` and `docs/10-world-build.md` (the world build is the app's only data source). The command log below is the pilot-era history: `pilot.pmtiles`, `europe-test`, `--combined` and the tippecanoe timings no longer drive the app and are kept for the measurements. The pilot extracts (SF Bay Area, Chengdu, Paris) are still the data-check regions.
+
 Reference for the pipeline commands. For the first-time sequence from a fresh clone (in the right order, with the prerequisites) see `Run it` in the root `README.md`; run `rail-extract outlines --level 2`, `4` and `5 --country CN` before the first cut (see 'Region outlines' below).
 Needs stable Rust (extraction and MLT tiles; tested with 1.99.0). Python 3 is not needed for the pipeline: `check.py` and `top.py` use the standard library only, `measure_views.py` needs `pmtiles`, `build_regions.py` and `outline_cn.py` need shapely. No tippecanoe or tile-join.
 The commands below are written for running from `pipeline/`; `rail-extract` and `check.py` find the repository from their own location, so they also work from the repository root (`top.py` and `measure_views.py` use relative paths).
