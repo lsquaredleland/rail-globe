@@ -127,7 +127,8 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
     const map = new maplibregl.Map({
       container: el.current!, style: baseStyle(), center: p.current.initial.center, zoom: p.current.initial.zoom,
       minZoom: 2, maxZoom: 17, attributionControl: false, dragRotate: false, pitchWithRotate: false, maxPitch: 0,
-      localIdeographFontFamily: false,   // CJK from our own subset glyph files (public/glyphs): drawing them locally on a canvas hitched the first zoom
+      // Han, kana and Hangul are drawn with a system font, the standard Mapbox/MapLibre way (no glyph files for them); the rest comes from public/glyphs-v2. Keep a broadly available fallback last.
+      localIdeographFontFamily: '"Noto Sans CJK SC","Noto Sans SC","PingFang SC","Hiragino Sans","Microsoft YaHei","Apple SD Gothic Neo","Malgun Gothic",sans-serif',
       fadeDuration: 100,   // 0 makes MapLibre redo full label placement every frame (never paused); any fade keeps it time-sliced
     })
     mapRef.current = map

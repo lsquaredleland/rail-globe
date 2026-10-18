@@ -64,7 +64,37 @@ export function searchItems(items: SearchItem[], query: string, limit = 12): Sea
     scored.push({ it, s: (wordStart ? (i === 0 || it.key[i - 1] === '\n' ? 0 : 1) : 2) * 10 + KIND_RANK[it.kind] })
   }
   scored.sort((a, b) => a.s - b.s || b.it.stations - a.it.stations)
-  return scored.slice(0, limit).map((x) => x.it)
+  return dropTwinProvinces(scored.slice(0, limit * 3).map((x) => x.it)).slice(0, limit)
+}
+
+const foldedNames = new WeakMap<SearchItem, string[]>()
+const names = (it: SearchItem) => {
+  let n = foldedNames.get(it)
+  if (!n) foldedNames.set(it, (n = [it.name, it.nameEn].filter(Boolean).map((x) => fold(x!.trim()))))
+  return n
+}
+const inBox = (b: SearchItem['bbox'], [x, y]: [number, number]) => !!b && x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]
+const area = (b: SearchItem['bbox']) => (b ? (b[2] - b[0]) * (b[3] - b[1]) : 0)
+
+/** Tokyo, Cairo and Moscow are both a city and a province: keep the city row and drop the province row of the same name whose box holds the
+ *  city's point (or the city's box holds the province's centre), but only when the two are about the same size (the province box is at most
+ *  4 times the city's, or at most 4 square degrees (Beijing is 3.4) when the city has no outline). New York state, Buenos Aires province and the like stay.
+ *  A collapsed city with no outline of its own takes the province's box, zoom and slug, so the view still fits the whole area. */
+function dropTwinProvinces(list: SearchItem[]): SearchItem[] {
+  const cities = list.filter((i) => i.kind === 'city')
+  const dropped = new Map<SearchItem, SearchItem>()
+  const twinOf = new Map<SearchItem, SearchItem>()
+  for (const p of list) {
+    if (p.kind !== 'province') continue
+    const pn = names(p)
+    const c = cities.find((c) => names(c).some((n) => pn.includes(n)) && (inBox(p.bbox, c.center) || inBox(c.bbox, p.center))
+      && (c.bbox ? area(p.bbox) <= 4 * area(c.bbox) : area(p.bbox) <= 4))
+    if (c) { twinOf.set(p, c); dropped.set(c, p) }
+  }
+  return list.filter((i) => !twinOf.has(i)).map((i) => {
+    const p = dropped.get(i)
+    return p && !i.bbox ? { ...i, bbox: p.bbox, zoom: p.zoom, slug: p.slug } : i
+  })
 }
 
 /** What to list before anything is typed: the biggest rail networks, countries then cities */

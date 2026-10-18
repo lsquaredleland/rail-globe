@@ -16,8 +16,8 @@ const dataRoot = envBase ? envBase.replace(/\/?$/, '/') : new URL('data/', docum
 /** The map shows the world build: world/world.pmtiles and the country side files in data/world/ (written by `rail-extract world`). */
 export const DATA_BASE = `${dataRoot}world/`
 
-/** Map label glyphs (SDF fonts, only the characters the map can draw), written by pipeline/glyphs: gitignored, so a deployed build reads them from the data bucket's glyphs/ folder (VITE_DATA_BASE), else the app's own glyphs/ folder. MapLibre
+/** Map label glyphs (SDF fonts, only the characters the map can draw), written by pipeline/glyphs: gitignored, so a deployed build reads them from the data bucket's glyphs-v2/ folder (glyphs/ is the old pilot set, kept for rollback) (VITE_DATA_BASE), else the app's own glyphs-v2/ folder. MapLibre
  *  wants an absolute URL with its {fontstack} and {range} placeholders left as they are. */
 /** Operator logos (pipeline/logos): one PNG per operator Wikidata id, in the app's own logos/ folder. */
 export const logoUrl = (qid: string) => `${new URL('logos/', document.baseURI).href}${qid}.png`
-export const GLYPHS_URL = `${envBase ? dataRoot : new URL('', document.baseURI).href}glyphs/{fontstack}/{range}.pbf`
+export const GLYPHS_URL = `${envBase ? dataRoot : new URL('.', document.baseURI).href}glyphs-v2/{fontstack}/{range}.pbf`

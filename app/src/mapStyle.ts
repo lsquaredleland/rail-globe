@@ -200,6 +200,17 @@ export function addPlaceLabels(map: MLMap, places: GeoJSON.FeatureCollection) {
   city('place-city-3', 8, 99, 6, [10.5, 14])
   city('place-city-2', 4, 7, 4, [11, 16])
   city('place-city-1', 0, 3, 2, [12, 19])
+  // z9 and up: tier 1 and 2 station labels are copied above the place layers so they are placed first and a town or district
+  // name cannot hide them (A10). Places stop at z11. The originals stop at z9 (tier 1) and never show (tier 2 starts at z9); below z9 nothing
+  // changes. crossSourceCollisions stays on (docs/06).
+  for (const n of ['lbl1', 'lbl2']) {
+    const orig = map.getLayer(L(TILES, n))?.serialize()
+    if (!orig) continue
+    map.setLayerZoomRange(orig.id, orig.minzoom ?? 0, 9)
+    map.addLayer({ ...orig, id: L(TILES, `${n}t`), minzoom: Math.max(orig.minzoom ?? 0, 9), maxzoom: 24 } as LayerSpecification)
+  }
+  // the logos go on top of the copies, so they are placed first and keep priority over the labels (adding the copies below the logos would put them below the places again)
+  if (map.getLayer(L(TILES, 'logo'))) map.moveLayer(L(TILES, 'logo'))
 }
 /** The rows of places.json ([lon, lat, class, rank, name, name_en, n_stations]) as points. */
 export function placesGeoJSON(rows: [number, number, string, number, string, string, number][]): GeoJSON.FeatureCollection {
@@ -233,7 +244,7 @@ export function applyTheme(map: MLMap, theme: Theme, slug: string = TILES) {
   for (const id of ['st1', 'st2', 'st3']) set(r(id), 'circle-color', t.stationFill)
   ring('st3', t.st3); ring('st2', t.ink); ring('st1', ['case', ['==', get('hsr'), 1], t.hsr, t.ink])
   for (const id of ['stcon1', 'stcon2', 'stcon3']) set(r(id), 'circle-color', t.stationFill)
-  for (const id of ['lbl1', 'lbl2', 'lbl3', 'lblcon1', 'lblcon2', 'lblcon3']) { set(r(id), 'text-color', id.startsWith('lbl') && !id.includes('con') ? t.ink : t.ink3); set(r(id), 'text-halo-color', t.land) }
+  for (const id of ['lbl1', 'lbl2', 'lbl1t', 'lbl2t', 'lbl3', 'lblcon1', 'lblcon2', 'lblcon3']) { set(r(id), 'text-color', id.startsWith('lbl') && !id.includes('con') ? t.ink : t.ink3); set(r(id), 'text-halo-color', t.land) }
   for (const id of ['lbl-lines', 'lbl-track']) { set(r(id), 'text-color', t.ink2); set(r(id), 'text-halo-color', t.land) }
   set(r('cities'), 'circle-stroke-color', t.land)
   set('area-outline', 'line-color', t.ink); set('area-outline-shade', 'line-color', t.ink)
@@ -484,7 +495,7 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
 
     applyTheme(map, s.theme, slug)
     for (const id of PLACE_LAYERS) if (map.getLayer(id)) map.setLayoutProperty(id, 'text-field', placeText(s.lang))
-    for (const n of ['lbl1', 'lbl2', 'lbl3', 'lblcon1', 'lblcon2', 'lblcon3']) map.setLayoutProperty(L(slug, n), 'text-field', nameExpr(s.lang, 'n', 'ne'))
+    for (const n of ['lbl1', 'lbl2', 'lbl1t', 'lbl2t', 'lbl3', 'lblcon1', 'lblcon2', 'lblcon3']) map.setLayoutProperty(L(slug, n), 'text-field', nameExpr(s.lang, 'n', 'ne'))
     map.setLayoutProperty(L(slug, 'lbl-track'), 'text-field', nameExpr(s.lang, 'n', 'ne'))
     map.setLayoutProperty(L(slug, 'lbl-lines'), 'text-field', nameExpr(s.lang, 'lb', 'lbe'))
     // paint, layout and filter changes reach a layer and its high-speed twin (if it has one) together
@@ -556,8 +567,8 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
       : []
     // greyed-out mode: only stations that high-speed rail serves stay on the map
     if (greyOut) served.push(activeStation(ty))
-    ;([['st1', 1], ['st2', 2], ['st3', 3], ['lbl1', 1], ['lbl2', 2], ['lbl3', 3]] as const).forEach(([n, tier]) =>
-      map.setFilter(L(slug, n), ['all', ['==', get('tier'), tier], ['!', ['has', 'con']], ...served] as Expr))
+    ;([['st1', 1], ['st2', 2], ['st3', 3], ['lbl1', 1], ['lbl2', 2], ['lbl1t', 1], ['lbl2t', 2], ['lbl3', 3]] as const).forEach(([n, tier]) =>
+      map.getLayer(L(slug, n)) && map.setFilter(L(slug, n), ['all', ['==', get('tier'), tier], ['!', ['has', 'con']], ...served] as Expr))
     ;([['stcon1', 1], ['stcon2', 2], ['stcon3', 3], ['lblcon1', 1], ['lblcon2', 2], ['lblcon3', 3]] as const).forEach(([n, tier]) =>
       map.setFilter(L(slug, n), ['all', ['has', 'con'], ['==', get('tier'), tier], ...served] as Expr))
     map.setFilter(L(slug, 'logo'), ['all', ['has', 'lg'], ['<=', get('tier'), 2], ['!', ['has', 'con']], ...served] as Expr)
