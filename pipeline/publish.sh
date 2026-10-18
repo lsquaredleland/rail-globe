@@ -158,4 +158,4 @@ if want live; then
   csp=$(curl -sI "$SITE" | tr -d '\r' | grep -ic '^content-security-policy' || true); [ "$csp" = 1 ] && echo "ok: $SITE serves its CSP" || fail "$SITE did not answer with a Content-Security-Policy header"
 fi
 
-say "done${DRY:+ (dry run)}"
+say "done$([ "$DRY" = 1 ] && echo ' (dry run)')"
