@@ -567,6 +567,12 @@ function applyRegion(map: MLMap, slug: string, s: MapState) {
     const served: Expr[] = hiddenT
       ? [['any', ...(TYPE_ORDER.every((t) => s.hidden.includes(t)) ? [] : [['==', ty, '']]), ...TYPE_ORDER.filter((t) => !s.hidden.includes(t)).map((t) => ['in', `,${t},`, ty])] as unknown as Expr]
       : []
+    // speed bands hidden: a station stays while one of its bands (`sb`, ",index," list: SPEED_BANDS position, 9 = no maxspeed, like `ty`) is visible
+    if (s.hiddenSpeed.length) {
+      const vis9 = [...SPEED_BANDS.map((b) => b.min), SPEED_NONE].filter((m) => !s.hiddenSpeed.includes(m)).map((m) => (m === SPEED_NONE ? 9 : SPEED_BANDS.findIndex((b) => b.min === m)))
+      const sb: Expr = ['coalesce', get('sb'), ',9,'] as Expr
+      served.push((vis9.length ? ['any', ...vis9.map((i) => ['in', `,${i},`, sb])] : ['==', get('n'), -1]) as unknown as Expr)
+    }
     // greyed-out mode: only stations that high-speed rail serves stay on the map
     if (greyOut) served.push(activeStation(ty))
     ;([['st1', 1], ['st2', 2], ['st3', 3], ['lbl1', 1], ['lbl2', 2], ['lbl1t', 1], ['lbl2t', 2], ['lbl3', 3]] as const).forEach(([n, tier]) =>
