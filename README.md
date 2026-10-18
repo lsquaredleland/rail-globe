@@ -30,7 +30,7 @@ Needs:
 - Rust, stable (edition 2021, no version pinned; tested with 1.99.0). No tippecanoe: tiles are written by the Rust extractor.
 - No Python in this sequence (the dev checks `pipeline/check.py` etc. use it, with the standard library only).
 - Disk and memory for the optional world build: see below.
-- Network: only the glyph step, which downloads about 34 MB of Noto fonts on its first run. City, town and country names come from the planet (the `.railcache`), with no network.
+- Network: none needed. City, town and country names come from the planet (the `.railcache`), with no network.
 - The planet file, about 80 to 90 GB, only if you have no `.railcache` yet. Memory: the tile step peaks at about 12 GB; cache building at 4.5 GB. Disk: about 4 GB for `data/` and `app/public/data/`, plus the planet.
 
 ```
@@ -61,16 +61,12 @@ $RE build paris chengdu greater-bay-area cn-beijing --no-tiles
 #    place nodes in the cache and the stations of step 5); run it again by hand only after changing the code or the outlines. Without places.json no country, city or town names show (station names still do).
 $RE places --parts app/public/data/pilot.parts.json
 
-# 7. Label glyphs (git-ignored; without them every label fails). Run after steps 5 and 6; for the app it must read world.pmtiles (see the world build below), not pilot.pmtiles. First run 8 min here (font downloads), 40 s once the fonts are cached.
-npm --prefix pipeline/glyphs install
-node pipeline/glyphs/build-glyphs.mjs
-
-# 8. Run the app
+# 7. Run the app
 npm --prefix app install
 npm --prefix app run dev        # http://127.0.0.1:5173/
 ```
 
-Check it worked: `app/public/data/pilot.pmtiles` (about 300 MB) and `pilot.parts.json` exist, `app/public/glyphs/` holds two folders (`Noto Sans Regular`, `Noto Sans Bold`), and the data checker passes on the pilot regions (Paris included). The app itself needs the world build below. `npm --prefix app run build` type-checks and builds a static site in `app/dist/`.
+Check it worked: `app/public/data/pilot.pmtiles` (about 300 MB) and `pilot.parts.json` exist, and the data checker passes on the pilot regions (Paris included). The app itself needs the world build below. `npm --prefix app run build` type-checks and builds a static site in `app/dist/`.
 
 ### The world build (the app's only data source)
 
@@ -89,9 +85,9 @@ $RE pminfo app/public/data/world/world.pmtiles                                  
 npm --prefix app run dev                                                                              # look at it
 ```
 
-Not in the repo, so rebuilt by the commands above: `data/`, the planet, `app/public/data/` (including the world folder), `app/public/glyphs/`. The world build also writes `world/places.json` and `world/search.json` (the `world` command runs `rail-extract places` last). Details and the memory-bounded writer: `docs/10-world-build.md`.
+Not in the repo, so rebuilt by the commands above: `data/`, the planet, `app/public/data/` (including the world folder). The world build also writes `world/places.json` and `world/search.json` (the `world` command runs `rail-extract places` last). Details and the memory-bounded writer: `docs/10-world-build.md`.
 
-Steps 3 to 5 read only the `.railcache`, not the planet, and took about 40 s in all; step 7 is network-bound (font downloads). The app reads tiles and side files from `app/public/data/`, or from `VITE_DATA_BASE` (for example an R2 bucket) when set; see `app/.env.example`. Details, timings and the other pipeline commands are in `pipeline/README.md`.
+Steps 3 to 5 read only the `.railcache`, not the planet, and took about 40 s in all. The app reads tiles and side files from `app/public/data/`, or from `VITE_DATA_BASE` (for example an R2 bucket) when set; see `app/.env.example`. Details, timings and the other pipeline commands are in `pipeline/README.md`.
 
 ## Ideas and tools to evaluate
 

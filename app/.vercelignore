@@ -1,6 +1,5 @@
 # Pipeline output is served from R2, never uploaded to Vercel (4.6 GB)
 public/data
-public/glyphs
 node_modules
 dist
 bench

@@ -15,7 +15,7 @@ A static web map of passenger rail built from OpenStreetMap, made for comparing 
 | `docs/06-open-questions.md` | What is still undecided, and what is parked |
 | `docs/07-freight-detection.md` | How freight is told from passenger track in OSM: the research, the ordered rules, the settings, the known failures |
 | `docs/08-americas-passenger-qa.md` | Americas passenger-rail QA: what was checked, what was fixed, what is left |
-| `docs/09-performance-playbook.md` | What made the map fast (MLT writer, glyphs, feature state, hover), what did not, how to benchmark, and the open problems (glyph download size, duplicate range requests) |
+| `docs/09-performance-playbook.md` | What made the map fast (MLT writer, feature state, hover), what did not, how to benchmark, and the open problems (duplicate range requests) |
 | `docs/10-world-build.md` | The world build: commands, measured times and sizes, `search.json` rules, memory-bounded writer |
 | `docs/11-performance-todos.md` | Open performance items (P0 low-zoom tile weight, measurements to repeat) and what is superseded |
 | `docs/12-config-and-exemptions.md` | Per-region configs: `extends` layering, the `exemptions` list (schema, stale detection) |

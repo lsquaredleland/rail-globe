@@ -2,8 +2,8 @@
 
 Reference for the pipeline commands. For the first-time sequence from a fresh clone (in the right order, with the prerequisites) see `Run it` in the root `README.md`; run `rail-extract outlines --level 2`, `4` and `5 --country CN` before the first cut (see 'Region outlines' below).
 Needs stable Rust (extraction and MLT tiles; tested with 1.99.0). Python 3 is not needed for the pipeline: `check.py` and `top.py` use the standard library only, `measure_views.py` needs `pmtiles`, `build_regions.py` and `outline_cn.py` need shapely. No tippecanoe or tile-join.
-The commands below are written for running from `pipeline/`; `rail-extract`, `check.py` and the glyph script find the repository from their own location, so they also work from the repository root (`top.py` and `measure_views.py` use relative paths).
-**Raw data to live site, one command:** `pipeline/publish.sh` chains the steps below with R2 and Vercel (stages: tools, cache, outlines, build, glyphs, verify, upload, deploy, prune, live). `pipeline/publish.sh --dry-run` shows what it would do and runs the read-only checks; `--planet FILE` starts from a planet download; `--glyphs` rebuilds the label glyphs; `--push` pushes `main` between the upload and the prune so Vercel builds the app. Credentials come from `r2/.env`. See `r2/README.md`. Do not run a world build unless you mean to (`CLAUDE.md`).
+The commands below are written for running from `pipeline/`; `rail-extract` and `check.py` find the repository from their own location, so they also work from the repository root (`top.py` and `measure_views.py` use relative paths).
+**Raw data to live site, one command:** `pipeline/publish.sh` chains the steps below with R2 and Vercel (stages: tools, cache, outlines, build, verify, upload, deploy, prune, live). `pipeline/publish.sh --dry-run` shows what it would do and runs the read-only checks; `--planet FILE` starts from a planet download; `--push` pushes `main` between the upload and the prune so Vercel builds the app. Credentials come from `r2/.env`. See `r2/README.md`. Do not run a world build unless you mean to (`CLAUDE.md`).
 
 Timings below were measured on 2026-10-12 (14-core Mac, planet-260928).
 
@@ -62,11 +62,7 @@ python3 measure_views.py                         # compressed tile bytes per vie
 python3 top.py <slug> [n]                        # dev helper: biggest stations
 ```
 
-Map glyphs (label fonts; the app draws every label from its own files, not OpenFreeMap's font server). `app/public/glyphs/` is git-ignored and must be generated before `npm run dev` or `npm run build`, or every label fails to load (the app logs 'glyphs missing' to the console). Run it once on a fresh clone (after `build`, whose last step `rail-extract places` writes the `places.json` it reads) and after any rebuild that changes names. The first run downloads about 34 MB of fonts (8 min on a slow connection, 40 s with the fonts cached):
-```
-cd glyphs && npm install && node build-glyphs.mjs    # 45 s; writes ../../app/public/glyphs/<fontstack>/<start>-<end>.pbf
-```
-It collects the code points of the label properties (`n`, `ne`, `lb`, `lbe`) of every tile of `pilot.pmtiles` (and `americas.pmtiles` if present) plus `places.json` (3,288 on 2026-10-15), and writes only those, as 256-code-point SDF ranges, for the two stacks the style uses (`Noto Sans Regular`, `Noto Sans Bold`): 138 files each, 2.4 MB per stack (1.6 MB gzipped), 4.9 MB in all (2.4 + 2.5). Fonts, in priority order per code point: Noto Sans (Latin, Greek, Cyrillic), Noto Sans CJK SC (Han, kana, hangul, CJK punctuation: one Simplified Chinese design draws every Han character, so Traditional names from Hong Kong use the same shapes), then, for the 131 code points neither has (Arabic, Lao, Tibetan, Mongolian), the OpenFreeMap glyph server's Noto Sans, which is what the map drew them with before (no shaping either way). 35 code points (Canadian syllabics, Tai Le, Yi) and 2 above U+FFFF are in no source and draw blank, as before. The fonts (SIL Open Font License 1.1, Noto Project Authors) are downloaded from github.com/notofonts into `glyphs/fonts/` (git-ignored, sha256 pinned in the script). `app/public/glyphs/` is git-ignored like the data: deploy it with the app. Dev-only dependencies: fontnik, pbf, pmtiles, @maplibre/mlt, esbuild.
+Map labels need no build step: the app draws all text locally from system fonts (`docs/00-overview.md`, row 2026-10-17), so there are no glyph files.
 
 All six regions, cut to tiles: 42 s (2026-10-13, quiet machine: cut 1.1 s, tiled builds 40.9 s, side-file builds 0.5 s).
 With the Python steps it was 106 s. Rust, without tippecanoe, per region (these exclude the tile step):
@@ -119,7 +115,7 @@ $RE pminfo app/public/data/world/world.pmtiles [--tsv FILE] [--top N]
 VITE_TILE_SOURCE=world npm --prefix app run dev                                   # the app reads only pilot unless this is set
 ```
 
-`world` writes tiles in passes (`--deep-zoom N`, default 6; 5 and 6 give a byte-identical file) so memory stays at about 10 GB; `tiles` and `build` (the pilot path) hold a whole region. `world` ends by running `places` over the kept countries: `world/places.json` (all kept countries' cities and towns with a station) and `world/search.json`. Not in the repo: `data/`, the planet, `app/public/data/`, `app/public/glyphs/`, the world outputs.
+`world` writes tiles in passes (`--deep-zoom N`, default 6; 5 and 6 give a byte-identical file) so memory stays at about 10 GB; `tiles` and `build` (the pilot path) hold a whole region. `world` ends by running `places` over the kept countries: `world/places.json` (all kept countries' cities and towns with a station) and `world/search.json`. Not in the repo: `data/`, the planet, `app/public/data/`, the world outputs.
 
 Default config. A region with no `config/<slug>.json` uses the committed template `config/_default.json` (generic rules, a 200 km/h high-speed floor, `stat_auto` for admin level 4); `build` fills `stat_name` (outline `name_en`), `stat_local` (`name`) and `stat_auto.country` (`country`) from the region's outline, and `cut` and `build` log that the template is in use. Add a `config/<slug>.json` only when a region needs its own rules; it wins.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish pipeline output to R2: tiles and side files at the bucket root, glyphs under glyphs/ and glyphs-v2/.
+# Publish pipeline output to R2: tiles and side files at the bucket root.
 # Credentials come from the environment only (never a file in the repo):
 #   R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
 # Use an R2 API token scoped to "Object Read & Write" on this one bucket.
@@ -30,12 +30,8 @@ while read -r d; do
 done < <("$HERE/dropped-slugs.sh")
 
 MODE=${R2_MODE:-sync}   # R2_MODE=copy uploads without deleting: use it first when the layout changes (see r2/README.md)
-# data: everything but glyphs/ and glyphs-v2/ (uploaded below; excluded here so sync does not delete it) and shards.json (uploaded last, with its own header)
-rclone "$MODE" data "R2:${R2_BUCKET}" "${COMMON[@]}" "${HIDDEN[@]}" ${DROP[@]+"${DROP[@]}"} --filter '- glyphs/**' --filter '- glyphs-v2/**' --filter '- shards.json' --filter '- **/shards.json' --header-upload 'Cache-Control: public, max-age=3600' "$@"
-# glyphs never change under the same name: glyphs/ is the old pilot set (rollback), glyphs-v2/ is the world set the app reads
-for g in glyphs glyphs-v2; do
-  [ -d "$g" ] && rclone "$MODE" "$g" "R2:${R2_BUCKET}/$g" "${COMMON[@]}" "${HIDDEN[@]}" --header-upload 'Cache-Control: public, max-age=31536000, immutable' "$@"
-done
+# data: everything but shards.json (uploaded last, with its own header)
+rclone "$MODE" data "R2:${R2_BUCKET}" "${COMMON[@]}" "${HIDDEN[@]}" ${DROP[@]+"${DROP[@]}"} --filter '- shards.json' --filter '- **/shards.json' --header-upload 'Cache-Control: public, max-age=3600' "$@"
 # shards.json holds the shard counts: a cached old copy beside new shard files would look in the wrong shard, so browsers must revalidate it.
 # --ignore-times re-uploads the ~200 small files even when unchanged, so the header is always right (rclone skips identical files otherwise).
 rclone copy data "R2:${R2_BUCKET}" "${COMMON[@]}" ${DROP[@]+"${DROP[@]}"} --filter '+ shards.json' --filter '+ **/shards.json' --filter '- *' --ignore-times --header-upload 'Cache-Control: no-cache' "$@"

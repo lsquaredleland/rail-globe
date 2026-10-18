@@ -117,7 +117,7 @@ Open, by measured payoff:
     View weights (`measure_views.py` logic on the MLT files; compressed bytes, 600 KB budget): worst laptop view 557 KB (Chengdu East z5) against 641 KB with MVT; worst phone view 451 KB (Germany z6) against 524 KB. Per zoom, the worst view is lower with MLT at every zoom (z4 450 vs 481, z5 557 vs 641, z6 451 vs 524, z8 399 vs 449, z9.5 329 vs 481, z10.6 216 vs 314, z12 310 vs 393, z13 193 vs 238, z14 128 vs 146 KB); single views can be a little higher (France z6 321 vs 288 KB, France z8 147 vs 119 KB). With every region in one file (`TILES=pilot`): worst laptop 923 KB (Lyon z6) against 994 KB, worst phone 794 KB (Zurich z5) against 883 KB. So the Europe low-zoom problem below is not solved by MLT.
 
     NOT yet measured: the warm frame bench, cold-cache load and throttled-network load have not been run on MLT (they need the user's headed 120 Hz display). The earlier MVT baseline files were overwritten by the MLT build; an MVT baseline can be rebuilt from git HEAD in a worktree with tippecanoe installed.
-12. **Self-host glyphs**: done 2026-10-15 (Latin and CJK), see "Self-hosted subset glyphs" below.
+12. **Self-host glyphs**: done 2026-10-15, then dropped 2026-10-17: the app is glyph-free (text drawn locally, `docs/00-overview.md` row 2026-10-17); the sections below are history.
 13. **Production hosting.** `r2.dev` has no Cloudflare cache and is rate-limited. Use a custom domain with cache, or chunked tiles read by HTTP Range like the reference. Status 2026-10-17: the world build is live on `r2.dev` (R2) with the app on Vercel; the custom domain is still open (live checks and what is missing: `11-performance-todos.md`, R2 item).
 14. **Pre-rendered raster tiles for z0-5.** Also fixes the z5 China views over the 600 KB budget.
 15. **Move the tooltip with a CSS transform** instead of `top`/`left`.
@@ -188,7 +188,7 @@ Missed frames -42%. The max stays about 92 ms: that is the first-zoom CJK glyph 
 
 ## Self-hosted subset glyphs, and MVT against MLT on the final app (2026-10-15)
 
-(2026-10-17: the CJK part of this is superseded, CJK is drawn locally again; `docs/00-overview.md`, row 2026-10-17.)
+(2026-10-17: all of this is superseded, the app has no glyph files and `pipeline/glyphs/` is deleted; `docs/00-overview.md`, row 2026-10-17.)
 
 **Glyphs (done).** `pipeline/glyphs/build-glyphs.mjs` (see `pipeline/README.md`) writes `app/public/glyphs/Noto Sans Regular|Bold/<start>-<end>.pbf` with only the 3,288 code points the map can draw (label properties `n`, `ne`, `lb`, `lbe` of every pilot and Americas tile, plus `places.json`, ASCII and upper-case forms; the hover cards and side files are DOM text, not glyphs, so they are not in the set). 2,670 Han, 105 hangul, kana only as the middle dot, Cyrillic, Arabic, Lao, Tibetan, Mongolian. 138 files per stack, 2.4 MB (Regular) + 2.5 MB (Bold) raw, 3.3 MB gzipped. CJK font: Noto Sans CJK SC (Simplified Chinese design, one design for all Han; the data has no Japanese text beyond U+30FB, Korean only as hangul in the Yanbian stations, which every CJK font draws the same; Hong Kong Traditional names use the SC shapes for the few characters whose regional forms differ). `localIdeographFontFamily: false`.
 
@@ -234,7 +234,7 @@ Adding France, Switzerland and Italy (with Germany) made the zoomed-out views he
 - Re-test the whole of Europe together after each change; the budget is per view, not per country.
 - Success test: no laptop or phone view over 600 KB for the worst Europe views (France z5, Lyon z6, Zurich z6), and the zoom/pan bench not worse than before the countries were added.
 
-## Must fix: glyph download size (user, 2026-10-15) - resolved 2026-10-17: CJK is drawn locally, see `docs/00-overview.md` and `docs/11-performance-todos.md`
+## Must fix: glyph download size (user, 2026-10-15) - closed 2026-10-17: the app is glyph-free (no glyph files at all), see `docs/00-overview.md` and `docs/11-performance-todos.md`
 
 The self-hosted CJK subset costs about 1 MB gzipped across 32-43 files on a first dense China view (cold: Chengdu z12 78 files / 1,615 KB, Chengdu z10.2 32 / 982 KB, Beijing z11.5 82 / 1,693 KB; Paris 78 KB, SF 73 KB), against 87 KB for the original. Why it exists: self-hosted glyphs removed a 90 ms main-thread canvas stall at the first zoom; a local CJK font costs no download but costs main-thread time. Ideas, measured offline only (nothing shipped): serve CJK from one weight (Bold CJK ranges redirected to the Regular files with `transformRequest`, so each range is fetched and cached once); prune characters used by one label only (21% less on disk, 603 of 117,165 labels lose one glyph); immutable cache headers on `/glyphs/*` (`public/_headers`, purge after regenerating); host compression of `.pbf` (gzip takes 32% off; `vite preview` does not compress it). Success test: first dense China view under 400 KB with no new missing glyphs, zoom bench not worse.
 

@@ -1,5 +1,8 @@
 import type { ExpressionSpecification, GeoJSONSource, LayerSpecification, Map as MLMap, StyleSpecification } from 'maplibre-gl'
-import { STATION_ZOOM, GLYPHS_URL, logoUrl } from './config'
+import { STATION_ZOOM, logoUrl } from './config'
+// No `glyphs` URL in the style: MapLibre draws all text locally from system fonts. The first family carries the weight (it is sniffed from the name).
+const BOLD_STACK = ['Noto Sans Bold', 'Noto Sans', 'Helvetica Neue', 'Arial', 'sans-serif']
+const REG_STACK = ['Noto Sans Regular', 'Noto Sans', 'Helvetica Neue', 'Arial', 'sans-serif']
 import { FILL, INK, THEME_COLORS, TYPE_COLOR, TYPE_WIDTH, TYPE_ORDER, type RailType, type Theme } from './palette'
 import { regionOf, TILES } from './regions'
 import { boundaryUrl, loadLineHighlight, loadNameHighlight, pmtilesUrl, type Highlight } from './data'
@@ -107,7 +110,6 @@ const L = (slug: string, name: string) => `${slug}:${name}`
 export function baseStyle(): StyleSpecification {
   return {
     version: 8,
-    glyphs: GLYPHS_URL,
     sources: { ofm: { type: 'vector', url: OFM, attribution: '' } },
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': FILL.land } },
@@ -186,7 +188,7 @@ export function addPlaceLabels(map: MLMap, places: GeoJSON.FeatureCollection) {
   map.addSource('places', { type: 'geojson', data: places })
   const sym = (id: string, filter: Expr, minzoom: number, maxzoom: number, layout: Record<string, unknown>, paint: Record<string, unknown> = {}) =>
     map.addLayer({ id, type: 'symbol', source: 'places', minzoom, maxzoom, filter,
-      layout: { 'text-field': placeText('local'), 'text-font': ['Noto Sans Bold'], 'symbol-sort-key': ['get', 'rank'], ...layout },
+      layout: { 'text-field': placeText('local'), 'text-font': BOLD_STACK, 'symbol-sort-key': ['get', 'rank'], ...layout },
       paint: { 'text-color': t.label, 'text-halo-color': t.land, 'text-halo-width': 2, 'text-halo-blur': 0.4, ...paint } } as LayerSpecification)
   sym('place-country', ['==', get('class'), 'country'] as Expr, 1, 8,
     { 'text-size': ['interpolate', ['linear'], ['zoom'], 1, 11, 4, 16, 7, 22], 'text-transform': 'uppercase', 'text-letter-spacing': 0.14, 'text-max-width': 8 },
@@ -196,7 +198,7 @@ export function addPlaceLabels(map: MLMap, places: GeoJSON.FeatureCollection) {
     sym(id, ['all', ['==', get('class'), 'city'], ['>=', get('rank'), lo], ['<=', get('rank'), hi]] as Expr, minzoom, 11,
       { 'text-size': ['interpolate', ['linear'], ['zoom'], minzoom, size[0], 10, size[1]], 'text-max-width': 7 })
   // MapLibre places the layers on top first, so they are added smallest first: where labels collide, the bigger place keeps its name
-  sym('place-town', ['==', get('class'), 'town'] as Expr, 8.5, 11, { 'text-size': ['interpolate', ['linear'], ['zoom'], 8.5, 10, 11, 12], 'text-max-width': 7, 'text-font': ['Noto Sans Regular'] })
+  sym('place-town', ['==', get('class'), 'town'] as Expr, 8.5, 11, { 'text-size': ['interpolate', ['linear'], ['zoom'], 8.5, 10, 11, 12], 'text-max-width': 7, 'text-font': REG_STACK })
   city('place-city-3', 8, 99, 6, [10.5, 14])
   city('place-city-2', 4, 7, 4, [11, 16])
   city('place-city-1', 0, 3, 2, [12, 19])
@@ -379,7 +381,7 @@ export function addRailSource(map: MLMap, source: string) {
   // line names along the track: one label per line (from its strands), or the track's own name where no line is mapped
   const lblPaint = { 'text-color': '#33312C', 'text-halo-color': FILL.land, 'text-halo-width': 2, 'text-halo-blur': 0.3 }
   add({ id: L(source, 'lbl-lines'), type: 'symbol', ...src, 'source-layer': 'lines', minzoom: 11.5,
-    layout: { 'symbol-placement': 'line', 'text-field': get('lb'), 'text-font': ['Noto Sans Regular'],
+    layout: { 'symbol-placement': 'line', 'text-field': get('lb'), 'text-font': REG_STACK,
       'text-size': ['interpolate', ['linear'], ['zoom'], 11.5, 10, 15, 12], 'symbol-spacing': 320, 'text-max-angle': 30,
       'text-padding': 3, 'symbol-sort-key': get('i'), 'text-letter-spacing': 0.02 },
     paint: lblPaint })
@@ -389,12 +391,12 @@ export function addRailSource(map: MLMap, source: string) {
     layout: { visibility: 'none', 'symbol-placement': 'line', 'symbol-spacing': 300, 'symbol-sort-key': get('i'),
       'icon-image': ['concat', 'badge|', get('c'), '|', ['case', ['has', 'rl'], 'd', 'l']], 'icon-text-fit': 'both', 'icon-text-fit-padding': [1, 3, 1, 3],
       'icon-rotation-alignment': 'viewport', 'icon-pitch-alignment': 'viewport', 'icon-padding': 4,
-      'text-field': get('rf'), 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 12.5, 10, 16, 13],
+      'text-field': get('rf'), 'text-font': BOLD_STACK, 'text-size': ['interpolate', ['linear'], ['zoom'], 12.5, 10, 16, 13],
       'text-rotation-alignment': 'viewport', 'text-pitch-alignment': 'viewport' },
     paint: { 'text-color': ['case', ['has', 'rl'], '#1E1E1C', '#FFFFFF'] } })
   add({ id: L(source, 'lbl-track'), type: 'symbol', ...src, 'source-layer': 'track', minzoom: 11.5,
     filter: ['all', ['has', 'n'], ['!', ['has', 'nl']], ['!', ['has', 'con']], ['!=', get('type'), 'yard'], ['!=', get('type'), 'freight']],
-    layout: { 'symbol-placement': 'line', 'text-field': get('n'), 'text-font': ['Noto Sans Regular'],
+    layout: { 'symbol-placement': 'line', 'text-field': get('n'), 'text-font': REG_STACK,
       'text-size': ['interpolate', ['linear'], ['zoom'], 11.5, 10, 15, 12], 'symbol-spacing': 360, 'text-max-angle': 30,
       'text-padding': 3, 'text-letter-spacing': 0.02 },
     paint: lblPaint })
@@ -405,13 +407,13 @@ export function addRailSource(map: MLMap, source: string) {
 
   // outline label for small airfields; commercial airports get one icon point below
   add({ id: L(source, 'airport-label'), type: 'symbol', ...src, 'source-layer': 'airports', minzoom: 8, filter: ['all', ['==', get('k'), 'aerodrome'], ['!=', get('com'), 1]],
-    layout: { 'text-field': get('lb'), 'text-font': ['Noto Sans Regular'], 'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 14, 12],
+    layout: { 'text-field': get('lb'), 'text-font': REG_STACK, 'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 14, 12],
       'text-letter-spacing': 0.08, 'text-max-width': 8, 'text-padding': 4 },
     paint: { 'text-color': '#6B665B', 'text-halo-color': FILL.land, 'text-halo-width': 1.6 } })
   // commercial airports: one plane icon at the centre of the outline with the IATA code under it
   add({ id: L(source, 'airport-icon'), type: 'symbol', ...src, 'source-layer': 'airport_pts', minzoom: 8,
     layout: { 'icon-image': 'airport', 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-size': ['interpolate', ['linear'], ['zoom'], 8, 0.6, 12, 0.85, 15, 1.05],
-      'text-field': get('lb'), 'text-font': ['Noto Sans Bold'], 'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 14, 13],
+      'text-field': get('lb'), 'text-font': BOLD_STACK, 'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 14, 13],
       'text-anchor': 'top', 'text-offset': [0, 0.9], 'text-letter-spacing': 0.06, 'text-padding': 4, 'text-allow-overlap': true, 'text-ignore-placement': true,
       'symbol-sort-key': 0 },
     paint: { 'text-color': '#4A463D', 'text-halo-color': FILL.land, 'text-halo-width': 1.8 } })
@@ -446,7 +448,7 @@ export function addRailSource(map: MLMap, source: string) {
 
   const label = (name: string, tier: number, minzoom: number, size: [number, number], bold: boolean) =>
     add({ id: L(source, name), type: 'symbol', ...src, 'source-layer': 'complexes', minzoom, filter: ['==', get('tier'), tier],
-      layout: { 'text-field': get('n'), 'text-font': [bold ? 'Noto Sans Bold' : 'Noto Sans Regular'],
+      layout: { 'text-field': get('n'), 'text-font': (bold ? BOLD_STACK : REG_STACK),
         'text-size': ['interpolate', ['linear'], ['zoom'], minzoom, size[0], 15, size[1]], 'text-max-width': 7,
         'text-variable-anchor': ['top', 'bottom', 'right', 'left'], 'text-radial-offset': 1.0,
         'text-padding': 2, 'text-optional': true },
@@ -461,7 +463,7 @@ export function addRailSource(map: MLMap, source: string) {
   const conLabel = (tier: 1 | 2 | 3, size: [number, number]) =>
     add({ id: L(source, `lblcon${tier}`), type: 'symbol', ...src, 'source-layer': 'complexes', minzoom: STATION_ZOOM[tier].label,
       filter: ['all', ['has', 'con'], ['==', get('tier'), tier]],
-      layout: { 'text-field': get('n'), 'text-font': [tier < 3 ? 'Noto Sans Bold' : 'Noto Sans Regular'],
+      layout: { 'text-field': get('n'), 'text-font': (tier < 3 ? BOLD_STACK : REG_STACK),
         'text-size': ['interpolate', ['linear'], ['zoom'], 11, size[0], 15, size[1]], 'text-max-width': 7, 'text-anchor': 'top', 'text-offset': [0, 0.8], 'text-padding': 3 },
       paint: { 'text-color': '#7A756A', 'text-halo-color': FILL.land, 'text-halo-width': 1.5 } })
   conLabel(1, [13, 16]); conLabel(2, [12, 13]); conLabel(3, [10, 11.5])

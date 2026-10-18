@@ -12,7 +12,7 @@ The placeholders `data.example.com` are for the custom domain at launch; `r2/cor
 5. R2 > Manage API tokens: create a token with **Object Read & Write on this bucket only**. No Admin token. Rotate it on a schedule; it exists only in your shell/CI secrets.
 
 ## Custom domain checklist (replaces the r2.dev URL)
-Measured on the r2.dev URL on 2026-10-17 (`curl -sI`, `Origin: https://rail-globe.vercel.app`, `Accept-Encoding: br, gzip`): HTTP/1.1 for every file; no `Content-Encoding` on glyph `.pbf`, shard `.json` or `world.pmtiles`; CORS correct everywhere (`Access-Control-Allow-Origin` is the app origin, `Vary: Origin`, preflight 204 with `GET, HEAD` and `Range`); `Cache-Control`: tiles `world/world.pmtiles` and shard files `max-age=3600`, glyphs `max-age=31536000, immutable`, **`world/fr/shards.json` still `max-age=3600`**. Cause of the last one: the live objects are older than the `sync.sh` fix. `shards.json` was last modified 2026-10-16 12:22 PDT and the tiles 12:34 PDT; the no-cache upload came in with commit ec6cded at 12:39 PDT, and `sync.sh` has not been run since. The script itself is right: a local test showed `--ignore-times` re-copies a file even with `--checksum` set (without it, the identical file is skipped), so one `r2/sync.sh` run fixes the header.
+Measured on the r2.dev URL on 2026-10-17 (`curl -sI`, `Origin: https://rail-globe.vercel.app`, `Accept-Encoding: br, gzip`): HTTP/1.1 for every file; no `Content-Encoding` on shard `.json` or `world.pmtiles`; CORS correct everywhere (`Access-Control-Allow-Origin` is the app origin, `Vary: Origin`, preflight 204 with `GET, HEAD` and `Range`); `Cache-Control`: tiles `world/world.pmtiles` and shard files `max-age=3600`, **`world/fr/shards.json` still `max-age=3600`**. Cause of the last one: the live objects are older than the `sync.sh` fix. `shards.json` was last modified 2026-10-16 12:22 PDT and the tiles 12:34 PDT; the no-cache upload came in with commit ec6cded at 12:39 PDT, and `sync.sh` has not been run since. The script itself is right: a local test showed `--ignore-times` re-copies a file even with `--checksum` set (without it, the identical file is skipped), so one `r2/sync.sh` run fixes the header.
 
 Do these in order. Nothing here has been executed.
 1. Cloudflare dashboard > R2 > the bucket > Settings > Custom Domains > Connect `data.<your-domain>` (the zone must be on Cloudflare). Wait until the status is Active (TLS is issued automatically).
@@ -21,17 +21,17 @@ Do these in order. Nothing here has been executed.
 4. Caching (zone > Caching > Cache Rules; the bucket's `Cache-Control` is the source of truth, so the rules only make Cloudflare keep the files):
    - Rule A, "data": hostname equals the data domain > Eligible for cache, Edge TTL "Use cache-control header if present, bypass cache if not", Browser TTL "Respect origin".
    - Do not add a rule that overrides `shards.json`: it must stay `no-cache` (browsers revalidate with the ETag, Cloudflare answers 304).
-   - Tiles: `world.pmtiles` is not build-dated today, so it keeps `max-age=3600` and an ETag. To make it `immutable` (31536000), publish it as `world-YYYYMMDD.pmtiles` (`rail-extract world --name`), point the app at that name, upload with `Cache-Control: public, max-age=31536000, immutable`, and delete the previous file after the app deploy. Glyphs are already immutable and never change under the same name; a changed font needs a new folder name.
+   - Tiles: `world.pmtiles` is not build-dated today, so it keeps `max-age=3600` and an ETag. To make it `immutable` (31536000), publish it as `world-YYYYMMDD.pmtiles` (`rail-extract world --name`), point the app at that name, upload with `Cache-Control: public, max-age=31536000, immutable`, and delete the previous file after the app deploy.
    - Cloudflare caches range requests on a cacheable object only after it has the whole object; for the large pmtiles file turn on Smart Tiered Cache (zone > Caching > Tiered Cache) and check `cf-cache-status: HIT` on a second `Range` request.
-5. Compression (zone > Rules > Compression Rules): Brotli, then gzip, for hostname equals the data domain and the file extension `json` or `pbf` (the glyphs are protobuf and are not on Cloudflare's automatic list). Never compress `.pmtiles` (the tiles are already compressed, and range offsets must stay byte-exact). Then `curl -sI -H 'Accept-Encoding: br' .../glyphs/Noto%20Sans%20Regular/0-255.pbf` must show `content-encoding: br`, and a `Range` request on a `.pmtiles` file must show none.
+5. Compression (zone > Rules > Compression Rules): Brotli, then gzip, for hostname equals the data domain and the file extension `json`. Never compress `.pmtiles` (the tiles are already compressed, and range offsets must stay byte-exact). Then `curl -sI -H 'Accept-Encoding: br' .../world/fr/shards.json` must show `content-encoding: br`, and a `Range` request on a `.pmtiles` file must show none.
 6. Rate limiting and WAF (zone > Security): the rule from step 4 of "R2 bucket" above (300 requests/min/IP), and a WAF custom rule that blocks any method other than GET, HEAD and OPTIONS.
-7. Switch the app: set `VITE_DATA_BASE=https://data.<your-domain>/` in Vercel (Production and Preview), replace the r2.dev origin in the `connect-src` and the glyph/data entries of `app/vercel.json` with the data domain, remove `ALLOW_R2_DEV=1`, redeploy. The build fails if the two do not match.
+7. Switch the app: set `VITE_DATA_BASE=https://data.<your-domain>/` in Vercel (Production and Preview), replace the r2.dev origin in the `connect-src` and the data entries of `app/vercel.json` with the data domain, remove `ALLOW_R2_DEV=1`, redeploy. The build fails if the two do not match.
 8. Re-upload with the fixed headers: `R2_MODE=copy r2/sync.sh -P` (no deletes), then check `curl -sI https://data.<your-domain>/world/fr/shards.json` shows `cache-control: no-cache`.
 9. Disable the r2.dev URL: bucket > Settings > Public Development URL > Disable. Check that the old URL now returns 404 or 403 and the site still loads.
-10. Final check: cold load of the site with the browser network tab: protocol `h2` or `h3`, `content-encoding: br` on shards and glyphs, no CORS or CSP errors.
+10. Final check: cold load of the site with the browser network tab: protocol `h2` or `h3`, `content-encoding: br` on shards, no CORS or CSP errors.
 
 ## One command, raw data to live site
-`pipeline/publish.sh` (from the repo root) does planet cache, outlines, cut, build, tiles, places, optional glyphs, a check of the output on disk, the R2 upload (copy mode), the push, the R2 prune and a live check of R2 and the site. Credentials: copy `r2/.env.example` to `r2/.env` (gitignored). Always start with `pipeline/publish.sh --dry-run`.
+`pipeline/publish.sh` (from the repo root) does planet cache, outlines, cut, build, tiles, places, a check of the output on disk, the R2 upload (copy mode), the push, the R2 prune and a live check of R2 and the site. Credentials: copy `r2/.env.example` to `r2/.env` (gitignored). Always start with `pipeline/publish.sh --dry-run`.
 Hidden files and folders (such as tool state in `.omc/`) are never uploaded: `sync.sh` filters them out.
 
 ## Publish data
@@ -46,7 +46,7 @@ r2/sync.sh
 3. `r2/sync.sh -P` (now deletes the old per-record objects).
 A tab left open across step 3 shows "Could not load" on clicks until it is reloaded.
 
-Tiles and side files go under `world/` in the bucket, glyphs to `glyphs/` (they are gitignored, so Vercel cannot ship them).
+Tiles and side files go under `world/` in the bucket (they are gitignored, so Vercel cannot ship them). Old `glyphs/` and `glyphs-v2/` folders from before the glyph-free decision (2026-10-17) are no longer read; `r2/sync.sh` in sync mode deletes them.
 The app never gets write credentials; the browser only does GET/HEAD.
 
 ## Vercel

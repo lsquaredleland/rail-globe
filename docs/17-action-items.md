@@ -2,7 +2,7 @@
 
 Everything fixed in the 2026-10-16/17 session has been removed from this list; what was done is in `docs/18-changelog-2026-10-17.md`. What is left needs a decision from the user, a check, or follow-up work. Reply under each `Your call:`.
 
-Decided and closed (no action left): 朔黄线 stays Freight; The Ghan and Indian Pacific both Intercity; Uruguay none; Peru, Bolivia, Cuba left alone; China tier-1 override stays narrowed; Berlin and Hamburg S-Bahn and Copenhagen S-tog stay Light rail; ICE, Frecciarossa, Railjet name overrides left out; the 150 km Intercity cut-off stays; the world build is the default (CLAUDE.md); glyphs use local CJK drawing (docs/00-overview.md 2026-10-17); stale country folders deleted and pruned.
+Decided and closed (no action left): the app is glyph-free, all text drawn locally from system fonts (docs/00-overview.md 2026-10-17); 朔黄线 stays Freight; The Ghan and Indian Pacific both Intercity; Uruguay none; Peru, Bolivia, Cuba left alone; China tier-1 override stays narrowed; Berlin and Hamburg S-Bahn and Copenhagen S-tog stay Light rail; ICE, Frecciarossa, Railjet name overrides left out; the 150 km Intercity cut-off stays; the world build is the default (CLAUDE.md); stale country folders deleted and pruned.
 
 ## 1. Decisions
 
@@ -14,23 +14,19 @@ Measured on the final world build: only this zoom fails (303 of 48,960 view cent
 - My lean: 4c now, 4b later if Europe z5 bothers you.
 - Your call:
 
-### 1.2 Small scripts: glyph files or local fonts?
-MapLibre 6.14 draws a script locally, shaped, when its glyph range file is absent (tested: Cairo Arabic looked better than the shipped glyphs). Skipping the Thai, Greek, Cyrillic, Arabic ranges would leave the first world view (21 files, 409 KB gzipped, 20 of them Bold per-script files) with a few Latin files. Cost: shapes come from system fonts; only whole-range absence triggers it. Two cheaper levers if you keep glyph files: round the SDF bytes to a multiple of 8 (about half the gzip size; checked at 1x only, not on a retina display), or a small font just for country and big-city layers.
-- Your call:
-
-### 1.3 French TER K1 Paris Est to Strasbourg and Jordan "International Train"
+### 1.2 French TER K1 Paris Est to Strasbourg and Jordan "International Train"
 The blanket `^TER ` override makes TER K1 (about 450 km) Regional; Intercity looks more sensible. Jordan's "International Train" (51 km) is now Freight; it is probably the Hejaz alignment, so Other is also defensible.
 - Your call:
 
-### 1.4 Desktop operator mode and the open-sea region button
+### 1.3 Desktop operator mode and the open-sea region button
 In operator mode zoomed in over a country there is no card and no legend (the operator Legend was removed); zoomed out it shows the World card. Over open sea at z7 the region button still names the nearest country ("Portugal Country"). Keep both, or change?
 - Your call:
 
-### 1.5 Under-construction stations: shared predicate (proposed)
+### 1.4 Under-construction stations: shared predicate (proposed)
 The app already shows under-construction stations only when the construction flag is on (layers `stcon1-3`, `lblcon1-3`, built by `construction.rs`). `stations.rs` now keeps them out of the open-station model, but `construction.rs` only recognises some tag patterns, so a station skipped by `stations.rs` for `railway=station` + `construction=yes|station` or a `（在建）` name suffix (cn: 63 + 15 + 181) is never drawn, even with the flag on. Proposed: one shared predicate used by both files so every skipped station appears with the flag on. Small change, changes data, needs one more world build.
 - Your call:
 
-### 1.6 Station construction skip: tags that cannot prove "open"
+### 1.5 Station construction skip: tags that cannot prove "open"
 Kept open because they carry both an open tag and a construction tag, unverifiable from tags: Montpellier tram line 5 stops, the Dudley extension, au Trentham, Lyonville and Wombat State Forest, kr 하양 and 군위. Still skipped (tags say "being built", unverified): de Sielmingen and Neuhausen auf den Fildern; fr four Ajaccio stops; gb one unnamed node; it Canepari and Pozzuoli; kr nine stations (과천정보타운 to 합천); ch Ils Cugns; th six Bangkok MRT stations. A manual check of a handful settles it.
 - Your call:
 
@@ -55,7 +51,7 @@ Kept open because they carry both an open tag and a construction tag, unverifiab
 
 Nothing below has been run.
 1. Publishing deploys the live site: `pipeline/publish.sh` (build, verify, upload, push, prune, live checks) after the checks in the changelog. Never run without a go.
-2. `r2/sync.sh` has not run since 16 Oct, so `shards.json` still has `max-age=3600` where `no-cache` was intended; one run fixes it. New: it uploads `glyphs-v2` with the immutable one-year cache and prunes dropped slugs through `r2/dropped-slugs.sh` (guards: kept/dropped overlap, `world.parts.json`).
+2. `r2/sync.sh` has not run since 16 Oct, so `shards.json` still has `max-age=3600` where `no-cache` was intended; one run fixes it. New: it prunes dropped slugs through `r2/dropped-slugs.sh` (guards: kept/dropped overlap, `world.parts.json`).
 3. r2.dev is HTTP/1.1, uncompressed, tiles `max-age=3600`: custom domain checklist is in `r2/README.md` (compression rules for `.json` and `.pbf`, build-dated tile file names for immutability, then disable the r2.dev URL).
 4. Legacy top-level `data/{br,ca,ch,co,de,it,mx,us,ve}` have no `classify_report` for the current configs; the plain checker now reads `data/world`, so they are unused. Delete or keep.
 5. Backups outside the repo: `/Users/leland/Downloads/osm-rail-backups/20261017c` and `20261017d` (APFS clones; delete when satisfied). The earlier two in /private/tmp disappeared.
@@ -63,8 +59,7 @@ Nothing below has been run.
 
 ## 5. Follow-ups, none blocking
 
-- Scripts the glyph set cannot draw: Tifinagh (Morocco 3.3%, Algeria 2.8%), Malayalam, syllabics, Yi, 6 Han characters above U+FFFF.
-- Repeat the P2 measurements on an idle machine (docs/11): highlight filter cost on very long lines, Chengdu settle time at 150 ms latency, zoom out to z2, hover and click sweeps, first-zoom hitch.
+- Repeat the P2 measurements on an idle machine (docs/11): highlight filter cost on very long lines, Chengdu settle time at 150 ms latency, zoom out to z2, hover and click sweeps, first-zoom hitch (roughly doubled by the glyph-free decision: Chengdu East max frame 75 to 125 ms, one noisy pair).
 - Not covered by QA: Iceland and the micro-states, operator and speed colour modes in the Americas and Africa views, hover and click on rebuilt tiles.
 - More independent answer-list entries; the 29 known failures are judgements from Wikipedia rankings and the size score, not confirmed OSM bugs.
 - Pipeline robustness: `build` with no prior `cut` panics (`write route_stations.json: NotFound`); the `type_source` of a route master comes from its first member, not the winning member.

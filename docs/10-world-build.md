@@ -30,7 +30,7 @@ Measured 2026-10-15 (14-core Mac, planet-260928): cut of 216 countries 7 s (7.2 
 
 `world` writes `world.parts.json` (slug and outline bounds of every country with tile input, as `pilot.parts.json`) from `data/regions` outlines. Boundary files for the app (`<slug>.boundary.geojson`) are written by `build` next to the side files.
 
-Not in the repo (git-ignored or generated): `data/` (cache, outlines, cut, tile input), the planet, `app/public/data/` (tiles and side files, the world folder is 2.8 GB), `app/public/glyphs/` and `app/public/glyphs-v2/`. Everything above is reproducible from the planet with these commands, except as listed under "Choices and limits".
+Not in the repo (git-ignored or generated): `data/` (cache, outlines, cut, tile input), the planet, `app/public/data/` (tiles and side files, the world folder is 2.8 GB). Everything above is reproducible from the planet with these commands, except as listed under "Choices and limits".
 
 ### Default country config
 
@@ -47,7 +47,7 @@ VITE_TILE_SOURCE=world npm --prefix app run dev      # http://127.0.0.1:5173/ ; 
 VITE_TILE_SOURCE=world npm --prefix app run build    # a build that shows the world (copies app/public/data into dist)
 ```
 
-(Historical: the picker listed the pilot regions, whose boundary files are not in `data/world/`; the hand-tuned regions are gone, regions now come from `search.json`.) `pipeline/glyphs` was run over the world labels on 2026-10-17 into `app/public/glyphs-v2` (the app reads that folder; `glyphs/` is the old pilot set).
+(Historical: the picker listed the pilot regions, whose boundary files are not in `data/world/`; the hand-tuned regions are gone, regions now come from `search.json`.)
 
 ### Places and search (`rail-extract places`)
 
@@ -55,7 +55,6 @@ VITE_TILE_SOURCE=world npm --prefix app run build    # a build that shows the wo
 
 `search.json` rules for the cities (decided 2026-10-15; towns are not in it, `places.json` still has them): a city is a place=city, or a China level-5 outline, with a station complex within 12 km and open passenger track typed `metro` or `light_rail` (construction and proposed do not count; monorail alone does not; light rail added 2026-10-15 so cities with only a light rail system keep their own entry) within 12 km of its point, measured to the track itself. Then ONE entry per metro area: candidates sorted by rank (population-derived), then population, then capital flag, then n_stations, taken greedily, each dropped when an accepted entry is within 20 km. A level-5 outline that holds candidate places gives one entry: the outline's box and slug (`cn-chengdu`) with the best place's name, rank and point; the other places inside it are not entries (Tianfu New Area is Chengdu). Level-5 outlines inside a province named like a city (Hong Kong Island, Kowloon, New Territories in `cn-hong-kong`) are dropped, and level-5 outlines are not listed as provinces any more. Result on the 2026-10-15 world: 146 countries (142 since 2026-10-16), 1,370 provinces (1,674 before the small-country rule), 726 cities with metro or light rail (384 with metro only; 63 with an outline), 255 KB raw, 92 KB gzipped (was 3.3 MB with 7,717 cities and 28,102 towns). Small countries (under 3,000 km of passenger rail in `stats.json` and no city entry) are listed without provinces: 1,370 provinces left in the world file (`docs/14-city-outlines-and-highlights.md`). Known limits: a place with the best rank wins even when a neighbour has more stations (New Taipei over Taipei, Yokohama is 28 km from Tokyo so it stays); a mis-typed metro line puts a city in (Kinshasa).
 
-Glyphs for the world labels: `node pipeline/glyphs/build-glyphs.mjs --data app/public/data/world --tiles world --out app/public/glyphs-v2 [--dump labels.json]` (it reads `world.pmtiles` and `world/places.json`; the folder must be named `glyphs` or `glyphs-vN`, takes about 1 minute, and leaves out the characters MapLibre draws locally: Han, kana, Hangul; `coverage.mjs` compares a label dump with two glyph folders). A changed font or label set needs a new folder name, because glyphs are cached for a year.
 
 ## The memory-bounded writer (`tilewriter::run_world`)
 
@@ -78,5 +77,5 @@ Verification:
 - "Has passenger rail transit": at least 1 km of open track typed high_speed, intercity, regional, metro, light_rail, monorail, funicular or other (way length, so double track counts twice; construction and proposed not counted). Freight-only and yard-only countries and countries under 1 km are dropped. The freight detection and labelling are the repo's as they are.
 - Generic country configs are `pipeline/config/_default.json` (no commuter networks, high-speed from 200 km/h on the track's own tags or route services); no country-specific type overrides except those in the hand-written configs. The world build also used `ca.json`, `us.json`, `mx.json` (Americas freight rules) and `cn.json` (China's rules), which are hand-written and were not tracked in git when this was written: commit them, or a fresh clone builds those four countries with the template and gets different results.
 - Tiles are not cut at country borders: a way that crosses a border is in both countries' tile input and drawn twice, identically (as in the pilot).
-- The glyph subset `glyphs-v2` covers the world labels except CJK, which the browser draws (see `docs/11`, glyph coverage); Tifinagh, Malayalam, syllabics, Tai Le and Yi have no source font.
+- There are no glyph files: the browser draws every label from system fonts (`docs/00-overview.md`, row 2026-10-17), so there is no glyph build step and no script coverage list to maintain.
 - `places.json` for the world holds every city and town with a station nearby (35.8 k places), not OpenFreeMap's thinned set; the style's collision handling decides what is drawn. A distance or population thinning would shrink the file (1.9 MB, 0.77 MB gzipped) if the first load matters.

@@ -2,14 +2,13 @@
 # Raw data -> build -> R2 -> Vercel, in one command. Every step is the documented one (README.md "Run it", docs/10-world-build.md); this only chains
 # them, checks the output between steps, and orders the upload and the deploy so the live site is never half-updated.
 #
-#   pipeline/publish.sh [--planet FILE] [--glyphs] [--push] [--dry-run] [--stages a,b,c] [--skip a,b]
+#   pipeline/publish.sh [--planet FILE] [--push] [--dry-run] [--stages a,b,c] [--skip a,b]
 #
-# Stages, in order (default: all but cache, glyphs, deploy):
+# Stages, in order (default: all but cache, deploy):
 #   tools     build the Rust extractor
 #   cache     planet .osm.pbf -> .railcache (only with --planet FILE; once per planet, about 1 min, 4.5 GB)
 #   outlines  region outlines from the cache
 #   build     cut, classify, station model, side files, tiles, places (about 2 min and 12 GB)
-#   glyphs    label glyphs over the new tiles (only with --glyphs; first run downloads about 34 MB of fonts)
 #   verify    check the output on disk (read only); stops the run on a failure
 #   upload    r2/sync.sh in copy mode: adds and updates files in R2, deletes nothing, so the live app keeps working
 #   deploy    git push origin main, which makes Vercel build the app (only with --push)
@@ -23,11 +22,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PLANET=; GLYPHS=0; PUSH=0; DRY=0; ONLY=; SKIP=
+PLANET=; PUSH=0; DRY=0; ONLY=; SKIP=
 while [ $# -gt 0 ]; do
   case "$1" in
     --planet) PLANET="$2"; shift ;;
-    --glyphs) GLYPHS=1 ;;
     --push) PUSH=1 ;;
     --dry-run) DRY=1 ;;
     --stages) ONLY="$2"; shift ;;
@@ -47,7 +45,6 @@ want() {  # is stage $1 on?
   if [ -n "$ONLY" ]; then case ",$ONLY," in *",$s,"*) ;; *) return 1 ;; esac; else
     case "$s" in
       cache) [ -n "$PLANET" ] || return 1 ;;
-      glyphs) [ "$GLYPHS" = 1 ] || return 1 ;;
       deploy) [ "$PUSH" = 1 ] || return 1 ;;
     esac
   fi
@@ -94,12 +91,6 @@ if want build; then
   run "$RE" world --slugs-file data/world/kept.txt
 fi
 
-if want glyphs; then
-  say "glyphs"
-  run npm --prefix pipeline/glyphs install --no-audit --no-fund
-  run node pipeline/glyphs/build-glyphs.mjs --data "$DATA/world" --tiles world --out "$DATA/../glyphs-v2"
-fi
-
 if want verify; then
   say "verify: output on disk"
   root="$DATA/world"; tiles="$root/world.pmtiles"; min=500000000
@@ -107,7 +98,6 @@ if want verify; then
   size=$(stat -f %z "$tiles" 2>/dev/null || stat -c %s "$tiles")
   [ "$size" -ge "$min" ] || fail "$tiles is only $size bytes (expected at least $min)"
   for f in places.json search.json; do [ -f "$root/$f" ] || fail "missing $root/$f"; done
-  [ -d app/public/glyphs-v2/"Noto Sans Regular" ] || fail "no app/public/glyphs-v2: run with --glyphs (the app cannot draw labels without them)"
   # every region folder is in the shard layout (shards.json) and has no old per-record files
   bad=0; n=0
   for d in "$root"/*/; do
@@ -165,7 +155,6 @@ if want live; then
   code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-15' -H "Origin: $SITE" "$DATA_ORIGIN/$tiles"); [ "$code" = 206 ] && echo "ok: $tiles range request 206" || fail "$tiles range request returned $code"
   code=$(curl -s -o /dev/null -w '%{http_code}' "$DATA_ORIGIN/${prefix}it/shards.json"); [ "$code" = 200 ] && echo "ok: ${prefix}it/shards.json" || fail "${prefix}it/shards.json returned $code"
   acao=$(curl -sI -H "Origin: $SITE" "$DATA_ORIGIN/$tiles" | tr -d '\r' | grep -i '^access-control-allow-origin' || true); [ -n "$acao" ] && echo "ok: CORS ($acao)" || fail "no CORS header for $SITE"
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$DATA_ORIGIN/glyphs-v2/Noto%20Sans%20Regular/0-255.pbf"); [ "$code" = 200 ] && echo "ok: glyphs" || fail "glyphs returned $code"
   csp=$(curl -sI "$SITE" | tr -d '\r' | grep -ic '^content-security-policy' || true); [ "$csp" = 1 ] && echo "ok: $SITE serves its CSP" || fail "$SITE did not answer with a Content-Security-Policy header"
 fi
 
