@@ -48,15 +48,13 @@
       "match": "^London Bridge",
       "mode": "train",
       "tier_max": 1,
-      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Great_Britain",
-      "_known_failure": "London Bridge is one of the busiest stations in Britain (Wikipedia source) but scores 48.6 (tier 2), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Great_Britain"
     },
     {
       "match": "^(London )?Euston$",
       "mode": "train",
       "tier_max": 1,
-      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Great_Britain",
-      "_known_failure": "London Euston (the main-line station, named by its own name since the 2026-10-17 label fix) is one of the busiest stations in Britain (Wikipedia source) but scores 46.6 (tier 2), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Great_Britain"
     }
   ],
   "lines": [

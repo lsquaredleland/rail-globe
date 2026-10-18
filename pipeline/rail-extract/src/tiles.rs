@@ -566,6 +566,8 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
     let mut railways: Vec<(String, Option<String>, String, f64)> = Vec::new();
     let mut nk_of: FxHashMap<String, usize> = FxHashMap::default();
     let mut pax: Vec<(geomx::G, String)> = Vec::new(); // passenger track for station types
+    let mut pax_sb: Vec<u8> = Vec::new(); // speed band index of each pax / con_pax row (SPEED_BAND_MINS position, 9 = no maxspeed), same order
+    let mut con_sb: Vec<u8> = Vec::new();
     let mut frt: Vec<(geomx::G, String)> = Vec::new(); // freight and yard track, to tell a freight station from one with no track at all
     let mut con_pax: Vec<(geomx::G, String)> = Vec::new(); // under-construction track (not proposed), to tell a station that is only being built
     let mut city_track: Vec<(f64, f64, f64, u8)> = Vec::new(); // (lon, lat, km, 0 metro / 1 tram / 2 monorail) samples for the city dots
@@ -751,7 +753,8 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
             }
             if rank(t) < 9 && (!con || s(p, "railway") == Some("construction")) {
                 if let Some(g) = geomx::from_geojson(&fe.g, geomx::id) {
-                    if con { con_pax.push((g, t.to_string())) } else { pax.push((g, t.to_string())) }
+                    let sb = props.get("kmh").and_then(Value::as_i64).map_or(9, |k| SPEED_BAND_MINS.iter().position(|&b| k >= b).unwrap_or(8) as u8);
+                    if con { con_pax.push((g, t.to_string())); con_sb.push(sb) } else { pax.push((g, t.to_string())); pax_sb.push(sb) }
                 }
             }
         } else if fe.gtype == "Polygon" || fe.gtype == "MultiPolygon" {
@@ -874,6 +877,7 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
         }
     };
     let mut cx_types: FxHashMap<String, BTreeSet<String>> = FxHashMap::default();
+    let mut cx_sb: FxHashMap<String, BTreeSet<u8>> = FxHashMap::default();
     let (mut st_rows, mut cx_rows) = (String::new(), String::new());
     let mut airport_cache: Vec<Option<String>> = Vec::with_capacity(stations.len());
     // A station mapped as open but with no service, no open passenger track beside it and construction track beside it is still being
@@ -909,7 +913,15 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
     eprintln!("{slug}: {demoted} stations with only construction track beside them shown as under construction");
     for stv in stations.iter() {
         let p = &stv["properties"];
+        let mut sbs: BTreeSet<u8> = BTreeSet::new(); // speed bands of the track serving the station
         let ty: BTreeSet<String> = if p["construction"].as_bool() == Some(true) {
+            let allowed: FxHashSet<&str> = p["rail_types"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+            let pg = Geometry::Point(station_pt(stv));
+            for i in con_tree.near(&pg, NEAR) {
+                if allowed.contains(con_pax[i].1.as_str()) && geomx::dist(&con_pax[i].0, &pg) <= NEAR {
+                    sbs.insert(con_sb[i]);
+                }
+            }
             p["rail_types"].as_array().into_iter().flatten().filter_map(Value::as_str).map(String::from).collect()
         } else {
             let mut ty: BTreeSet<String> = p["line_counts"].as_object().into_iter().flatten().map(|(k, _)| k.clone()).collect();
@@ -918,11 +930,18 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
             for i in pax_tree.near(&pg, NEAR) {
                 if allowed.contains(pax[i].1.as_str()) && geomx::dist(&pax[i].0, &pg) <= NEAR {
                     ty.insert(pax[i].1.clone());
+                    sbs.insert(pax_sb[i]);
                 }
             }
             ty
         };
         cx_types.entry(p["complex"].as_str().unwrap_or("").to_string()).or_default().extend(ty.iter().cloned());
+        // no track found beside it: counts as unmapped
+        if sbs.is_empty() {
+            sbs.insert(9);
+        }
+        cx_sb.entry(p["complex"].as_str().unwrap_or("").to_string()).or_default().extend(sbs.iter().copied());
+        let sb_str = |v: &BTreeSet<u8>| format!(",{},", v.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(","));
         let mut lc: Vec<(&String, &Value)> = p["line_counts"].as_object().into_iter().flatten().collect();
         lc.sort_by_key(|(k, _)| rank(k));
         let lct = lc.iter().map(|(k, v)| format!("{k}:{v}")).collect::<Vec<_>>().join(",");
@@ -941,6 +960,7 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
         m.insert("pc".into(), p["platform_count"].clone());
         m.insert("lc".into(), p["line_count"].clone());
         m.insert("lct".into(), json!(lct));
+        m.insert("sb".into(), json!(sb_str(&sbs)));
         m.insert("ty".into(), json!(if ty.is_empty() { String::new() } else { format!(",{},", ty.iter().cloned().collect::<Vec<_>>().join(",")) }));
         m.insert("modes".into(), json!(p["modes"].as_array().into_iter().flatten().filter_map(Value::as_str).collect::<Vec<_>>().join(",")));
         if let Some(q) = logo_for(p) {
@@ -976,6 +996,7 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
         if p["construction"].as_bool() == Some(true) {
             m.insert("con".into(), json!(1));
         }
+        m.insert("sb".into(), json!(format!(",{},", cx_sb.get(p["id"].as_str().unwrap_or("")).map_or("9".to_string(), |v| v.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(",")))));
         m.insert("ty".into(), json!(ty.map_or(String::new(), |t| format!(",{},", t.iter().cloned().collect::<Vec<_>>().join(",")))));
         let minz = match tier { 1 => 5, 2 => 8, _ => 10 };
         feat(&mut cx_rows, &m, &pyjson::to_string(&c["geometry"], COMPACT), Some(minz), None);

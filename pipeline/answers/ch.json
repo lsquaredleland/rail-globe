@@ -32,8 +32,7 @@
       "match": "^Lausanne$",
       "mode": "train",
       "tier_max": 1,
-      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Switzerland",
-      "_known_failure": "Lausanne is a top-5 Swiss station (Wikipedia source) but scores 49.1 (tier 2), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+      "source": "https://en.wikipedia.org/wiki/List_of_busiest_railway_stations_in_Switzerland"
     }
   ],
   "lines": []

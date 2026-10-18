@@ -73,6 +73,42 @@
       "tier_max": 1,
       "source": "https://en.wikipedia.org/wiki/Hengyang_East_railway_station",
       "_known_failure": "Hengyang East is a major Jingguang/Hu-Kun high-speed junction (Wikipedia source) but scores 41.7 (tier 2), below the tier-1 bar: its platforms are probably under-mapped in OSM; size score only, no config forces it (independent)"
+    },
+    {
+      "match": "^长沙南站?$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Changsha_South_railway_station"
+    },
+    {
+      "match": "^北京站?$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Beijing_railway_station"
+    },
+    {
+      "match": "^北京南站?$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Beijing_South_railway_station"
+    },
+    {
+      "match": "^深圳北站?$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Shenzhenbei_railway_station"
+    },
+    {
+      "match": "^成都西站?$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Chengdu_West_railway_station"
+    },
+    {
+      "match": "^青岛北站?$",
+      "mode": "train",
+      "tier_max": 1,
+      "source": "https://en.wikipedia.org/wiki/Qingdaobei_railway_station"
     }
   ],
   "lines": [

@@ -567,6 +567,17 @@ pub fn run(slug: &str, inp: &Input) -> Out {
             if let Some(m) = nearest_track_mode(&platforms[k].g, 25.0) {
                 pm.insert(m.to_string());
             }
+            // a surface platform with a heavy-rail track beside it is not a metro platform because a metro tunnel runs under it
+            // (Changsha South: line 2 and 4 under the high-speed station): the nearest surface heavy-rail track decides
+            let below = platforms[k].p("tunnel").map_or(false, |v| v != "no") || platforms[k].p("layer").map_or(false, |v| v.starts_with('-'));
+            if !below && pm.iter().all(|m| m == "subway" || m == "light_rail") {
+                let g = &platforms[k].g;
+                let hv = track_tree.near(g, 25.0).into_iter().filter(|&i| matches!(track_mode(tracks[i].p("type").unwrap_or("")), "train") && tracks[i].p("tunnel").map_or(true, |v| v == "no") && geomx::dist(&tracks[i].g, g) <= 25.0).count();
+                let under = track_tree.near(g, 25.0).into_iter().filter(|&i| matches!(track_mode(tracks[i].p("type").unwrap_or("")), "subway" | "light_rail") && geomx::dist(&tracks[i].g, g) <= 25.0).all(|i| tracks[i].p("tunnel").map_or(false, |v| v != "no"));
+                if hv > 0 && under {
+                    pm = BTreeSet::from(["train".to_string()]);
+                }
+            }
         }
         platforms[k].modes = pm;
         if let Some(&i) = platforms[k].p("_stop_area").and_then(|a| by_area_ix.get(a)) {
