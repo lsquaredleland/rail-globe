@@ -378,6 +378,7 @@ fn route_service_with_several_values() {
     assert_eq!(ty("commuter; long_distance"), "intercity");
     assert_eq!(ty("international;national"), "intercity");
     assert_eq!(ty("tourism"), "other");
+    assert_eq!(ty("car_shuttle"), "other");
     assert_eq!(ty("highspeed"), "high_speed");
 }
 
@@ -413,4 +414,71 @@ fn route_is_high_speed_by_track_only_for_a_majority() {
     // track under construction counts for neither the total nor the high-speed share
     let building: (Vec<(&[u8], &[u8])>, Vec<&str>) = (vec![(b"railway", b"construction"), (b"construction", b"rail"), (b"highspeed", b"yes")], vec!["relation/1"]);
     assert_eq!(line_type(&[plain.clone(), plain.clone(), building.clone(), building.clone(), building.clone()]), "regional");
+}
+
+/// open track kinds + construction=* are construction track (West Cairo monorail: railway=monorail + construction=yes); railway=rail needs a rail kind as the value and no running route
+#[test]
+fn construction_tag_on_an_open_railway_is_construction() {
+    let ways: Vec<(&str, &str, &str)> = vec![
+        ("monorail", "yes", ""), // 0: construction, mode monorail
+        ("rail", "rail", ""),    // 1: new build (operator, no ref): construction, mode rail
+        ("rail", "yes", ""),     // 2: doubling or electrification on a running line: open
+        ("rail", "rail", "relation/9"), // 3: on a running route: open
+        ("rail", "", ""),        // 4: open
+        ("rail", "rail", "ref"), // 5: leftover on an operating line (has a ref): open
+        ("tram", "yes", "relation/9"), // 6: new-build mode but on a running route: open
+    ];
+    let mut feats = Vec::new();
+    let mut spans = Vec::new();
+    for (i, (rw, c, _)) in ways.iter().enumerate() {
+        let con = if c.is_empty() { String::new() } else { format!("\"construction\":\"{c}\",") };
+        let l = format!("{{\"type\":\"Feature\",\"properties\":{{\"railway\":\"{rw}\",{con}\"osm_id\":\"way/{}\"}},\"geometry\":null}}\n", i + 1);
+        spans.push((feats.len(), feats.len() + l.len(), feats.len() + l.find("},\"geometry\"").unwrap()));
+        feats.extend_from_slice(l.as_bytes());
+    }
+    let tracks: Vec<TrackIn> = ways
+        .iter()
+        .enumerate()
+        .map(|(i, (rw, c, r))| {
+            let mut t: Vec<(&[u8], &[u8])> = vec![(b"railway", rw.as_bytes()), (b"usage", b"main")];
+            if *rw == "rail" && *r != "ref" {
+                t.push((b"operator", b"TCDD"));
+            }
+            if *r == "ref" {
+                t.push((b"ref", b"L1"));
+            }
+            if !c.is_empty() {
+                t.push((b"construction", c.as_bytes()));
+            }
+            TrackIn {
+                start: spans[i].0,
+                end: spans[i].1,
+                pos: spans[i].2,
+                props: FeatProps { tags: List(t), osm_id: format!("way/{}", i + 1) },
+                routes: if r.is_empty() || *r == "ref" { Vec::new() } else { vec![r.to_string()] },
+                first: (i as i32 * 1_000_000, 0),
+                ll: vec![(i as i32 * 1_000_000, 0), (i as i32 * 1_000_000, 10_000)],
+            }
+        })
+        .collect();
+    let rows = [route("relation/9", &[("service", "regional")])];
+    let out = classify("t", &cfg_json(json!({})), &rows, &feats, &tracks, &[]);
+    let typed: Vec<Value> = String::from_utf8(out.typed).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let rw = |i: usize| typed[i]["properties"]["railway"].as_str().unwrap().to_string();
+    let con = |i: usize| typed[i]["properties"]["construction"].as_str().map(String::from);
+    assert_eq!((rw(0), con(0)), ("construction".into(), Some("monorail".into())));
+    assert_eq!(typed[0]["properties"]["construction_type"], "monorail");
+    assert_eq!(typed[0]["properties"]["type"], "monorail");
+    assert_eq!((rw(1), con(1)), ("construction".into(), Some("rail".into())));
+    assert_eq!((rw(2), con(2)), ("rail".into(), Some("yes".into())));
+    assert_eq!((rw(3), con(3)), ("rail".into(), Some("rail".into())));
+    assert_eq!((rw(4), con(4)), ("rail".into(), None));
+    assert_eq!((rw(5), con(5)), ("rail".into(), Some("rail".into())));
+    assert_eq!((rw(6), con(6)), ("tram".into(), Some("yes".into())));
+    // no construction key in the feature text: the mode is appended, not lost
+    let t = String::from_utf8(as_construction(b"{\"type\":\"Feature\",\"properties\":{\"railway\":\"monorail\",\"osm_id\":\"way/1\"", "monorail")).unwrap();
+    assert!(t.contains("\"railway\":\"construction\"") && t.ends_with(",\"construction\":\"monorail\""), "{t}");
+    // the mode may sit under proposed=* on a railway=construction way
+    let p = FeatProps { tags: List(vec![(b"railway", b"construction"), (b"proposed", b"monorail")]), osm_id: "way/1".into() };
+    assert_eq!(own_tag_type(&p, &cfg_json(json!({}))).0, "monorail");
 }

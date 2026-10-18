@@ -48,7 +48,7 @@ fn service_type_one(s: &str) -> Option<&'static str> {
         "high_speed" | "highspeed" | "high-speed" => "high_speed", // KTX relations in Korea say service=highspeed
         "long_distance" | "night" => "intercity",
         "regional" | "commuter" => "regional",
-        "tourism" => "other",
+        "tourism" | "car_shuttle" => "other", // Eurotunnel Le Shuttle carries cars, not a passenger service
         _ => return None,
     })
 }
@@ -405,7 +405,8 @@ fn route_type(t: &Owned, cfg: &Cfg, track_hs: HsTrack) -> (String, &'static str)
 fn own_tag_type<T: Get + ?Sized>(p: &T, cfg: &Cfg) -> (String, &'static str) {
     let mut rw = p.g("railway").map(str::to_string);
     if matches!(rw.as_deref(), Some("construction" | "proposed")) {
-        let mode = p.g(rw.as_deref().unwrap()).map(str::to_string); // the mode lives in construction=* / proposed=*
+        // the mode lives in construction=* / proposed=*; mappers also put it under the other key
+        let mode = p.g(rw.as_deref().unwrap()).or_else(|| p.g(if rw.as_deref() == Some("construction") { "proposed" } else { "construction" })).map(str::to_string);
         rw = match mode {
             Some(m) => Some(m),
             None => {
@@ -779,6 +780,22 @@ fn bump(v: &mut Vec<(String, i64)>, k: &str) {
     }
 }
 
+/// A way mapped as an open railway kind plus `construction=*` (West Cairo monorail: `railway=monorail` + `construction=yes`) is being built:
+/// the mode the railway key names, read like `railway=construction` + `construction=<mode>`. New-build modes (monorail, light_rail, subway, tram)
+/// close on `construction=yes` or a rail kind. `railway=rail|narrow_gauge` closes only on a rail-kind value, with no `ref` and an `operator` or
+/// `highspeed=yes` (`yes`, and the value `rail` on a way with a ref, are usually a doubling or electrification left on a line that runs; the
+/// caller also keeps it open on a running route). `no`, `minor` and `electrification` never count.
+fn con_by_tags<T: Get + ?Sized>(p: &T) -> Option<&str> {
+    let rw = p.g("railway").filter(|r| matches!(*r, "rail" | "monorail" | "light_rail" | "subway" | "tram" | "narrow_gauge"))?;
+    let c = p.g("construction")?;
+    let kind = matches!(c, "rail" | "narrow_gauge" | "subway" | "light_rail" | "tram" | "monorail");
+    if matches!(rw, "rail" | "narrow_gauge") {
+        let new_build = p.g("ref").map_or(true, str::is_empty) && (p.g("operator").map_or(false, |o| !o.is_empty()) || p.g("highspeed") == Some("yes"));
+        return (kind && new_build).then_some(rw);
+    }
+    (kind || matches!(c, "yes" | "railway")).then_some(rw)
+}
+
 /// A route relation that is not running yet: it says so in its name ("(en construccion)", "under construction", "proyectado", "planned")
 /// or in `state` / `railway`. Such a relation is no service: it is not a line and gives its ways no route type.
 pub fn route_under_construction(t: &Owned) -> bool {
@@ -806,6 +823,29 @@ pub enum HsTrack {
 }
 
 pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[TrackIn], pax: &[(i32, i32)]) -> Out {
+    // ways tagged as open track + construction=* are construction track from here on (a way on a running route relation stays open, whatever its mode)
+    let svc_routes: FxHashSet<&str> = rows.iter().filter(|r| r.route && !route_under_construction(&r.tags)).map(|r| r.id.as_str()).collect();
+    let con_mode: Vec<Option<&str>> =
+        tracks.iter().map(|tr| con_by_tags(&tr.props).filter(|_| !tr.routes.iter().any(|r| svc_routes.contains(r.as_str())))).collect();
+    let norm: Vec<TrackIn>;
+    let tracks: &[TrackIn] = if con_mode.iter().any(Option::is_some) {
+        norm = tracks
+            .iter()
+            .zip(&con_mode)
+            .map(|(tr, cm)| {
+                let mut tags = tr.props.tags.0.clone();
+                if let Some(rw) = cm {
+                    tags.retain(|(k, _)| *k != b"railway" && *k != b"construction");
+                    tags.push((b"railway", b"construction"));
+                    tags.push((b"construction", rw.as_bytes()));
+                }
+                TrackIn { start: tr.start, end: tr.end, pos: tr.pos, props: FeatProps { tags: List(tags), osm_id: tr.props.osm_id.clone() }, routes: tr.routes.clone(), first: tr.first, ll: tr.ll.clone() }
+            })
+            .collect();
+        &norm
+    } else {
+        tracks
+    };
     let routes: Vec<&RelRow> = rows.iter().filter(|r| r.route && !route_under_construction(&r.tags)).collect();
     let hs_routes: rustc_hash::FxHashMap<String, HsTrack> = {
         // route -> (km of track, km of high-speed track: highspeed=yes, or high-speed by its own tags); track under construction counts for neither
@@ -1183,7 +1223,10 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
             at = tr.end;
             continue;
         }
-        typed.extend_from_slice(&feats[at..tr.pos]);
+        match con_mode[ti] {
+            None => typed.extend_from_slice(&feats[at..tr.pos]),
+            Some(m) => typed.extend_from_slice(&as_construction(&feats[at..tr.pos], m)),
+        }
         at = tr.pos;
         if rw == "construction" {
             typed.extend_from_slice(b",\"construction_type\":");
@@ -1240,6 +1283,22 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
     let mut rep = Vec::new();
     report.write_pretty(&mut rep, 0);
     Out { stale, typed, lines: lines_out, report: rep, n_lines: line_ids.len() }
+}
+
+/// the feature text up to the end of its properties with `railway=<mode>` and `construction=<value>` rewritten as `railway=construction`, `construction=<mode>`
+fn as_construction(text: &[u8], mode: &str) -> Vec<u8> {
+    let s = String::from_utf8_lossy(text).into_owned();
+    let swap = |s: String, key: &str, new: &str| -> Option<String> {
+        let pat = format!("\"{key}\":\"");
+        let a = s.rfind(&pat)? + pat.len();
+        let b = a + s[a..].find('"')?;
+        Some(format!("{}{}{}", &s[..a], new, &s[b..]))
+    };
+    let Some(s) = swap(s.clone(), "railway", "construction") else { return s.into_bytes() };
+    match swap(s.clone(), "construction", mode) {
+        Some(s) => s.into_bytes(),
+        None => format!("{s},\"construction\":\"{mode}\"").into_bytes(), // no construction key in the text: keep the mode
+    }
 }
 
 #[cfg(test)]

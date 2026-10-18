@@ -233,7 +233,7 @@ pub fn rel_area_wanted<T: Tags + ?Sized>(t: &T) -> bool {
 // ---------------------------------------------------------------- names (pipeline/names.py)
 
 /// Latin script for labels: chars U+0000-U+024F or U+1E00-U+1EFF
-fn latin(v: &[u8]) -> bool {
+pub fn latin(v: &[u8]) -> bool {
     std::str::from_utf8(v).map_or(false, |s| s.chars().all(|c| (c as u32) <= 0x24f || (0x1e00..=0x1eff).contains(&(c as u32))))
 }
 
@@ -249,13 +249,19 @@ fn english_key(k: &[u8]) -> bool {
     l == b"en" || l.starts_with(b"en-") || l.starts_with(b"en_") || has(b"Latn") || l.ends_with(b"_rm") || has(b"pinyin") || has(b"romaji") || has(b"translit")
 }
 
+/// a name:en (or int_name, or romanised name) that holds a placeholder, not a name ("待定" is "to be determined"): it is no English label
+fn placeholder_name(v: &[u8]) -> bool {
+    let t = String::from_utf8_lossy(v);
+    matches!(t.trim().to_lowercase().as_str(), "待定" | "tbd" | "unknown")
+}
+
 /// The English label of a feature, from its (key, value) tags: name:en, then int_name; for a name that is not Latin script (CJK,
 /// Cyrillic, Arabic, ...) also a romanised name:* (see english_key). None when the name is already Latin script and there is no
 /// name:en or int_name: the label is the name itself (a Latin name:de or name:fr is not English, and name:etymology:wikidata is a Q id).
 pub fn english_name_kv<'a>(tags: impl Iterator<Item = (&'a [u8], &'a [u8])>) -> Option<&'a [u8]> {
     let (mut name, mut en, mut int, mut roman) = (None, None, None, None);
     for (k, v) in tags {
-        if v.is_empty() {
+        if v.is_empty() || (k != b"name" && placeholder_name(v)) {
             continue;
         }
         match k {
@@ -284,6 +290,15 @@ mod english_name_tests {
     fn explicit_english() {
         assert_eq!(en(&[("name", "Wien Hbf"), ("name:en", "Vienna Central"), ("name:de", "Wien Hbf")]).as_deref(), Some("Vienna Central"));
         assert_eq!(en(&[("name", "Praha"), ("int_name", "Prague")]).as_deref(), Some("Prague"));
+        assert_eq!(en(&[("name", "東京"), ("name:en", "Tokyo")]).as_deref(), Some("Tokyo"));
+    }
+    #[test]
+    fn placeholder_english_names_are_dropped() {
+        assert_eq!(en(&[("name", "待定"), ("name:en", "待定")]), None);
+        assert_eq!(en(&[("name", "龙吴路"), ("name:en", "TBD")]), None);
+        assert_eq!(en(&[("name", "龙吴路"), ("name:en", "tbd"), ("int_name", "Longwu Road")]).as_deref(), Some("Longwu Road"));
+        assert_eq!(en(&[("name", "X"), ("name:en", "Unknown")]), None);
+        assert_eq!(en(&[("name", "龙吴路"), ("name:en", " Tbd ")]), None);
         assert_eq!(en(&[("name", "東京"), ("name:en", "Tokyo")]).as_deref(), Some("Tokyo"));
     }
     #[test]
