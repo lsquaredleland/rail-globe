@@ -1,37 +1,16 @@
-"""Phase 3 budget check: compressed PMTiles bytes needed to draw one view (docs: under 600 KB per view).
-Usage: python3 measure_views.py   (reads ../app/public/data/<slug>.pmtiles per view; use TILES=pilot to read every view from pilot.pmtiles, the file the app draws from: `build` no longer writes per-region files for the pilot sources)
-A view = one screen; MapLibre uses 512 px tiles and loads tile zoom floor(map zoom)."""
+"""Budget check: compressed PMTiles bytes needed to draw one view (under 600 KB per view).
+Usage, from the repo root: python3 pipeline/measure_views.py [world.pmtiles]   (default app/public/data/world/world.pmtiles; or set WORLD=<file>)
+Needs `pip install pmtiles`.
+A view = one screen; MapLibre uses 512 px tiles and loads tile zoom floor(map zoom). Prints the named views, then the worst view over a 1 degree grid."""
 import math
 import os
+import sys
 from pathlib import Path
 from pmtiles.reader import Reader, MmapSource
 
-DATA = Path(__file__).resolve().parent.parent / "app" / "public" / "data"
-VIEWS = {  # name -> (tile source, lon, lat); Chengdu and the Greater Bay Area are drawn from China's tiles
-    "Paris centre": ("paris", 2.3553, 48.8785),
-    "Paris default": ("paris", 2.35, 48.86),
-    "SF Bay Area": ("sf-bay-area", -122.22, 37.7),
-    "SF downtown": ("sf-bay-area", -122.40, 37.78),
-    "Chengdu": ("china", 104.07, 30.66),
-    "Chengdu East": ("china", 104.14, 30.63),
-    "GBA region": ("china", 113.55, 22.75),
-    "Shenzhen": ("china", 114.06, 22.58),
-    "Hong Kong": ("china", 114.17, 22.30),
-    "Guangzhou": ("china", 113.27, 23.13),
-    "Germany": ("de", 10.45, 51.1),
-    "Ruhr": ("de", 7.2, 51.45),
-    "Berlin": ("de", 13.40, 52.52),
-    "Frankfurt": ("de", 8.66, 50.11),
-    "France": ("fr", 2.6, 46.6),
-    "Lyon": ("fr", 4.85, 45.76),
-    "Switzerland": ("ch", 8.2, 46.8),
-    "Zurich": ("ch", 8.54, 47.38),
-    "Italy": ("it", 12.5, 42.4),
-    "Milan": ("it", 9.19, 45.46),
-    "Rome": ("it", 12.5, 41.9),
-}
+ROOT = Path(__file__).resolve().parent.parent
+DEFAULT = ROOT / "app" / "public" / "data" / "world" / "world.pmtiles"
 SCREENS = {"laptop 1440x900": (1440, 900), "phone 390x844": (390, 844)}
-ZOOMS = [4, 5, 6, 8, 9.5, 10.6, 12, 13, 14]
 
 
 def world_px(lon, lat, z):
@@ -81,33 +60,8 @@ def main_world(path):
 
 
 def main():
-    if os.environ.get("WORLD"):
-        return main_world(os.environ["WORLD"])
-    worst = 0
-    readers = {}
-    if os.environ.get("TILES"):
-        print(f"measuring {DATA / (os.environ['TILES'] + '.pmtiles')} for every view")
-    print(f"{'view':16} {'screen':16} " + " ".join(f"z{z:<5}" for z in ZOOMS) + "   (KB, compressed)")
-    for name, (slug, lon, lat) in VIEWS.items():
-        slug = os.environ.get("TILES") or slug
-        if slug not in readers:
-            f = open(DATA / f"{slug}.pmtiles", "rb")
-            readers[slug] = (Reader(MmapSource(f)), f)
-        rd = readers[slug][0]
-        for sname, (w, h) in SCREENS.items():
-            row = []
-            for z in ZOOMS:
-                tz, xs, ys = tiles_for(lon, lat, z, w, h)
-                total = 0
-                for x in xs:
-                    for y in ys:
-                        # raw (still compressed) tile bytes; get() returns the stored bytes
-                        t = rd.get(tz, x, y)
-                        total += len(t) if t else 0
-                row.append(total / 1024)
-                worst = max(worst, total / 1024)
-            print(f"{name:16} {sname:16} " + " ".join(f"{v:6.0f}" for v in row))
-    print(f"\nworst view: {worst:.0f} KB (budget 600 KB)")
+    path = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("WORLD") or str(DEFAULT)
+    main_world(path)
 
 
 if __name__ == "__main__":

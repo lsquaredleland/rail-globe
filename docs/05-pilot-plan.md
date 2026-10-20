@@ -14,16 +14,16 @@ Boundaries are administrative areas (decided).
 
 ## Phases
 
-Status 2026-10-17: the world build runs end to end and is deployed (R2 `r2.dev` for data, Vercel for the app, `pipeline/publish.sh`); the app reads only `world/world.pmtiles` and no longer has the pilot regions. Phase 5 "Done when" is not met yet: the low-zoom views are over the 600 KB budget (`11-performance-todos.md`) and the custom domain is not attached. The pilot regions below stay as the data-check regions (`pipeline/answers/`).
+Status 2026-10-20: the world build runs end to end and is deployed (R2 `r2.dev` for data, Vercel for the app, `pipeline/publish.sh`). The app reads only `world/world.pmtiles`. Phase 4 was skipped. Phases 3 and 5 are not met: low-zoom views are over the 600 KB budget (`17-action-items.md`, `16-low-zoom-tile-weight-plan.md`) and the custom domain is not attached. The pilot regions stay as the data-check regions (`pipeline/answers/`).
 
-| Phase | Work | Done when |
-| --- | --- | --- |
-| 0 · Setup | Repo, `docs/`, `CLAUDE.md`. Vite + React + TypeScript app skeleton. One osmium config cutting the three regions | Three extracts from one planet pass; empty app runs locally |
-| 1 · Data | Filter to the data spec: features, relations side table, stop positions. QA report per region | Every data spec checklist item done; QA report lists broken routes and orphan stations |
-| 2 · Types and stations | Rail type classification, station model, size tiers, per-region commuter lists and override file | A hand-made answer list of about 10 stations and 10 lines per region passes (e.g. Gare du Nord is one complex; Chengdu East is top tier; BART is Metro) |
-| 3 · Map | One joined tile source (`pilot.pmtiles`, from per-region files), minimal basemap, both colour modes, construction and freight toggles, labels and tooltips, outlines | Each region reads correctly on a laptop and a phone; views under 600 KB |
-| 4 · Compare | The three presets, same-scale side by side, synced zoom, stats panel with region size | SF vs Paris and Paris vs Chengdu show the right totals at the same real scale |
-| 5 · Scale | One country (France), then the world. Corridor merging spike and the low-zoom overview. Custom domain before public launch | World build runs end to end; low-zoom views stay inside the budget |
+| Phase | Work | Done when | Status |
+| --- | --- | --- | --- |
+| 0 · Setup | Repo, `docs/`, `CLAUDE.md`. Vite + React + TypeScript app skeleton. One rail cache from the planet (`rail-extract cache`), the three regions cut from it | Three extracts from one planet pass; empty app runs locally | done |
+| 1 · Data | Filter to the data spec: features, relations side table, stop positions. QA report per region | Every data spec checklist item done; QA report lists broken routes and orphan stations | done |
+| 2 · Types and stations | Rail type classification, station model, size tiers, per-region commuter lists and override file | A hand-made answer list of about 10 stations and 10 lines per region passes (e.g. Gare du Nord is one complex; Chengdu East is top tier; BART is Metro) | done; one known failure (`成都` tier 3) |
+| 3 · Map | One tile source (now `world.pmtiles`; the pilot join is removed), minimal basemap, both colour modes, construction and freight toggles, labels and tooltips, outlines | Each region reads correctly on a laptop and a phone; views under 600 KB | not met: Europe z5 to z8 laptop views are over 600 KB |
+| 4 · Compare | The three presets, same-scale side by side, synced zoom, stats panel with region size | SF vs Paris and Paris vs Chengdu show the right totals at the same real scale | skipped: the Compare mode is disabled in the app |
+| 5 · Scale | One country (France), then the world. Corridor merging spike and the low-zoom overview. Custom domain before public launch | World build runs end to end; low-zoom views stay inside the budget | not met: world build and deploy done; low-zoom budget and custom domain open |
 
 The three pilot regions are small, so the low-zoom problems measured in the research (tile caps, millions of tiny pieces) won't appear until phase 5. Corridor merging can wait until then.
 
@@ -39,7 +39,7 @@ After any change that can alter the data (a new region, a rule in `classify.rs` 
 
 What the checker covers, per region touched:
 
-1. **Answer lists.** `pipeline/check.py` runs the hand-made lists in `pipeline/answers/<slug>.json` (major stations and their tier, lines that must exist, rail types of named lines). A region without a list gets one drafted from its biggest stations (`top.py`) and the user's knowledge of the place, then checked.
+1. **Answer lists.** `pipeline/check.py` runs the hand-made lists in `pipeline/answers/<slug>.json` (major stations and their tier, lines that must exist, rail types of named lines). A region without a list gets one drafted from its biggest stations (`pipeline/top.py <slug>`) and the user's knowledge of the place, then checked.
 2. **Major stations.** The top 20 stations by size must be real, correctly named, in the right tier and (for the big terminals) tier 1; none may be missing, split in two, or an airport or yard wrongly ranked. Compare against a known list (Wikipedia busiest stations of the country).
 3. **Random city spot checks.** Pick at least 5 cities at random (a mix of big, mid and small, and at least one with only a tram, one with a metro, one with none), and for each check: it has a dot only if it has metro, tram or monorail; it has one dot, not two; its metro/tram length and station count are within about 25% of a reference (Wikipedia, operator pages, or OSM itself with a second query); its main station is on the map under the right name.
 4. **Aggregates.** Region totals (route km by type, stations, lines) against published figures: network length per country or city, count of high-speed km (UIC 200 km/h outside China, 250 km/h in China), metro systems and their km. Flag anything off by more than 25%, or a type that is zero where it should not be (no metro in a city that has one, no high-speed in France).
