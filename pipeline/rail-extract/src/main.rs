@@ -1,23 +1,19 @@
-//! rail-extract: OSM planet -> world rail cache -> per-region filter output for Rail Globe.
+//! rail-extract: OSM planet -> world rail cache -> per-region cuts -> station model, side files and MLT tiles, for Rail Globe.
 //!
-//!     rail-extract cache --planet planet-260928.osm.pbf [--out data/cache/planet-260928.railcache] [--threads N]
-//!     rail-extract cut [--cache data/cache/<name>.railcache] [--regions pipeline/regions] [--data data] <slug>...
-//!     rail-extract outlines --level 2|4 [--country CC] [--out data/regions]
-//!     rail-extract outlines --cities data/world/city-outlines-wanted.json [--out data/regions]   (city outlines from the cache)
-//!     rail-extract build <slug>... [--no-tiles | --combined NAME]       (or cut ... --build)
+//! Subcommands (each prints its own flags with `--help`; paths default to this repository, wherever the command runs from):
 //!
-//! `cache` reads the planet once (about a minute) and keeps every rail candidate of the world with its coordinates.
-//! `cut` writes data/<slug>/{features.geojsonl, relations.jsonl, stop_positions.jsonl, qa.json, airports.geojsonl} for each region
-//! outline (pipeline/regions/<slug>.geojson, hand-made, else data/regions/<slug>.geojson), in about a second; the cut also classifies rail types (classify.rs); stations.py and the later steps read those files.
-//! `build` runs the station model, the stations under construction, the tile input, the Rust MLT tile writer (tilewriter.rs) and the side files (was
-//! stations.py, con_stations.py and build_tiles.py); --no-tiles writes side files only (regions drawn from a bigger region's tiles);
-//! --combined NAME writes side files and tile input for every slug, then one tile writer run over all of them -> NAME.pmtiles and NAME.parts.json (no per-region PMTiles).
-//! Whenever a pilot source was built with tiles, pilot.pmtiles and pilot.parts.json are rewritten from the pilot sources' tile input.
-//!     rail-extract world-list [--data data/world] [--min-km 1] (--slugs-file FILE | <slug>...)   which countries of a world cut have passenger rail -> kept.txt, dropped.txt
-//!     rail-extract places [--data DIR] [--out DIR] (--parts FILE | <slug>...)       city / town / country labels (places.json) and the search index (search.json); `build` (pilot) and `world` run it last
-//!     rail-extract tiles <slug>... [--name NAME] [--out DIR]       the tile writer alone over existing tile input (default out data/tiles)
-//! `outlines` writes country (level 2) or province / state (level 4) outlines from the admin boundaries in the cache.
-//! Paths default to this repository, wherever the command runs from.
+//!   cache      read the planet once (about a minute) -> data/cache/<planet>.railcache: every rail candidate of the world with its coordinates
+//!   outlines   country (`--level 2`), province / state (`--level 4`, 5) or city (`--cities WANTED.json`) outlines from the cache -> data/regions
+//!   cut        per region outline (pipeline/regions/<slug>.geojson, else data/regions/<slug>.geojson): data/<slug>/{features.geojsonl,
+//!              features.typed.geojsonl (rail types, classify.rs), relations.jsonl, stop_positions.jsonl, qa.json, airports.geojsonl, ...}, in about a second
+//!   build      from a cut: station model, stations under construction, tile input, region statistics and side files, then
+//!              `<out>/<slug>.pmtiles` through the Rust MLT writer (tilewriter.rs) unless `--no-tiles`; `cut ... --build` builds straight after the cut
+//!   world      one PMTiles file (`world.pmtiles`) and `world.parts.json` over the tile input of many slugs, in memory-bounded passes, then `places`
+//!   world-list which countries of a world cut have passenger rail -> kept.txt, dropped.txt
+//!   places     city / town / country labels (places.json) and the search index (search.json) from the cache's place nodes
+//!   pminfo     header, tiles and bytes per zoom of a PMTiles file
+//!
+//! A user mistake (no cut before a build, a missing outline, cache or config parent) is reported as `error: ...` with exit code 1.
 
 mod assemble;
 mod build;
@@ -42,34 +38,216 @@ mod tilewriter;
 mod tiles;
 mod world_list;
 
+use clap::{Args, Parser, Subcommand};
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-fn repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().expect("repository root")
+/// Print `error: msg` and exit with code 1 (a user mistake, not a bug).
+pub fn fail(msg: impl std::fmt::Display) -> ! {
+    eprintln!("error: {msg}");
+    std::process::exit(1)
 }
 
-fn usage() -> ! {
-    eprintln!(
-        "usage:\n  rail-extract cache --planet PLANET.osm.pbf [--out data/cache/<planet>.railcache] [--threads N]\n  \
-         rail-extract cut [--cache FILE] [--regions DIR] [--data DIR] [--threads N] [--strict-exemptions] <slug>...\n  \
-         rail-extract outlines --level 2|4 [--country CC] [--cache FILE] [--out data/regions]\n  \
-         rail-extract outlines --cities WANTED.json [--cache FILE] [--out data/regions]      (city outlines; WANTED.json from `places`)\n  \
-         rail-extract build <slug>... [--no-tiles | --combined NAME]      (cut ... --build: build straight after the cut)\n  \
-         rail-extract tiles <slug>... [--name NAME] [--out DIR] [--data DIR]\n  \
-         rail-extract world [--data DIR] [--out DIR] [--name NAME] [--deep-zoom N] [--regions DIR] (--slugs-file FILE | <slug>...)\n  \
-         rail-extract world-list [--data DIR] [--min-km N] (--slugs-file FILE | <slug>...)      (kept.txt / dropped.txt from a world cut)\n  \
-         rail-extract places [--data DIR] [--out DIR] [--cache FILE] (--parts FILE | <slug>...)      (places.json and search.json from the cache's place nodes)\n  \
-         rail-extract pminfo FILE [--tsv FILE] [--top N]"
-    );
-    std::process::exit(2)
+fn repo() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap_or_else(|e| fail(format!("repository root: {e}")))
+}
+
+#[derive(Parser)]
+#[command(name = "rail-extract", about = "OSM planet -> world rail cache -> region cuts -> station model, side files and MLT tiles (Rail Globe)")]
+struct Cli {
+    #[command(subcommand)]
+    cmd: Cmd,
+}
+
+#[derive(Args)]
+struct Threads {
+    /// worker threads (default: all cores)
+    #[arg(long)]
+    threads: Option<usize>,
+}
+
+#[derive(Subcommand)]
+enum Cmd {
+    /// Read the planet once and keep every rail candidate of the world: data/cache/<planet>.railcache
+    Cache {
+        /// the planet file, e.g. planet-260928.osm.pbf
+        #[arg(long)]
+        planet: PathBuf,
+        /// output file [default: data/cache/<planet name>.railcache]
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[command(flatten)]
+        t: Threads,
+    },
+    /// Cut each region's outline out of the cache: data/<slug>/ (features, relations, stop positions, rail types, ...)
+    Cut {
+        /// the rail cache [default: the newest .railcache in data/cache]
+        #[arg(long)]
+        cache: Option<PathBuf>,
+        /// the only folder searched for <slug>.geojson [default: pipeline/regions, then data/regions]
+        #[arg(long)]
+        regions: Option<PathBuf>,
+        /// output folder [default: data]
+        #[arg(long)]
+        data: Option<PathBuf>,
+        /// exit with code 1 when a config exemption matched fewer features than its expect_min
+        #[arg(long)]
+        strict_exemptions: bool,
+        /// build straight after the cut (like `rail-extract build <slug>...`)
+        #[arg(long)]
+        build: bool,
+        /// with --build: side files only, no <slug>.pmtiles
+        #[arg(long, requires = "build")]
+        no_tiles: bool,
+        #[command(flatten)]
+        t: Threads,
+        /// region slugs
+        #[arg(required = true)]
+        slugs: Vec<String>,
+    },
+    /// Write country (level 2), province / state (level 4, 5) or city outlines from the cache's admin boundaries
+    Outlines {
+        /// admin level, e.g. 2, 4 or 5
+        #[arg(long, conflicts_with = "cities", required_unless_present = "cities")]
+        level: Option<String>,
+        /// only this country code (with --level)
+        #[arg(long, conflicts_with = "cities")]
+        country: Option<String>,
+        /// city outlines for the places in WANTED.json (written by `places`)
+        #[arg(long)]
+        cities: Option<PathBuf>,
+        /// the rail cache [default: the newest .railcache in data/cache]
+        #[arg(long)]
+        cache: Option<PathBuf>,
+        /// output folder [default: data/regions]
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[command(flatten)]
+        t: Threads,
+    },
+    /// Station model, construction stations, tile input, statistics and side files for each cut region, then <slug>.pmtiles
+    Build {
+        /// skip the tile writer: side files only (regions drawn from a bigger region's tiles, or the world build)
+        #[arg(long)]
+        no_tiles: bool,
+        /// folder of the cut [default: data]
+        #[arg(long)]
+        data: Option<PathBuf>,
+        /// output folder for side files and <slug>.pmtiles [default: app/public/data]
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[command(flatten)]
+        t: Threads,
+        /// region slugs (each needs a prior `cut`)
+        #[arg(required = true)]
+        slugs: Vec<String>,
+    },
+    /// One PMTiles file over the tile input of many slugs (memory-bounded passes), then places.json and search.json
+    World {
+        /// folder of the cut and build [default: data/world]
+        #[arg(long)]
+        data: Option<PathBuf>,
+        /// output folder [default: app/public/data/world]
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// output name: <name>.pmtiles and <name>.parts.json
+        #[arg(long, default_value = "world")]
+        name: String,
+        /// zoom whose tiles are the unit of one pass (5 and 6 give the same file)
+        #[arg(long, default_value_t = 6)]
+        deep_zoom: u8,
+        /// folder searched for outlines [default: data/regions]
+        #[arg(long)]
+        regions: Option<PathBuf>,
+        /// the rail cache for places [default: the newest .railcache in data/cache]
+        #[arg(long)]
+        cache: Option<PathBuf>,
+        /// file with slugs separated by white space
+        #[arg(long)]
+        slugs_file: Option<PathBuf>,
+        #[command(flatten)]
+        t: Threads,
+        /// region slugs (or --slugs-file)
+        #[arg(required_unless_present = "slugs_file")]
+        slugs: Vec<String>,
+    },
+    /// Which countries of a world cut have passenger rail: kept.txt and dropped.txt
+    WorldList {
+        /// folder of the cut [default: data/world]
+        #[arg(long)]
+        data: Option<PathBuf>,
+        /// least passenger route km to be kept
+        #[arg(long, default_value_t = 1.0)]
+        min_km: f64,
+        /// file with slugs separated by white space
+        #[arg(long)]
+        slugs_file: Option<PathBuf>,
+        /// region slugs (or --slugs-file)
+        #[arg(required_unless_present = "slugs_file")]
+        slugs: Vec<String>,
+    },
+    /// City, town and country labels (places.json) and the search index (search.json)
+    Places {
+        /// folder of the cut [default: data]
+        #[arg(long)]
+        data: Option<PathBuf>,
+        /// output folder [default: app/public/data]
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// the rail cache [default: the newest .railcache in data/cache]
+        #[arg(long)]
+        cache: Option<PathBuf>,
+        #[command(flatten)]
+        t: Threads,
+        /// region slugs
+        #[arg(required = true)]
+        slugs: Vec<String>,
+    },
+    /// Header, tiles and bytes per zoom of a PMTiles file
+    Pminfo {
+        file: PathBuf,
+        /// also write one row per tile size to this TSV file
+        #[arg(long)]
+        tsv: Option<PathBuf>,
+        /// how many of the biggest tiles to list
+        #[arg(long, default_value_t = 15)]
+        top: usize,
+    },
+}
+
+impl Cmd {
+    fn threads(&self) -> Option<usize> {
+        match self {
+            Cmd::Cache { t, .. } | Cmd::Cut { t, .. } | Cmd::Outlines { t, .. } | Cmd::Build { t, .. } | Cmd::World { t, .. } | Cmd::Places { t, .. } => t.threads,
+            Cmd::WorldList { .. } | Cmd::Pminfo { .. } => None,
+        }
+    }
+}
+
+/// the slugs given on the command line plus those in `--slugs-file` (white-space separated)
+fn with_slugs_file(mut slugs: Vec<String>, file: Option<&Path>) -> Vec<String> {
+    if let Some(f) = file {
+        let text = std::fs::read_to_string(f).unwrap_or_else(|e| fail(format!("read {}: {e}", f.display())));
+        slugs.extend(text.split_whitespace().map(String::from));
+    }
+    if slugs.is_empty() {
+        fail("no slugs given (list them, or use --slugs-file with a non-empty file)");
+    }
+    slugs
 }
 
 /// the one .railcache in data/cache (the newest when there are several)
 fn default_cache(root: &Path) -> PathBuf {
     let dir = root.join("data/cache");
-    find_cache(root).unwrap_or_else(|| panic!("no .railcache in {}: run `rail-extract cache` first", dir.display()))
+    find_cache(root).unwrap_or_else(|| fail(format!("no .railcache in {}: run `rail-extract cache --planet <planet.osm.pbf>` first (or pass --cache)", dir.display())))
+}
+
+fn open_cache(path: &Path) -> cache::Cache {
+    if !path.exists() {
+        fail(format!("cache {} does not exist: run `rail-extract cache --planet <planet.osm.pbf>` first", path.display()));
+    }
+    cache::Cache::open(path).unwrap_or_else(|e| fail(format!("cache {}: {e}", path.display())))
 }
 
 fn find_cache(root: &Path) -> Option<PathBuf> {
@@ -85,7 +263,7 @@ fn find_cache(root: &Path) -> Option<PathBuf> {
     v.pop().map(|x| x.1)
 }
 
-/// city, town and country labels and the search index for `slugs` -> <out>/places.json, search.json (places.rs); the pilot and world builds call it last
+/// city, town and country labels and the search index for `slugs` -> <out>/places.json, search.json (places.rs); the world build calls it last
 fn run_places(root: &Path, data: &Path, out: &Path, cache: Option<PathBuf>, slugs: &[String]) {
     match cache.or_else(|| find_cache(root)) {
         Some(c) => places::run(data, out, &c, slugs, &[root.join("pipeline/regions"), root.join("data/regions")], &root.join("data/regions")),
@@ -99,35 +277,35 @@ fn no_tile_input(data: &Path, slug: &str) -> bool {
     tiles::TILE_LAYERS.iter().all(|(_, f)| std::fs::metadata(tmp.join(f)).map_or(true, |m| m.len() == 0))
 }
 
-/// data bounds [west, south, east, north] of a region from its outline (hand-made first, else data/regions)
-fn outline_bounds(root: &Path, slug: &str) -> [f64; 4] {
-    outline_bounds_in(&[root.join("pipeline/regions"), root.join("data/regions")], slug)
-}
-
-/// the same, searching the given folders in order
+/// data bounds [west, south, east, north] of a region from its outline, searching the given folders in order
 fn outline_bounds_in(dirs: &[PathBuf], slug: &str) -> [f64; 4] {
     let outline = dirs
         .iter()
         .map(|d| d.join(format!("{slug}.geojson")))
         .find(|p| p.exists())
-        .unwrap_or_else(|| panic!("no outline {slug}.geojson"));
+        .unwrap_or_else(|| fail(format!("no outline {slug}.geojson in {dirs:?}: run `rail-extract outlines` or add one")));
     let b = region::Region::load(slug, &outline).bbox; // min lat, min lon, max lat, max lon in 1e-7 degrees
     let deg = |v: i32| v as f64 / 1e7;
     [deg(b[1]), deg(b[0]), deg(b[3]), deg(b[2])]
 }
 
 /// stations, construction stations, tile input and side files for each region (in parallel); then, when `tiles` is on, the tile writer
-/// for each region one after the other (it holds a whole region in memory) -> <out>/<slug>.pmtiles (not for pilot sources when the join runs), and the pilot join when a pilot source was built
-fn build_regions(root: &Path, slugs: &[String], tiles: bool, data: Option<&String>, out: Option<&String>, combined: bool) {
+/// for each region one after the other (it holds a whole region in memory) -> <out>/<slug>.pmtiles
+fn build_regions(root: &Path, slugs: &[String], tiles: bool, data: Option<&PathBuf>, out: Option<&PathBuf>) {
     let paths = site::Paths {
-        data: data.map(PathBuf::from).unwrap_or_else(|| root.join("data")),
+        data: data.cloned().unwrap_or_else(|| root.join("data")),
         config: root.join("pipeline/config"),
-        out: out.map(PathBuf::from).unwrap_or_else(|| root.join("app/public/data")),
+        out: out.cloned().unwrap_or_else(|| root.join("app/public/data")),
         regions: vec![root.join("pipeline/regions"), root.join("data/regions")],
     };
+    for s in slugs {
+        if let Err(e) = site::preflight(s, &paths) {
+            fail(e);
+        }
+    }
     let logs: Vec<(String, Vec<String>)> = slugs.par_iter().map(|s| (s.clone(), site::build(s, &paths))).collect();
     for (s, log) in logs {
-        eprintln!("build {s}{}", if tiles { "" } else if combined { " (tile input for combined)" } else { " (side files only)" });
+        eprintln!("build {s}{}", if tiles { "" } else { " (side files only)" });
         for l in log {
             eprintln!("{l}");
         }
@@ -135,130 +313,62 @@ fn build_regions(root: &Path, slugs: &[String], tiles: bool, data: Option<&Strin
     if !tiles {
         return;
     }
-    // a pilot source is drawn from pilot.pmtiles only (nothing in the app reads <slug>.pmtiles), so its own file is skipped when the join will run
-    let pilot_built = PILOT_SOURCES.iter().any(|p| slugs.iter().any(|s| s == p));
-    let missing_input = PILOT_SOURCES.iter().find(|s| no_tile_input(&paths.data, s));
-    let join = pilot_built && missing_input.is_none();
     for s in slugs {
-        if join && PILOT_SOURCES.contains(&s.as_str()) {
-            continue;
-        }
         if no_tile_input(&paths.data, s) {
             eprintln!("warning: no tiles for {s}: no features in its tile input");
             continue;
         }
         tilewriter::run(&paths.data, std::slice::from_ref(s), &paths.out, s);
     }
-    if join {
-        join_pilot(root, &paths.data, &paths.out);
-        let pilot: Vec<String> = PILOT_SOURCES.iter().map(|s| s.to_string()).collect();
-        run_places(root, &paths.data, &paths.out, None, &pilot);
-    } else if let (true, Some(s)) = (pilot_built, missing_input) {
-        eprintln!("warning: pilot join skipped: no tile input for {s}");
-    }
-}
-
-/// One tile writer run over the tile input (data/<slug>/tiles_tmp) that `build_regions` just wrote for every slug:
-/// <out>/<name>.pmtiles, plus <name>.parts.json (each slug and its outline's bounds [west, south, east, north]).
-/// A slug with no features is warned about and left out. Both outputs are written to a temporary file and renamed on success.
-fn build_combined(root: &Path, slugs: &[String], name: &str, data: Option<&String>, out: Option<&String>) {
-    assert!(name != "pilot" && !slugs.iter().any(|s| s == name) && !name.contains(['/', '\\']), "bad --combined name {name:?}: not pilot, not a slug, no path separators");
-    let data = data.map(PathBuf::from).unwrap_or_else(|| root.join("data"));
-    let out = out.map(PathBuf::from).unwrap_or_else(|| root.join("app/public/data"));
-    let mut used: Vec<String> = Vec::new();
-    let mut parts = Vec::new();
-    for slug in slugs {
-        if no_tile_input(&data, slug) {
-            eprintln!("warning: combined build skips {slug}: no features in its tile input");
-            continue;
-        }
-        parts.push(serde_json::json!({ "slug": slug, "bounds": outline_bounds(root, slug) }));
-        used.push(slug.clone());
-    }
-    assert!(!used.is_empty(), "combined build: no region has tile input");
-    write_joined(&data, &used, &out, name, &parts);
-}
-
-/// the tile writer over `slugs` -> <out>/<name>.pmtiles and <name>.parts.json (both through a temporary file and a rename)
-fn write_joined(data: &Path, slugs: &[String], out: &Path, name: &str, parts: &[serde_json::Value]) {
-    let t = Instant::now();
-    std::fs::create_dir_all(out).expect("create output folder");
-    let _ = std::fs::remove_file(out.join(format!("{name}.tmp.pmtiles")));
-    let tmp_json = out.join(format!("{name}.parts.tmp.json"));
-    tilewriter::run(data, slugs, out, name);
-    // written after the tile writer returns, so a writer panic leaves no parts.tmp.json behind
-    std::fs::write(&tmp_json, serde_json::to_string_pretty(parts).unwrap() + "\n").expect("write parts.json");
-    std::fs::rename(&tmp_json, out.join(format!("{name}.parts.json"))).expect("rename parts.json");
-    let mb = std::fs::metadata(out.join(format!("{name}.pmtiles"))).map_or(0.0, |m| m.len() as f64 / 1e6);
-    eprintln!("combined {name}.pmtiles: {mb:.1} MB, {:.1} s", t.elapsed().as_secs_f64());
-}
-
-/// the tiled pilot sources the app draws from one file (app/src/regions.ts, TILES); the app learns each one's bounds from pilot.parts.json
-const PILOT_SOURCES: [&str; 6] = ["sf-bay-area", "china", "de", "fr", "ch", "it"];
-
-/// One tile writer run over the pilot sources' tile input -> pilot.pmtiles: one tile source (about 52 style layers instead of 155), and
-/// pilot.parts.json (each source's slug and outline bounds, so the app can tell which side files a feature belongs to). Reads the tile
-/// input every earlier `build` left in data/<slug>/tiles_tmp, so a partial rebuild refreshes the join (the caller has checked that every source has tile input).
-/// Bounds may overlap (neighbouring countries): the outlines are cut apart, so a feature is in one source, except the few ways that
-/// cross a border (a handful per pair), which are drawn twice, identically; the app tells the sources apart by outline (regions.ts partAt).
-fn join_pilot(root: &Path, data: &Path, out: &Path) {
-    let slugs: Vec<String> = PILOT_SOURCES.iter().map(|s| s.to_string()).collect();
-    let parts: Vec<_> = slugs.iter().map(|s| serde_json::json!({ "slug": s, "bounds": outline_bounds(root, s) })).collect();
-    write_joined(data, &slugs, out, "pilot", &parts);
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let Some(cmd) = args.first() else { usage() };
-    let root = repo();
-    let mut opt: std::collections::HashMap<&str, String> = Default::default();
-    let mut rest = Vec::new();
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            k @ ("--planet" | "--out" | "--cache" | "--regions" | "--data" | "--threads" | "--level" | "--country" | "--combined" | "--name" | "--deep-zoom" | "--slugs-file" | "--tsv" | "--top" | "--min-km" | "--parts" | "--cities") => {
-                opt.insert(k, args.get(i + 1).cloned().unwrap_or_else(|| usage()));
-                i += 2;
-            }
-            "-h" | "--help" => usage(),
-            k @ ("--build" | "--no-tiles" | "--strict-exemptions") => {
-                opt.insert(k, String::new());
-                i += 1;
-            }
-            s if s.starts_with("--") => usage(),
-            s => {
-                rest.push(s.to_string());
-                i += 1;
-            }
-        }
+    // a panic that is a user mistake caught late (a missing config parent, a broken outline) reads as `error: ...` with exit code 1;
+    // RUST_BACKTRACE keeps the default hook (location and backtrace) for debugging
+    if std::env::var_os("RUST_BACKTRACE").is_none() {
+        std::panic::set_hook(Box::new(|info| {
+            let p = info.payload();
+            let msg = p.downcast_ref::<String>().map(String::as_str).or_else(|| p.downcast_ref::<&str>().copied()).unwrap_or("internal error");
+            fail(msg)
+        }));
     }
-    if let Some(t) = opt.get("--threads") {
-        rayon::ThreadPoolBuilder::new().num_threads(t.parse().expect("--threads")).build_global().expect("thread pool");
+    let cli = Cli::parse();
+    let root = repo();
+    if let Some(t) = cli.cmd.threads() {
+        rayon::ThreadPoolBuilder::new().num_threads(t).build_global().unwrap_or_else(|e| fail(format!("--threads: {e}")));
     }
 
-    match cmd.as_str() {
-        "cache" => {
-            let planet = PathBuf::from(opt.get("--planet").unwrap_or_else(|| usage()));
-            let out = opt.get("--out").map(PathBuf::from).unwrap_or_else(|| {
+    match cli.cmd {
+        Cmd::Cache { planet, out, .. } => {
+            if !planet.exists() {
+                fail(format!("planet file {} does not exist", planet.display()));
+            }
+            let out = out.unwrap_or_else(|| {
                 let stem = planet.file_name().unwrap().to_string_lossy().trim_end_matches(".osm.pbf").to_string();
                 root.join("data/cache").join(format!("{stem}.railcache"))
             });
-            std::fs::create_dir_all(out.parent().unwrap()).expect("create cache folder");
+            std::fs::create_dir_all(out.parent().unwrap()).unwrap_or_else(|e| fail(format!("create cache folder: {e}")));
             build::build(&planet, &out);
         }
-        "cut" => {
-            if rest.is_empty() || opt.contains_key("--combined") {
-                usage(); // --combined belongs to `build`
-            }
+        Cmd::Cut { cache, regions, data, strict_exemptions, build, no_tiles, slugs, .. } => {
             let t0 = Instant::now();
-            let path = opt.get("--cache").map(PathBuf::from).unwrap_or_else(|| default_cache(&root));
+            let path = cache.unwrap_or_else(|| default_cache(&root));
             // hand-made outlines (pipeline/regions) first, then the ones `outlines` wrote (data/regions)
-            let dirs: Vec<PathBuf> = match opt.get("--regions") {
-                Some(d) => vec![PathBuf::from(d)],
+            let dirs: Vec<PathBuf> = match regions {
+                Some(d) => vec![d],
                 None => vec![root.join("pipeline/regions"), root.join("data/regions")],
             };
-            let data = opt.get("--data").map(PathBuf::from).unwrap_or_else(|| root.join("data"));
-            let c = cache::Cache::open(&path).unwrap_or_else(|e| panic!("{e}"));
+            let data_dir = data.clone().unwrap_or_else(|| root.join("data"));
+            let outline_files: Vec<PathBuf> = slugs
+                .iter()
+                .map(|slug| {
+                    dirs.iter()
+                        .map(|d| d.join(format!("{slug}.geojson")))
+                        .find(|p| p.exists())
+                        .unwrap_or_else(|| fail(format!("no outline {slug}.geojson in {dirs:?}: run `rail-extract outlines` or add one")))
+                })
+                .collect();
+            let c = open_cache(&path);
             eprintln!(
                 "[{:6.2}s] cache {}: {} ways, {} tagged nodes, {} relations",
                 t0.elapsed().as_secs_f64(),
@@ -268,19 +378,15 @@ fn main() {
                 c.rel_idx().len()
             );
             // regions are independent: cut them in parallel
-            let sums: Vec<cut::Summary> = rest
+            let sums: Vec<cut::Summary> = slugs
                 .par_iter()
-                .map(|slug| {
-                    let path = dirs
-                        .iter()
-                        .map(|d| d.join(format!("{slug}.geojson")))
-                        .find(|p| p.exists())
-                        .unwrap_or_else(|| panic!("no outline {slug}.geojson in {dirs:?}: run `rail-extract outlines` or add one"));
-                    let reg = region::Region::load(slug, &path);
+                .zip(outline_files.par_iter())
+                .map(|(slug, path)| {
+                    let reg = region::Region::load(slug, path);
                     // rail types need the region's rules: its own config, else the template
                     let (cfg_path, _) = site::config_path(&root.join("pipeline/config"), slug);
                     let cfg = Some(classify::Cfg::load(&cfg_path, &root.join("pipeline/regions")));
-                    cut::cut(&c, &reg, &data.join(slug), cfg.as_ref())
+                    cut::cut(&c, &reg, &data_dir.join(slug), cfg.as_ref())
                 })
                 .collect();
             for s in &sums {
@@ -290,105 +396,75 @@ fn main() {
             for w in &stale {
                 eprintln!("  WARNING: {w}");
             }
-            if !stale.is_empty() && opt.contains_key("--strict-exemptions") {
+            if !stale.is_empty() && strict_exemptions {
                 eprintln!("{} stale exemption(s) and --strict-exemptions: failing", stale.len());
                 std::process::exit(1);
             }
-            let n_default = rest.iter().filter(|s| site::config_path(&root.join("pipeline/config"), s).1).count();
+            let n_default = slugs.iter().filter(|s| site::config_path(&root.join("pipeline/config"), s).1).count();
             if n_default > 0 {
                 eprintln!("  {n_default} region(s) without their own pipeline/config/<slug>.json use the template pipeline/config/_default.json");
             }
             eprintln!("[{:6.2}s] cut", t0.elapsed().as_secs_f64());
-            if opt.contains_key("--build") {
-                build_regions(&root, &rest, !opt.contains_key("--no-tiles"), opt.get("--data"), None, false);
+            if build {
+                build_regions(&root, &slugs, !no_tiles, data.as_ref(), None);
             }
             eprintln!("[{:6.2}s] done", t0.elapsed().as_secs_f64());
         }
-        "build" => {
-            if rest.is_empty() {
-                usage();
-            }
+        Cmd::Build { no_tiles, data, out, slugs, .. } => {
             let t0 = Instant::now();
-            match opt.get("--combined") {
-                Some(name) => {
-                    assert!(!opt.contains_key("--no-tiles"), "--combined and --no-tiles do not go together");
-                    build_regions(&root, &rest, false, opt.get("--data"), opt.get("--out"), true);
-                    build_combined(&root, &rest, name, opt.get("--data"), opt.get("--out"));
-                }
-                None => build_regions(&root, &rest, !opt.contains_key("--no-tiles"), opt.get("--data"), opt.get("--out"), false),
-            }
+            build_regions(&root, &slugs, !no_tiles, data.as_ref(), out.as_ref());
             eprintln!("[{:6.2}s] done", t0.elapsed().as_secs_f64());
         }
-        "tiles" => {
-            if rest.is_empty() {
-                usage();
-            }
-            let out = opt.get("--out").map(PathBuf::from).unwrap_or_else(|| root.join("data/tiles"));
-            let name = opt.get("--name").cloned().unwrap_or_else(|| rest.join("+"));
-            let data = opt.get("--data").map(PathBuf::from).unwrap_or_else(|| root.join("data"));
-            tilewriter::run(&data, &rest, &out, &name);
-        }
-        "world" => {
-            let mut slugs = rest.clone();
-            if let Some(f) = opt.get("--slugs-file") {
-                slugs.extend(std::fs::read_to_string(f).unwrap_or_else(|e| panic!("read {f}: {e}")).split_whitespace().map(String::from));
-            }
-            if slugs.is_empty() {
-                usage();
-            }
-            let data = opt.get("--data").map(PathBuf::from).unwrap_or_else(|| root.join("data/world"));
-            let out = opt.get("--out").map(PathBuf::from).unwrap_or_else(|| root.join("app/public/data/world"));
-            let name = opt.get("--name").cloned().unwrap_or_else(|| "world".to_string());
-            let deep: u8 = opt.get("--deep-zoom").map_or(6, |v| v.parse().expect("--deep-zoom"));
-            let dirs = vec![PathBuf::from(opt.get("--regions").cloned().unwrap_or_else(|| root.join("data/regions").to_string_lossy().into_owned()))];
+        Cmd::World { data, out, name, deep_zoom, regions, cache, slugs_file, slugs, .. } => {
+            let slugs = with_slugs_file(slugs, slugs_file.as_deref());
+            let data = data.unwrap_or_else(|| root.join("data/world"));
+            let out = out.unwrap_or_else(|| root.join("app/public/data/world"));
+            // not the same dirs as the other commands on purpose: the world cut reads data/regions only, and a hand-made outline in
+            // pipeline/regions would change the bounds in world.parts.json
+            let dirs = vec![regions.unwrap_or_else(|| root.join("data/regions"))];
             let parts: Vec<_> = slugs.iter().filter(|s| !no_tile_input(&data, s)).map(|s| serde_json::json!({ "slug": s, "bounds": outline_bounds_in(&dirs, s) })).collect();
             let used: Vec<String> = parts.iter().map(|p| p["slug"].as_str().unwrap().to_string()).collect();
+            if used.is_empty() {
+                fail(format!("no slug has tile input in {}: run `rail-extract build <slug>... --no-tiles --data {}` first", data.display(), data.display()));
+            }
             let t = Instant::now();
-            tilewriter::run_world(&data, &used, &out, &name, deep);
-            std::fs::write(out.join(format!("{name}.parts.json")), serde_json::to_string_pretty(&parts).unwrap() + "\n").expect("write parts.json");
+            tilewriter::run_world(&data, &used, &out, &name, deep_zoom);
+            std::fs::write(out.join(format!("{name}.parts.json")), serde_json::to_string_pretty(&parts).unwrap() + "\n").unwrap_or_else(|e| fail(format!("write parts.json: {e}")));
             eprintln!("world {name}: {} slugs, {:.1} s", used.len(), t.elapsed().as_secs_f64());
-            run_places(&root, &data, &out, opt.get("--cache").map(PathBuf::from), &used);
+            run_places(&root, &data, &out, cache, &used);
         }
-        "world-list" => {
-            let mut slugs = rest.clone();
-            if let Some(f) = opt.get("--slugs-file") {
-                slugs.extend(std::fs::read_to_string(f).unwrap_or_else(|e| panic!("read {f}: {e}")).split_whitespace().map(String::from));
-            }
-            if slugs.is_empty() {
-                usage();
-            }
-            let data = opt.get("--data").map(PathBuf::from).unwrap_or_else(|| root.join("data/world"));
-            world_list::run(&data, &slugs, opt.get("--min-km").map_or(1.0, |v| v.parse().expect("--min-km")));
+        Cmd::WorldList { data, min_km, slugs_file, slugs } => {
+            let slugs = with_slugs_file(slugs, slugs_file.as_deref());
+            let data = data.unwrap_or_else(|| root.join("data/world"));
+            world_list::run(&data, &slugs, min_km);
         }
-        "places" => {
-            let mut slugs = rest.clone();
-            if let Some(f) = opt.get("--parts") {
-                let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(f).unwrap_or_else(|e| panic!("read {f}: {e}"))).expect("parse parts file");
-                slugs.extend(v.as_array().expect("parts file is a list").iter().filter_map(|p| p["slug"].as_str().map(String::from)));
+        Cmd::Places { data, out, cache, slugs, .. } => {
+            let data = data.unwrap_or_else(|| root.join("data"));
+            let out = out.unwrap_or_else(|| root.join("app/public/data"));
+            let cache = cache.unwrap_or_else(|| default_cache(&root));
+            if !cache.exists() {
+                fail(format!("cache {} does not exist", cache.display()));
             }
-            if slugs.is_empty() {
-                usage();
-            }
-            let data = opt.get("--data").map(PathBuf::from).unwrap_or_else(|| root.join("data"));
-            let out = opt.get("--out").map(PathBuf::from).unwrap_or_else(|| root.join("app/public/data"));
-            let cache = opt.get("--cache").map(PathBuf::from).unwrap_or_else(|| default_cache(&root));
             places::run(&data, &out, &cache, &slugs, &[root.join("pipeline/regions"), root.join("data/regions")], &root.join("data/regions"));
         }
-        "pminfo" => {
-            let file = rest.first().unwrap_or_else(|| usage());
-            pminfo::run(Path::new(file), opt.get("--tsv").map(Path::new), opt.get("--top").map_or(15, |v| v.parse().expect("--top")));
+        Cmd::Pminfo { file, tsv, top } => {
+            if !file.exists() {
+                fail(format!("{} does not exist", file.display()));
+            }
+            pminfo::run(&file, tsv.as_deref(), top);
         }
-        "outlines" => {
-            let path = opt.get("--cache").map(PathBuf::from).unwrap_or_else(|| default_cache(&root));
-            let out = opt.get("--out").map(PathBuf::from).unwrap_or_else(|| root.join("data/regions"));
-            let c = cache::Cache::open(&path).unwrap_or_else(|e| panic!("{e}"));
-            if let Some(wanted) = opt.get("--cities") {
-                outlines::city_outlines(&c, Path::new(wanted), &out);
+        Cmd::Outlines { level, country, cities, cache, out, .. } => {
+            let path = cache.unwrap_or_else(|| default_cache(&root));
+            let out = out.unwrap_or_else(|| root.join("data/regions"));
+            let c = open_cache(&path);
+            if let Some(wanted) = cities {
+                if !wanted.exists() {
+                    fail(format!("{} does not exist: `rail-extract places` writes it", wanted.display()));
+                }
+                outlines::city_outlines(&c, &wanted, &out);
             } else {
-                let level = opt.get("--level").cloned().unwrap_or_else(|| usage());
-                outlines::outlines(&c, &level, opt.get("--country").map(String::as_str), &out);
+                outlines::outlines(&c, &level.unwrap(), country.as_deref(), &out);
             }
         }
-        _ => usage(),
     }
 }

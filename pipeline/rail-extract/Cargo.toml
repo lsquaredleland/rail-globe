@@ -22,6 +22,7 @@ geojson-vt-rs = "0.2"           # slicing GeoJSON into tiles: Web Mercator proje
 geojson = "0.24"                # feature types of geojson-vt-rs
 mlt-core = "=0.20.4"           # MapLibre Tile (MLT) encoder and decoder
 pmtiles = { version = "0.24", default-features = false, features = ["write"] }    # PMTiles v3 writer (directories, dedup, gzip)
+clap = { version = "4.6.7", features = ["derive"] }
 
 [profile.release]
 opt-level = 3

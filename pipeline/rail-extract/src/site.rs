@@ -160,6 +160,22 @@ pub struct Paths {
     pub regions: Vec<PathBuf>, // pipeline/regions/, data/regions/
 }
 
+/// The inputs `build` needs, checked before any work starts: the cut's files, the config file and the outline.
+pub fn preflight(slug: &str, paths: &Paths) -> Result<(), String> {
+    let dir = paths.data.join(slug);
+    if !dir.join("features.typed.geojsonl").exists() {
+        return Err(format!("no cut for {slug}: {} is missing; run `rail-extract cut {slug}` first (or `cut {slug} --build`)", dir.join("features.typed.geojsonl").display()));
+    }
+    let (cfg, _) = config_path(&paths.config, slug);
+    if !cfg.exists() {
+        return Err(format!("missing config {} for {slug}", cfg.display()));
+    }
+    if !paths.regions.iter().any(|d| d.join(format!("{slug}.geojson")).exists()) {
+        return Err(format!("no outline {slug}.geojson in {:?}: run `rail-extract outlines` or add one", paths.regions));
+    }
+    Ok(())
+}
+
 /// Build one region; returns its log lines.
 pub fn build(slug: &str, paths: &Paths) -> Vec<String> {
     let t0 = Instant::now();
