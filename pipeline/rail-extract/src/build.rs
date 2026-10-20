@@ -10,7 +10,7 @@
 //!      member nodes are needed even when untagged (multipolygon outlines; route stops for the smart-extract membership rule).
 //!   2. ways: rail candidates by tag, plus the member ways of pass 1. Node refs are decoded only for kept ways.
 //!   3. nodes, once: coordinates of every node a kept way or relation needs, the tagged rail nodes, and the place=city / town nodes.
-//! Rail-atlas used a fourth pass (nodes twice) because it also kept roads; tag-only selection does not need the first node pass.
+//! Tag-only selection (no roads) needs only one node pass after the tags-only pass 0.
 
 use crate::cache::{self, *};
 use crate::pbf::*;
@@ -142,31 +142,28 @@ fn city_wikidata(f: &File, nodes: &[BlobRef]) -> std::collections::HashSet<Vec<u
         .collect()
 }
 
-pub fn build(planet: &Path, out: &Path) {
-    let t0 = Instant::now();
-    let lap = |what: &str| eprintln!("[{:7.1}s] {what}", t0.elapsed().as_secs_f64());
-    let file = File::open(planet).unwrap_or_else(|e| panic!("open {}: {e}", planet.display()));
-    let f = &file;
+/// The kept ways of pass 2 as global arrays: tags and node refs per way, and the boundary ways' node refs.
+struct WayData {
+    ids: Vec<i64>,
+    tags: Vec<u8>,
+    tag_end: Vec<usize>,
+    refs: Vec<i64>,
+    ref_end: Vec<usize>,
+    bnd_ids: Vec<i64>,
+    bnd_refs: Vec<i64>,
+    bnd_end: Vec<usize>,
+}
 
-    // ---- index the blobs (cached beside the output) and find where nodes, ways and relations start
-    let (blobs, from_cache) = index(f, &out.with_extension("blobidx")).expect("PBF index");
-    let sorted = blobs.first().map_or(false, |b| !b.data && header_sorted(f, b));
-    assert!(sorted, "the input is not marked Sort.Type_then_ID (sort it with `osmium sort` first)");
-    let data: Vec<BlobRef> = blobs.into_iter().filter(|b| b.data).collect();
-    let n = data.len();
-    let w0 = first_of(f, &data, K_WAYS);
-    let r0 = first_of(f, &data, K_RELS);
-    lap(&format!(
-        "indexed {n} blobs{} (nodes 0..{w0}, ways {w0}..{r0}, relations {r0}..{n})",
-        if from_cache { " from the cached index" } else { "" }
-    ));
+/// Which node a slot (a way ref, a relation member node, a boundary way ref) needs: an index into the sorted `need` list.
+struct NodeSlots {
+    need: Vec<i64>,
+    slot_need: Vec<u32>,
+    bslot0: usize, // the first boundary-way slot (they come last)
+}
 
-    // ---- pass 0, place nodes: whose boundary is wanted
-    let city_wd = city_wikidata(f, &data[..w0]);
-    lap(&format!("pass 0 (nodes, tags only): {} Wikidata ids of place=city nodes", city_wd.len()));
-
-    // ---- pass 1, relations
-    let all_rels: Vec<RelOut> = data[r0..]
+/// Pass 1: the side-table and area relations, and the admin boundaries.
+fn relations_pass(f: &File, blobs: &[BlobRef], city_wd: &std::collections::HashSet<Vec<u8>>) -> Vec<RelOut> {
+    blobs
         .par_iter()
         .map(|r| {
             with_block(f, r, |raw| {
@@ -187,12 +184,12 @@ pub fn build(planet: &Path, out: &Path) {
                         |keys, vals| {
                             keys.iter().any(|k| ty.contains(k)) && {
                                 let t = Sep { blk: &blk, keys, vals };
-                                rules::rel_kind(&t).is_some() || rules::rel_area_wanted(&t) || rules::admin_boundary(&t) || rules::city_boundary(&t, &city_wd)
+                                rules::rel_kind(&t).is_some() || rules::rel_area_wanted(&t) || rules::admin_boundary(&t) || rules::city_boundary(&t, city_wd)
                             }
                         },
                         |id, b| {
                             let sep = Sep { blk: &blk, keys: &b.keys, vals: &b.vals };
-                            let bnd = rules::admin_boundary(&sep) || rules::city_boundary(&sep, &city_wd);
+                            let bnd = rules::admin_boundary(&sep) || rules::city_boundary(&sep, city_wd);
                             let mut tags = Vec::new();
                             ser_tags(&mut tags, b.keys.iter().zip(b.vals.iter()).map(|(&k, &v)| (blk.s(k), blk.s(v))));
                             let mut roles = Vec::new();
@@ -211,24 +208,20 @@ pub fn build(planet: &Path, out: &Path) {
         .collect::<Vec<_>>()
         .into_iter()
         .flatten()
-        .collect();
-    let (bnd_rels, rels): (Vec<RelOut>, Vec<RelOut>) = all_rels.into_iter().partition(|r| r.bnd);
-    let mut bnd_ways: Vec<i64> = bnd_rels.iter().flat_map(|r| r.mem.iter().filter(|m| m.0 == 1).map(|m| m.1)).collect();
-    bnd_ways.par_sort_unstable();
-    bnd_ways.dedup();
-    let mut mem_ways: Vec<i64> = rels.iter().flat_map(|r| r.mem.iter().filter(|m| m.0 == 1).map(|m| m.1)).collect();
-    mem_ways.par_sort_unstable();
-    mem_ways.dedup();
-    lap(&format!(
-        "pass 1 (relations): {} kept, {} member ways; {} admin boundaries (levels 2, 4, 5 and the cities' 6 to 9), {} boundary ways",
-        rels.len(),
-        mem_ways.len(),
-        bnd_rels.len(),
-        bnd_ways.len()
-    ));
+        .collect()
+}
 
-    // ---- pass 2, ways
-    let blks: Vec<WayBlk> = data[w0..r0]
+/// Sorted, de-duplicated ids of the way members of the relations.
+fn member_way_ids(rels: &[RelOut]) -> Vec<i64> {
+    let mut v: Vec<i64> = rels.iter().flat_map(|r| r.mem.iter().filter(|m| m.0 == 1).map(|m| m.1)).collect();
+    v.par_sort_unstable();
+    v.dedup();
+    v
+}
+
+/// Pass 2: rail candidate ways by tag plus the member ways of pass 1 (`mem_ways`), and the boundary ways (`bnd_ways`); both sorted.
+fn ways_pass(f: &File, blobs: &[BlobRef], mem_ways: &[i64], bnd_ways: &[i64]) -> WayData {
+    let blks: Vec<WayBlk> = blobs
         .par_iter()
         .map(|r| {
             with_block(f, r, |raw| {
@@ -278,31 +271,38 @@ pub fn build(planet: &Path, out: &Path) {
     // flatten into global arrays
     let nw: usize = blks.iter().map(|b| b.ids.len()).sum();
     let nr: usize = blks.iter().map(|b| b.refs.len()).sum();
-    let mut way_ids = Vec::with_capacity(nw);
-    let mut way_tags = Vec::with_capacity(blks.iter().map(|b| b.tags.len()).sum());
-    let mut tag_end = Vec::with_capacity(nw);
-    let mut refs = Vec::with_capacity(nr);
-    let mut ref_end = Vec::with_capacity(nw);
-    let (mut bnd_ids, mut bnd_refs, mut bnd_end) = (Vec::new(), Vec::new(), Vec::new());
+    let mut w = WayData {
+        ids: Vec::with_capacity(nw),
+        tags: Vec::with_capacity(blks.iter().map(|b| b.tags.len()).sum()),
+        tag_end: Vec::with_capacity(nw),
+        refs: Vec::with_capacity(nr),
+        ref_end: Vec::with_capacity(nw),
+        bnd_ids: Vec::new(),
+        bnd_refs: Vec::new(),
+        bnd_end: Vec::new(),
+    };
     for b in blks {
-        let b0 = bnd_refs.len();
-        bnd_ids.extend_from_slice(&b.bnd_ids);
-        bnd_refs.extend_from_slice(&b.bnd_refs);
-        bnd_end.extend(b.bnd_end.iter().map(|e| e + b0));
-        let (t0, r0_) = (way_tags.len(), refs.len());
-        way_ids.extend_from_slice(&b.ids);
-        way_tags.extend_from_slice(&b.tags);
-        refs.extend_from_slice(&b.refs);
-        tag_end.extend(b.tag_end.iter().map(|e| e + t0));
-        ref_end.extend(b.ref_end.iter().map(|e| e + r0_));
+        let b0 = w.bnd_refs.len();
+        w.bnd_ids.extend_from_slice(&b.bnd_ids);
+        w.bnd_refs.extend_from_slice(&b.bnd_refs);
+        w.bnd_end.extend(b.bnd_end.iter().map(|e| e + b0));
+        let (t0, r0_) = (w.tags.len(), w.refs.len());
+        w.ids.extend_from_slice(&b.ids);
+        w.tags.extend_from_slice(&b.tags);
+        w.refs.extend_from_slice(&b.refs);
+        w.tag_end.extend(b.tag_end.iter().map(|e| e + t0));
+        w.ref_end.extend(b.ref_end.iter().map(|e| e + r0_));
     }
-    lap(&format!("pass 2 (ways): {nw} kept, {nr} node refs; {} boundary ways, {} node refs", bnd_ids.len(), bnd_refs.len()));
+    w
+}
 
-    // ---- the nodes we need: every way ref, then every relation member node. Each slot maps to an index in the sorted,
-    // de-duplicated `need` list, so after the node pass every coordinate is found by index, with no searching.
-    let mut slots: Vec<(i64, u32)> = refs.iter().copied().enumerate().map(|(i, id)| (id, i as u32)).collect();
+/// The nodes we need: every way ref, then every relation member node, then the boundary way refs. Each slot maps to an index in
+/// the sorted, de-duplicated `need` list, so after the node pass every coordinate is found by index, with no searching.
+fn node_slots(w: &WayData, rels: &[RelOut]) -> NodeSlots {
+    let nr = w.refs.len();
+    let mut slots: Vec<(i64, u32)> = w.refs.iter().copied().enumerate().map(|(i, id)| (id, i as u32)).collect();
     let mut mslot = nr;
-    for r in &rels {
+    for r in rels {
         for &(t, id) in &r.mem {
             if t == 0 {
                 slots.push((id, mslot as u32));
@@ -311,7 +311,7 @@ pub fn build(planet: &Path, out: &Path) {
         }
     }
     let bslot0 = mslot; // boundary way refs come last
-    for &id in &bnd_refs {
+    for &id in &w.bnd_refs {
         slots.push((id, mslot as u32));
         mslot += 1;
     }
@@ -325,11 +325,12 @@ pub fn build(planet: &Path, out: &Path) {
         }
         slot_need[s as usize] = (need.len() - 1) as u32;
     }
-    drop(slots);
-    lap(&format!("{} distinct nodes needed", need.len()));
+    NodeSlots { need, slot_need, bslot0 }
+}
 
-    // ---- pass 3, nodes: coordinates of the needed nodes, and the tagged rail nodes
-    let nblks: Vec<NodeBlk> = data[..w0]
+/// Pass 3: coordinates of the needed nodes, the tagged rail nodes, and the place nodes.
+fn nodes_pass(f: &File, blobs: &[BlobRef], need: &[i64]) -> Vec<NodeBlk> {
+    blobs
         .par_iter()
         .map(|r| {
             with_block(f, r, |raw| {
@@ -384,24 +385,12 @@ pub fn build(planet: &Path, out: &Path) {
                 o
             })
         })
-        .collect();
-    let mut need_ll = vec![(MISSING, MISSING); need.len()];
-    let mut found = 0usize;
-    for b in &nblks {
-        for &(j, la, lo) in &b.found {
-            need_ll[j as usize] = (la, lo);
-        }
-        found += b.found.len();
-    }
-    let ntagged: usize = nblks.iter().map(|b| b.tagged.len()).sum();
-    let nplaces: usize = nblks.iter().map(|b| b.places.len()).sum();
-    let nvillages: usize = nblks.iter().map(|b| b.villages).sum();
-    lap(&format!(
-        "pass 3 (nodes): {found} of {} needed nodes located, {ntagged} tagged rail nodes, {nplaces} place nodes (city, town; {nvillages} villages not kept)",
-        need.len()
-    ));
+        .collect()
+}
 
-    // ---- way records
+/// Way records: tags, then the refs with their coordinates, delta coded; and the index with each way's bbox.
+fn way_records(w: &WayData, slots: &NodeSlots, need_ll: &[(i32, i32)]) -> (Vec<WayIdx>, Vec<u8>) {
+    let nw = w.ids.len();
     let chunk = 1 << 14;
     let parts: Vec<(Vec<WayIdx>, Vec<u8>)> = (0..nw)
         .collect::<Vec<_>>()
@@ -411,16 +400,16 @@ pub fn build(planet: &Path, out: &Path) {
             let mut dat = Vec::new();
             for &i in ix {
                 let off = dat.len() as u64;
-                let ts = if i == 0 { 0 } else { tag_end[i - 1] };
-                dat.extend_from_slice(&way_tags[ts..tag_end[i]]);
-                let rs = if i == 0 { 0 } else { ref_end[i - 1] };
-                let re = ref_end[i];
+                let ts = if i == 0 { 0 } else { w.tag_end[i - 1] };
+                dat.extend_from_slice(&w.tags[ts..w.tag_end[i]]);
+                let rs = if i == 0 { 0 } else { w.ref_end[i - 1] };
+                let re = w.ref_end[i];
                 put_var(&mut dat, (re - rs) as u64);
                 let (mut pid, mut pla, mut plo) = (0i64, 0i64, 0i64);
                 let mut bb = EMPTY;
                 for s in rs..re {
-                    let id = refs[s];
-                    let (la, lo) = need_ll[slot_need[s] as usize];
+                    let id = w.refs[s];
+                    let (la, lo) = need_ll[slots.slot_need[s] as usize];
                     put_zz(&mut dat, id - pid);
                     put_zz(&mut dat, la as i64 - pla);
                     put_zz(&mut dat, lo as i64 - plo);
@@ -429,7 +418,7 @@ pub fn build(planet: &Path, out: &Path) {
                     plo = lo as i64;
                     bbox_add(&mut bb, la, lo);
                 }
-                idx.push(WayIdx { id: way_ids[i], off, bbox: bb });
+                idx.push(WayIdx { id: w.ids[i], off, bbox: bb });
             }
             (idx, dat)
         })
@@ -444,13 +433,15 @@ pub fn build(planet: &Path, out: &Path) {
         }));
         way_dat.extend_from_slice(&dat);
     }
-    drop((way_tags, refs, tag_end, ref_end));
+    (way_idx, way_dat)
+}
 
-    // ---- relation records, and their bboxes (member nodes, member ways, then member relations, three levels deep)
+/// Relation records, and their bboxes (member nodes, member ways, then member relations, three levels deep).
+fn relation_records(rels: &[RelOut], nr: usize, slots: &NodeSlots, need_ll: &[(i32, i32)], way_idx: &[WayIdx]) -> (Vec<RelIdx>, Vec<u8>) {
     let mut rel_idx = Vec::with_capacity(rels.len());
     let mut rel_dat = Vec::new();
     let mut ms = nr;
-    for r in &rels {
+    for r in rels {
         let off = rel_dat.len() as u64;
         rel_dat.extend_from_slice(&r.tags);
         put_var(&mut rel_dat, r.mem.len() as u64);
@@ -464,7 +455,7 @@ pub fn build(planet: &Path, out: &Path) {
             put_bytes(&mut rel_dat, rd.bytes());
             match t {
                 0 => {
-                    let (la, lo) = need_ll[slot_need[ms] as usize];
+                    let (la, lo) = need_ll[slots.slot_need[ms] as usize];
                     ms += 1;
                     put_zz(&mut rel_dat, la as i64);
                     put_zz(&mut rel_dat, lo as i64);
@@ -493,24 +484,28 @@ pub fn build(planet: &Path, out: &Path) {
             }
         }
     }
-    // ---- admin boundaries: ways simplified once here (shared borders stay shared), then the relations
-    let bparts: Vec<(Vec<BWayIdx>, Vec<u8>, usize, usize)> = (0..bnd_ids.len())
+    (rel_idx, rel_dat)
+}
+
+/// Admin boundary ways, simplified once here (shared borders stay shared): index, data, points before and after.
+fn boundary_way_records(w: &WayData, slots: &NodeSlots, need_ll: &[(i32, i32)]) -> (Vec<BWayIdx>, Vec<u8>, usize, usize) {
+    let bparts: Vec<(Vec<BWayIdx>, Vec<u8>, usize, usize)> = (0..w.bnd_ids.len())
         .collect::<Vec<_>>()
         .par_chunks(1 << 12)
         .map(|ix| {
             let (mut idx, mut dat, mut before, mut after) = (Vec::new(), Vec::new(), 0, 0);
             let mut pts = Vec::new();
             for &i in ix {
-                let s0 = if i == 0 { 0 } else { bnd_end[i - 1] };
+                let s0 = if i == 0 { 0 } else { w.bnd_end[i - 1] };
                 pts.clear();
-                pts.extend((s0..bnd_end[i]).map(|s| need_ll[slot_need[bslot0 + s] as usize]));
+                pts.extend((s0..w.bnd_end[i]).map(|s| need_ll[slots.slot_need[slots.bslot0 + s] as usize]));
                 if pts.iter().any(|p| p.0 == MISSING) {
                     continue; // incomplete way: its boundaries will not assemble
                 }
                 let keep = simplify(&pts, SIMPLIFY_DEG);
                 before += pts.len();
                 after += keep.len();
-                idx.push(BWayIdx { id: bnd_ids[i], off: dat.len() as u64 });
+                idx.push(BWayIdx { id: w.bnd_ids[i], off: dat.len() as u64 });
                 put_var(&mut dat, keep.len() as u64);
                 let (mut pla, mut plo) = (0i64, 0i64);
                 for p in keep {
@@ -534,9 +529,14 @@ pub fn build(planet: &Path, out: &Path) {
         pts_before += b;
         pts_after += a;
     }
+    (bway_idx, bway_dat, pts_before, pts_after)
+}
+
+/// Admin boundary relations: their way members and bboxes.
+fn boundary_relation_records(bnd_rels: &[RelOut], w: &WayData, slots: &NodeSlots, need_ll: &[(i32, i32)]) -> (Vec<RelIdx>, Vec<u8>) {
     let mut brel_idx = Vec::with_capacity(bnd_rels.len());
     let mut brel_dat = Vec::new();
-    for r in &bnd_rels {
+    for r in bnd_rels {
         let off = brel_dat.len() as u64;
         brel_dat.extend_from_slice(&r.tags);
         let ways: Vec<(i64, &[u8])> = {
@@ -550,16 +550,119 @@ pub fn build(planet: &Path, out: &Path) {
             put_zz(&mut brel_dat, id - pid);
             pid = id;
             put_bytes(&mut brel_dat, role);
-            if let Ok(i) = bnd_ids.binary_search(&id) {
-                let s0 = if i == 0 { 0 } else { bnd_end[i - 1] };
-                for s in s0..bnd_end[i] {
-                    let (la, lo) = need_ll[slot_need[bslot0 + s] as usize];
+            if let Ok(i) = w.bnd_ids.binary_search(&id) {
+                let s0 = if i == 0 { 0 } else { w.bnd_end[i - 1] };
+                for s in s0..w.bnd_end[i] {
+                    let (la, lo) = need_ll[slots.slot_need[slots.bslot0 + s] as usize];
                     bbox_add(&mut bb, la, lo);
                 }
             }
         }
         brel_idx.push(RelIdx { id: r.id, off, bbox: bb });
     }
+    (brel_idx, brel_dat)
+}
+
+/// Tagged rail node records (index and tags), in block order.
+fn tagged_node_records(nblks: &[NodeBlk]) -> (Vec<NodeIdx>, Vec<u8>) {
+    let mut node_idx = Vec::new();
+    let mut node_dat = Vec::new();
+    for b in nblks {
+        let mut s = 0;
+        for (k, &(id, lat, lon)) in b.tagged.iter().enumerate() {
+            node_idx.push(NodeIdx { id, off: node_dat.len() as u64, lat, lon });
+            node_dat.extend_from_slice(&b.tags[s..b.tag_end[k]]);
+            s = b.tag_end[k];
+        }
+    }
+    (node_idx, node_dat)
+}
+
+/// Place node records (city and town, with their place tags), in block order.
+fn place_records(nblks: &[NodeBlk]) -> (Vec<NodeIdx>, Vec<u8>) {
+    let mut place_idx = Vec::new();
+    let mut place_dat = Vec::new();
+    for b in nblks {
+        let mut s = 0;
+        for (k, &(id, lat, lon)) in b.places.iter().enumerate() {
+            place_idx.push(NodeIdx { id, off: place_dat.len() as u64, lat, lon });
+            place_dat.extend_from_slice(&b.ptags[s..b.ptag_end[k]]);
+            s = b.ptag_end[k];
+        }
+    }
+    (place_idx, place_dat)
+}
+
+/// Read the planet in the four passes and write the world rail cache to `out`.
+pub fn build(planet: &Path, out: &Path) {
+    let t0 = Instant::now();
+    let lap = |what: &str| eprintln!("[{:7.1}s] {what}", t0.elapsed().as_secs_f64());
+    let file = File::open(planet).unwrap_or_else(|e| panic!("open {}: {e}", planet.display()));
+    let f = &file;
+
+    // ---- index the blobs (cached beside the output) and find where nodes, ways and relations start
+    let (blobs, from_cache) = index(f, &out.with_extension("blobidx")).expect("PBF index");
+    let sorted = blobs.first().map_or(false, |b| !b.data && header_sorted(f, b));
+    assert!(sorted, "the input is not marked Sort.Type_then_ID (sort it with `osmium sort` first)");
+    let data: Vec<BlobRef> = blobs.into_iter().filter(|b| b.data).collect();
+    let n = data.len();
+    let w0 = first_of(f, &data, K_WAYS);
+    let r0 = first_of(f, &data, K_RELS);
+    lap(&format!(
+        "indexed {n} blobs{} (nodes 0..{w0}, ways {w0}..{r0}, relations {r0}..{n})",
+        if from_cache { " from the cached index" } else { "" }
+    ));
+
+    // ---- pass 0, place nodes: whose boundary is wanted
+    let city_wd = city_wikidata(f, &data[..w0]);
+    lap(&format!("pass 0 (nodes, tags only): {} Wikidata ids of place=city nodes", city_wd.len()));
+
+    // ---- pass 1, relations
+    let all_rels = relations_pass(f, &data[r0..], &city_wd);
+    let (bnd_rels, rels): (Vec<RelOut>, Vec<RelOut>) = all_rels.into_iter().partition(|r| r.bnd);
+    let bnd_ways = member_way_ids(&bnd_rels);
+    let mem_ways = member_way_ids(&rels);
+    lap(&format!(
+        "pass 1 (relations): {} kept, {} member ways; {} admin boundaries (levels 2, 4, 5 and the cities' 6 to 9), {} boundary ways",
+        rels.len(),
+        mem_ways.len(),
+        bnd_rels.len(),
+        bnd_ways.len()
+    ));
+
+    // ---- pass 2, ways
+    let mut w = ways_pass(f, &data[w0..r0], &mem_ways, &bnd_ways);
+    let nw = w.ids.len();
+    let nr = w.refs.len();
+    lap(&format!("pass 2 (ways): {nw} kept, {nr} node refs; {} boundary ways, {} node refs", w.bnd_ids.len(), w.bnd_refs.len()));
+
+    let slots = node_slots(&w, &rels);
+    lap(&format!("{} distinct nodes needed", slots.need.len()));
+
+    // ---- pass 3, nodes: coordinates of the needed nodes, and the tagged rail nodes
+    let nblks = nodes_pass(f, &data[..w0], &slots.need);
+    let mut need_ll = vec![(MISSING, MISSING); slots.need.len()];
+    let mut found = 0usize;
+    for b in &nblks {
+        for &(j, la, lo) in &b.found {
+            need_ll[j as usize] = (la, lo);
+        }
+        found += b.found.len();
+    }
+    let ntagged: usize = nblks.iter().map(|b| b.tagged.len()).sum();
+    let nplaces: usize = nblks.iter().map(|b| b.places.len()).sum();
+    let nvillages: usize = nblks.iter().map(|b| b.villages).sum();
+    lap(&format!(
+        "pass 3 (nodes): {found} of {} needed nodes located, {ntagged} tagged rail nodes, {nplaces} place nodes (city, town; {nvillages} villages not kept)",
+        slots.need.len()
+    ));
+
+    // ---- records
+    let (way_idx, way_dat) = way_records(&w, &slots, &need_ll);
+    (w.tags, w.refs, w.tag_end, w.ref_end) = (Vec::new(), Vec::new(), Vec::new(), Vec::new()); // the records hold them now
+    let (rel_idx, rel_dat) = relation_records(&rels, nr, &slots, &need_ll, &way_idx);
+    let (bway_idx, bway_dat, pts_before, pts_after) = boundary_way_records(&w, &slots, &need_ll);
+    let (brel_idx, brel_dat) = boundary_relation_records(&bnd_rels, &w, &slots, &need_ll);
     lap(&format!(
         "admin boundaries: {} relations, {} ways, {} points simplified to {} ({:.0}%)",
         brel_idx.len(),
@@ -568,30 +671,9 @@ pub fn build(planet: &Path, out: &Path) {
         pts_after,
         100.0 * pts_after as f64 / pts_before.max(1) as f64
     ));
-    drop((need, need_ll, slot_need, bnd_refs));
-
-    // ---- tagged node records
-    let mut node_idx = Vec::with_capacity(ntagged);
-    let mut node_dat = Vec::new();
-    for b in &nblks {
-        let mut s = 0;
-        for (k, &(id, lat, lon)) in b.tagged.iter().enumerate() {
-            node_idx.push(NodeIdx { id, off: node_dat.len() as u64, lat, lon });
-            node_dat.extend_from_slice(&b.tags[s..b.tag_end[k]]);
-            s = b.tag_end[k];
-        }
-    }
-    let mut place_idx = Vec::with_capacity(nplaces);
-    let mut place_dat = Vec::new();
-    for b in &nblks {
-        let mut s = 0;
-        for (k, &(id, lat, lon)) in b.places.iter().enumerate() {
-            place_idx.push(NodeIdx { id, off: place_dat.len() as u64, lat, lon });
-            place_dat.extend_from_slice(&b.ptags[s..b.ptag_end[k]]);
-            s = b.ptag_end[k];
-        }
-    }
-    drop(nblks);
+    drop((w, slots, need_ll));
+    let (node_idx, node_dat) = tagged_node_records(&nblks);
+    let (place_idx, place_dat) = place_records(&nblks);
     lap("assembled way, relation and node records");
 
     cache::write(

@@ -1,16 +1,15 @@
-//! Rail type classification (docs/01-features.md, section 2), ported from pipeline/classify.py (removed 2026-10-12) and run at
-//! the end of every cut:
+//! Rail type classification (docs/01-features.md, section 2), run at the end of every cut:
 //! the cut already holds the features, relations and tags in memory, so no JSON is written and read back in between.
 //!
 //! Writes data/<slug>/features.typed.geojsonl (features.geojsonl with `construction_type`, `type`, `type_source`, `own_type`
-//! added to track), lines.json (one record per line: route_master, else route) and classify_report.json, in the same bytes as
-//! classify.py wrote them. Per-region rules stay in pipeline/config/<slug>.json.
+//! added to track), lines.json (one record per line: route_master, else route) and classify_report.json.
+//! Per-region rules stay in pipeline/config/<slug>.json.
 
 use crate::out::{js, py_str, J};
 use crate::region::Region;
 use crate::rules::{List, Tags};
 use regex::Regex;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::Value;
 use std::path::Path;
 
@@ -82,7 +81,7 @@ impl Get for FeatProps<'_> {
     }
 }
 
-/// tags merged for a line override: the route's tags, overridden by the line source's ({**route, **src} in classify.py)
+/// tags merged for a line override: the route's tags, overridden by the line source's
 struct Merged<'a>(&'a Owned, &'a Owned);
 
 impl Get for Merged<'_> {
@@ -111,7 +110,7 @@ struct ExStats {
     km: f64,
 }
 
-/// classify.py matches(): every key of the rule must match
+/// every key of the rule must match
 struct Rule {
     network: Option<String>,
     network_re: Option<Regex>,
@@ -234,7 +233,7 @@ enum Evidence {
     Stations,
 }
 
-/// pipeline/config/<slug>.json, as classify.py reads it
+/// pipeline/config/<slug>.json
 pub struct Cfg {
     exemptions: Vec<Exemption>,
     china: bool,
@@ -326,7 +325,7 @@ impl Cfg {
     }
 }
 
-/// classify.py speed_kmh: leading number (any Unicode decimal digits, as Python's \d), optional "mph"; None without a number
+/// leading number (any Unicode decimal digits), optional "mph"; None without a number
 pub fn speed_kmh(v: Option<&str>) -> Option<f64> {
     let s = v?.trim_start();
     let digit = |c: char| -> Option<u32> {
@@ -351,7 +350,7 @@ pub fn speed_kmh(v: Option<&str>) -> Option<f64> {
     Some(if s[len..].trim_start().starts_with("mph") { n * 1.609 } else { n })
 }
 
-/// Python truthiness of a speed: None and 0 are false
+/// None and 0 are false
 fn at_least(ms: Option<f64>, v: f64) -> bool {
     ms.map_or(false, |m| m != 0.0 && m >= v)
 }
@@ -753,7 +752,7 @@ pub struct Out {
     pub n_lines: usize,
 }
 
-/// a or b with Python truthiness: b when a is missing or empty
+/// a, or b when a is missing or empty
 fn or<'a>(a: Option<&'a str>, b: Option<&'a str>) -> Option<&'a str> {
     if a.map_or(false, |s| !s.is_empty()) {
         a
@@ -766,7 +765,7 @@ fn english(t: &Owned) -> Option<&str> {
     crate::rules::english_name_kv(t.0.iter().map(|(k, v)| (k.as_bytes(), v.as_bytes()))).and_then(|v| std::str::from_utf8(v).ok())
 }
 
-/// Counter.most_common(): by count, ties in first-seen order
+/// by count, ties in first-seen order
 fn most_common(v: &[(String, i64)]) -> Vec<(String, J)> {
     let mut v = v.to_vec();
     v.sort_by(|a, b| b.1.cmp(&a.1));
@@ -822,64 +821,139 @@ pub enum HsTrack {
     Majority,
 }
 
-pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[TrackIn], pax: &[(i32, i32)]) -> Out {
-    // ways tagged as open track + construction=* are construction track from here on (a way on a running route relation stays open, whatever its mode)
+/// Track tagged as an open railway kind plus `construction=*` is construction track from here on, unless it is on a running route
+/// relation (it then stays open, whatever its mode). The mode per track, in order.
+fn construction_modes<'a>(tracks: &'a [TrackIn], rows: &[RelRow]) -> Vec<Option<&'a str>> {
     let svc_routes: FxHashSet<&str> = rows.iter().filter(|r| r.route && !route_under_construction(&r.tags)).map(|r| r.id.as_str()).collect();
-    let con_mode: Vec<Option<&str>> =
-        tracks.iter().map(|tr| con_by_tags(&tr.props).filter(|_| !tr.routes.iter().any(|r| svc_routes.contains(r.as_str())))).collect();
-    let norm: Vec<TrackIn>;
-    let tracks: &[TrackIn] = if con_mode.iter().any(Option::is_some) {
-        norm = tracks
-            .iter()
-            .zip(&con_mode)
-            .map(|(tr, cm)| {
-                let mut tags = tr.props.tags.0.clone();
-                if let Some(rw) = cm {
-                    tags.retain(|(k, _)| *k != b"railway" && *k != b"construction");
-                    tags.push((b"railway", b"construction"));
-                    tags.push((b"construction", rw.as_bytes()));
-                }
-                TrackIn { start: tr.start, end: tr.end, pos: tr.pos, props: FeatProps { tags: List(tags), osm_id: tr.props.osm_id.clone() }, routes: tr.routes.clone(), first: tr.first, ll: tr.ll.clone() }
-            })
-            .collect();
-        &norm
-    } else {
-        tracks
-    };
-    let routes: Vec<&RelRow> = rows.iter().filter(|r| r.route && !route_under_construction(&r.tags)).collect();
-    let hs_routes: rustc_hash::FxHashMap<String, HsTrack> = {
-        // route -> (km of track, km of high-speed track: highspeed=yes, or high-speed by its own tags); track under construction counts for neither
-        let mut len: rustc_hash::FxHashMap<&str, (f64, f64)> = rustc_hash::FxHashMap::default();
-        for tr in tracks.iter().filter(|tr| !tr.routes.is_empty() && !matches!(tr.props.g("railway"), Some("construction" | "proposed"))) {
-            let km = ll_km(&tr.ll);
-            let hs = tr.props.g("highspeed") == Some("yes") || own_tag_type(&tr.props, cfg).0 == "high_speed";
-            for r in &tr.routes {
-                let e = len.entry(r.as_str()).or_default();
-                e.0 += km;
-                if hs {
-                    e.1 += km;
-                }
+    tracks.iter().map(|tr| con_by_tags(&tr.props).filter(|_| !tr.routes.iter().any(|r| svc_routes.contains(r.as_str())))).collect()
+}
+
+/// The tracks with the construction ways' tags rewritten to `railway=construction` + `construction=<mode>`.
+fn with_construction_tags<'a>(tracks: &'a [TrackIn], con_mode: &[Option<&'a str>]) -> Vec<TrackIn<'a>> {
+    tracks
+        .iter()
+        .zip(con_mode)
+        .map(|(tr, cm)| {
+            let mut tags = tr.props.tags.0.clone();
+            if let Some(rw) = cm {
+                tags.retain(|(k, _)| *k != b"railway" && *k != b"construction");
+                tags.push((b"railway", b"construction"));
+                tags.push((b"construction", rw.as_bytes()));
+            }
+            TrackIn { start: tr.start, end: tr.end, pos: tr.pos, props: FeatProps { tags: List(tags), osm_id: tr.props.osm_id.clone() }, routes: tr.routes.clone(), first: tr.first, ll: tr.ll.clone() }
+        })
+        .collect()
+}
+
+/// Route id -> how much of its track is high-speed (routes with no high-speed track are left out).
+fn high_speed_routes(tracks: &[TrackIn], cfg: &Cfg) -> FxHashMap<String, HsTrack> {
+    // route -> (km of track, km of high-speed track: highspeed=yes, or high-speed by its own tags); track under construction counts for neither
+    let mut len: FxHashMap<&str, (f64, f64)> = FxHashMap::default();
+    for tr in tracks.iter().filter(|tr| !tr.routes.is_empty() && !matches!(tr.props.g("railway"), Some("construction" | "proposed"))) {
+        let km = ll_km(&tr.ll);
+        let hs = tr.props.g("highspeed") == Some("yes") || own_tag_type(&tr.props, cfg).0 == "high_speed";
+        for r in &tr.routes {
+            let e = len.entry(r.as_str()).or_default();
+            e.0 += km;
+            if hs {
+                e.1 += km;
             }
         }
-        len.into_iter()
-            .filter(|(_, (_, hs))| *hs > 0.0)
-            .map(|(r, (all, hs))| (r.to_string(), if hs >= HS_TRACK_SHARE * all { HsTrack::Majority } else if all >= LONG_ROUTE_KM { HsTrack::LongPartial } else { HsTrack::No }))
-            .collect()
-    };
-    let route_pos: rustc_hash::FxHashMap<&str, usize> = routes.iter().enumerate().map(|(i, r)| (r.id.as_str(), i)).collect();
-    let masters: rustc_hash::FxHashMap<&str, &RelRow> = rows.iter().filter(|r| r.master).map(|r| (r.id.as_str(), r)).collect();
-    let mut route_master: rustc_hash::FxHashMap<String, &str> = rustc_hash::FxHashMap::default();
-    for m in rows.iter().filter(|r| r.master) {
-        for id in &m.rel_members {
-            route_master.insert(format!("relation/{id}"), m.id.as_str());
-        }
     }
-    let mut ex_stats: Vec<ExStats> = cfg.exemptions.iter().map(|_| ExStats::default()).collect();
-    let rtype: Vec<(String, &'static str)> = routes.iter().map(|r| route_type(&r.tags, cfg, hs_routes.get(&r.id).copied().unwrap_or(HsTrack::No))).collect();
+    len.into_iter()
+        .filter(|(_, (_, hs))| *hs > 0.0)
+        .map(|(r, (all, hs))| (r.to_string(), if hs >= HS_TRACK_SHARE * all { HsTrack::Majority } else if all >= LONG_ROUTE_KM { HsTrack::LongPartial } else { HsTrack::No }))
+        .collect()
+}
 
-    // lines: route_master where one exists, else the route; master type = most prominent of its routes
+/// The lines of the region: their lines.json text, ids in first-seen order, types, and the counts for the report.
+struct Lines<'a> {
+    ids: Vec<&'a str>,
+    out: Vec<u8>,
+    line_type: FxHashMap<&'a str, String>,
+    by_type: Vec<(String, i64)>,
+    by_type_src: Vec<(String, i64)>,
+}
+
+/// The type of the line a route is on (its route master, else the route itself).
+struct RouteLines<'a, 'b> {
+    route_pos: &'b FxHashMap<&'a str, usize>,
+    route_master: &'b FxHashMap<String, &'a str>,
+    line_type: &'b FxHashMap<&'a str, String>,
+}
+
+impl RouteLines<'_, '_> {
+    /// None when `rid` is not a running route.
+    fn type_of(&self, rid: &str) -> Option<&str> {
+        self.route_pos.get(rid)?;
+        self.line_type.get(self.route_master.get(rid).copied().unwrap_or(rid)).map(String::as_str)
+    }
+}
+
+fn py_opt(o: &mut Vec<u8>, v: Option<&str>) {
+    match v {
+        Some(s) => py_str(o, s),
+        None => o.extend_from_slice(b"null"),
+    }
+}
+
+/// One lines.json record, written with ", " and ": " separators.
+fn write_line<'a>(o: &mut Vec<u8>, lid: &str, first: &Owned, tags: &Owned, t: &str, ts: &str, route_ids: impl Iterator<Item = &'a str>) {
+    o.extend_from_slice(b"{\"id\": ");
+    py_str(o, lid);
+    o.extend_from_slice(b", \"name\": ");
+    py_opt(o, or(tags.g("name"), first.g("name")));
+    o.extend_from_slice(b", \"ref\": ");
+    py_opt(o, or(tags.g("ref"), first.g("ref")));
+    o.extend_from_slice(b", \"name_en\": ");
+    py_opt(o, english(tags).or_else(|| english(first)));
+    o.extend_from_slice(b", \"tags\": {");
+    for (i, (k, v)) in tags.0.iter().enumerate() {
+        if i > 0 {
+            o.extend_from_slice(b", ");
+        }
+        py_str(o, k);
+        o.extend_from_slice(b": ");
+        py_str(o, v);
+    }
+    o.extend_from_slice(b"}, \"colour\": ");
+    py_opt(o, or(tags.g("colour"), first.g("colour")));
+    o.extend_from_slice(b", \"type\": ");
+    py_str(o, t);
+    o.extend_from_slice(b", \"type_source\": ");
+    py_str(o, ts);
+    o.extend_from_slice(b", \"operator\": ");
+    py_opt(o, or(tags.g("operator"), first.g("operator")));
+    o.extend_from_slice(b", \"operator_wd\": ");
+    py_opt(o, or(or(tags.g("operator:wikidata"), first.g("operator:wikidata")), or(tags.g("brand:wikidata"), first.g("brand:wikidata"))));
+    o.extend_from_slice(b", \"network\": ");
+    py_opt(o, or(tags.g("network"), first.g("network")));
+    o.extend_from_slice(b", \"from\": ");
+    py_opt(o, first.g("from"));
+    o.extend_from_slice(b", \"to\": ");
+    py_opt(o, first.g("to"));
+    o.extend_from_slice(b", \"routes\": [");
+    for (i, id) in route_ids.enumerate() {
+        if i > 0 {
+            o.extend_from_slice(b", ");
+        }
+        py_str(o, id);
+    }
+    o.extend_from_slice(b"]}");
+}
+
+/// Lines: route_master where one exists, else the route; the master's type is the most prominent of its routes.
+fn build_lines<'a>(
+    cfg: &Cfg,
+    rows: &'a [RelRow],
+    routes: &[&'a RelRow],
+    route_master: &FxHashMap<String, &'a str>,
+    rtype: &[(String, &'static str)],
+    ex_stats: &mut [ExStats],
+) -> Lines<'a> {
+    let masters: FxHashMap<&str, &RelRow> = rows.iter().filter(|r| r.master).map(|r| (r.id.as_str(), r)).collect();
     let mut line_ids: Vec<&str> = Vec::new();
-    let mut line_routes: rustc_hash::FxHashMap<&str, Vec<usize>> = rustc_hash::FxHashMap::default();
+    let mut line_routes: FxHashMap<&str, Vec<usize>> = FxHashMap::default();
     for (i, r) in routes.iter().enumerate() {
         let lid = route_master.get(&r.id).copied().unwrap_or(r.id.as_str());
         line_routes.entry(lid).or_insert_with(|| {
@@ -888,8 +962,8 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         });
         line_routes.get_mut(lid).unwrap().push(i);
     }
-    let mut lines_out = b"[".to_vec();
-    let mut line_type: rustc_hash::FxHashMap<&str, String> = rustc_hash::FxHashMap::default();
+    let mut out = b"[".to_vec();
+    let mut line_type: FxHashMap<&str, String> = FxHashMap::default();
     let (mut by_type, mut by_type_src): (Vec<(String, i64)>, Vec<(String, i64)>) = (Vec::new(), Vec::new());
     for (n, lid) in line_ids.iter().enumerate() {
         let rids = &line_routes[lid];
@@ -901,7 +975,6 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         if let Some((_, ty)) = cfg.type_overrides.iter().find(|(r, _)| r.matches(&merged)) {
             t = ty.clone();
         }
-        let (first, tags) = (&first_route.tags, &src.tags);
         let mut ts = rtype[rids[0]].1;
         // exemptions beat every rule above (a later one beats an earlier one)
         for (xi, x) in cfg.exemptions.iter().enumerate() {
@@ -915,74 +988,24 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         }
         bump(&mut by_type, &t);
         bump(&mut by_type_src, &format!("{t}/{ts}"));
-        // json.dump with Python's default separators (", " and ": ")
-        let o = &mut lines_out;
         if n > 0 {
-            o.extend_from_slice(b", ");
+            out.extend_from_slice(b", ");
         }
-        let opt = |o: &mut Vec<u8>, v: Option<&str>| match v {
-            Some(s) => py_str(o, s),
-            None => o.extend_from_slice(b"null"),
-        };
-        o.extend_from_slice(b"{\"id\": ");
-        py_str(o, lid);
-        o.extend_from_slice(b", \"name\": ");
-        opt(o, or(tags.g("name"), first.g("name")));
-        o.extend_from_slice(b", \"ref\": ");
-        opt(o, or(tags.g("ref"), first.g("ref")));
-        o.extend_from_slice(b", \"name_en\": ");
-        opt(o, english(tags).or_else(|| english(first)));
-        o.extend_from_slice(b", \"tags\": {");
-        for (i, (k, v)) in tags.0.iter().enumerate() {
-            if i > 0 {
-                o.extend_from_slice(b", ");
-            }
-            py_str(o, k);
-            o.extend_from_slice(b": ");
-            py_str(o, v);
-        }
-        o.extend_from_slice(b"}, \"colour\": ");
-        opt(o, or(tags.g("colour"), first.g("colour")));
-        o.extend_from_slice(b", \"type\": ");
-        py_str(o, &t);
-        o.extend_from_slice(b", \"type_source\": ");
-        py_str(o, ts);
-        o.extend_from_slice(b", \"operator\": ");
-        opt(o, or(tags.g("operator"), first.g("operator")));
-        o.extend_from_slice(b", \"operator_wd\": ");
-        opt(o, or(or(tags.g("operator:wikidata"), first.g("operator:wikidata")), or(tags.g("brand:wikidata"), first.g("brand:wikidata"))));
-        o.extend_from_slice(b", \"network\": ");
-        opt(o, or(tags.g("network"), first.g("network")));
-        o.extend_from_slice(b", \"from\": ");
-        opt(o, first.g("from"));
-        o.extend_from_slice(b", \"to\": ");
-        opt(o, first.g("to"));
-        o.extend_from_slice(b", \"routes\": [");
-        for (i, &ri) in rids.iter().enumerate() {
-            if i > 0 {
-                o.extend_from_slice(b", ");
-            }
-            py_str(o, &routes[ri].id);
-        }
-        o.extend_from_slice(b"]}");
+        write_line(&mut out, lid, &first_route.tags, &src.tags, &t, ts, rids.iter().map(|&ri| routes[ri].id.as_str()));
         line_type.insert(lid, t);
     }
-    lines_out.push(b']');
-    let route_line_type = |rid: &str| -> Option<&str> {
-        route_pos.get(rid)?;
-        line_type.get(route_master.get(rid).copied().unwrap_or(rid)).map(String::as_str)
-    };
+    out.push(b']');
+    Lines { ids: line_ids, out, line_type, by_type, by_type_src }
+}
 
-    // track: the typed copy of features.geojsonl gets the four fields at the end of each track's properties
-    let mut typed = Vec::with_capacity(feats.len() + tracks.len() * 64);
-    let mut at = 0;
-    let (mut counts, mut sources): (Vec<(String, i64)>, std::collections::BTreeMap<(String, String), i64>) = (Vec::new(), Default::default());
-    // A named railway that is freight nearly everywhere (OSM tags `railway:traffic_mode=freight` on most of its ways, not all) is freight
-    // all the way: its untagged, unrouted main-line ways would otherwise show as Intercity fragments of a hidden line (Haoji railway).
-    let mut by_name: std::collections::HashMap<String, (u32, u32)> = std::collections::HashMap::new(); // name -> (freight ways, ways) with no passenger route
+/// A named railway that is freight nearly everywhere (OSM tags `railway:traffic_mode=freight` on most of its ways, not all) is freight
+/// all the way: its untagged, unrouted main-line ways would otherwise show as Intercity fragments of a hidden line (Haoji railway).
+/// Name -> (freight ways, ways) among the rail ways with no passenger route.
+fn freight_ways_by_name(tracks: &[TrackIn], cfg: &Cfg, route_lines: &RouteLines) -> std::collections::HashMap<String, (u32, u32)> {
+    let mut by_name: std::collections::HashMap<String, (u32, u32)> = std::collections::HashMap::new();
     for tr in tracks {
         let p = &tr.props;
-        if !matches!(p.g("railway"), Some("rail" | "narrow_gauge")) || tr.routes.iter().any(|r| route_line_type(r).is_some()) {
+        if !matches!(p.g("railway"), Some("rail" | "narrow_gauge")) || tr.routes.iter().any(|r| route_lines.type_of(r).is_some()) {
             continue;
         }
         let Some(name) = p.g("name").filter(|n| !n.is_empty()) else { continue };
@@ -992,21 +1015,32 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
             e.0 += 1;
         }
     }
-    // candidates for the evidence test: rail with no passenger route that its own tags make Intercity or Regional, and nothing saying passengers
-    let cand: Vec<bool> = tracks
+    by_name
+}
+
+/// Candidates for the evidence test: rail with no passenger route that its own tags make Intercity or Regional, and nothing saying passengers.
+fn evidence_candidates(tracks: &[TrackIn], cfg: &Cfg, route_lines: &RouteLines) -> Vec<bool> {
+    tracks
         .iter()
         .map(|tr| {
             let p = &tr.props;
             matches!(p.g("railway"), Some("rail" | "narrow_gauge"))
                 && tr.ll.len() >= 2
-                && !tr.routes.iter().any(|r| route_line_type(r).is_some())
+                && !tr.routes.iter().any(|r| route_lines.type_of(r).is_some())
                 && p.g("service").map_or(true, |v| !SERVICE_TRACK.contains(&v))
                 && !matches!(p.g("railway:traffic_mode"), Some("passenger" | "mixed"))
                 && p.g("usage") != Some("tourism")
                 && !p.g("name").map_or(false, |n| PASSENGER_NAME_WORDS.iter().any(|w| n.contains(w)))   // connectors and loops link passenger lines; the others say passengers
                 && matches!(own_tag_type(p, cfg), (ref t, "tags" | "default") if t == "intercity" || t == "regional")
         })
-        .collect();
+        .collect()
+}
+
+/// The first type each track gets: overrides, tourism, service track, then route types, name and evidence, then its own tags.
+/// None for what is not typed track (or proposed track outside the proposed region).
+fn decide_tracks(tracks: &[TrackIn], cfg: &Cfg, pax: &[(i32, i32)], route_lines: &RouteLines) -> Vec<Option<Decided>> {
+    let by_name = freight_ways_by_name(tracks, cfg, route_lines);
+    let cand = evidence_candidates(tracks, cfg, route_lines);
     let by_evidence = freight_by_evidence(tracks, &cand, pax);
     let mostly_freight = |name: Option<&str>| name.and_then(|n| by_name.get(n)).map_or(false, |&(f, n)| f >= 5 && f as f64 >= 0.9 * n as f64);
     let mut decided: Vec<Option<Decided>> = Vec::with_capacity(tracks.len());
@@ -1032,7 +1066,7 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
             let (o, src) = own_tag_type(p, cfg);
             // A route's High-speed type is the service's (a TGV runs on conventional line too), so it only counts on track that is
             // high-speed itself (highspeed=yes, or maxspeed at the floor); other track of such a route takes its next best route type, else Intercity.
-            let route_types: Vec<&str> = tr.routes.iter().filter_map(|r| route_line_type(r)).collect();
+            let route_types: Vec<&str> = tr.routes.iter().filter_map(|r| route_lines.type_of(r)).collect();
             let own_hs = o == "high_speed";
             let best = highest(route_types.iter().copied().filter(|t| own_hs || *t != "high_speed").chain(own_hs.then_some("high_speed")))
                 .or_else(|| route_types.contains(&"high_speed").then_some("intercity"))
@@ -1048,48 +1082,49 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         };
         decided.push(Some(Decided { t, s, own }));
     }
-    // Passenger needs evidence (config `passenger_needs_evidence`): main-line track typed from its own tags alone (no passenger route, not an
-    // exemption) is Freight unless it runs beside passenger-routed track or its operator is a passenger agency. Measured against the BTS
-    // passenger inventory in docs/13-freight-north-america.md (US precision 26% -> 95%, recall 98% -> 98% on the real output).
-    if let Some(mode) = cfg.needs_evidence {
-        let passenger = |t: &str| matches!(t, "intercity" | "regional" | "high_speed");
-        let routed: Vec<usize> = (0..tracks.len())
-            .filter(|&i| matches!(tracks[i].props.g("railway"), Some("rail" | "narrow_gauge")) && tracks[i].ll.len() >= 2 && decided[i].as_ref().map_or(false, |d| d.s == "route" && passenger(&d.t)))
-            .collect();
-        let targets: Vec<usize> = (0..tracks.len())
-            .filter(|&i| {
-                let p = &tracks[i].props;
-                tracks[i].ll.iter().filter(|q| q.0 != i32::MIN).count() >= 2   // a way with no usable geometry keeps its type
-                    && matches!(p.g("railway"), Some("rail" | "narrow_gauge"))
-                    && !matches!(p.g("railway:traffic_mode"), Some("passenger" | "mixed"))
-                    && decided[i].as_ref().map_or(false, |d| matches!(d.s, "tags" | "default") && matches!(d.t.as_str(), "intercity" | "regional"))
-                    && !p.g("operator").map_or(false, |o| cfg.passenger_operators.iter().any(|r| r.is_match(o)))
-            })
-            .collect();
-        let mut kept = beside_routed(tracks, &routed, &targets);
-        if mode == Evidence::Stations {
-            kept.extend(near_station(tracks, &targets, pax));
-        }
-        for ti in targets {
-            if !kept.contains(&ti) {
-                if let Some(d) = decided[ti].as_mut() {
-                    d.t = if tracks[ti].props.g("railway") == Some("narrow_gauge") { "other" } else { "freight" }.into(); // no evidence it is freight either (a heritage line tagged usage=branch)
-                    d.s = "no-evidence";
-                }
+    decided
+}
+
+/// Passenger needs evidence (config `passenger_needs_evidence`): main-line track typed from its own tags alone (no passenger route, not an
+/// exemption) is Freight unless it runs beside passenger-routed track or its operator is a passenger agency. Measured against the BTS
+/// passenger inventory in docs/13-freight-north-america.md (US precision 26% -> 95%, recall 98% -> 98% on the real output).
+fn needs_evidence_pass(tracks: &[TrackIn], cfg: &Cfg, pax: &[(i32, i32)], mode: Evidence, decided: &mut [Option<Decided>]) {
+    let passenger = |t: &str| matches!(t, "intercity" | "regional" | "high_speed");
+    let routed: Vec<usize> = (0..tracks.len())
+        .filter(|&i| matches!(tracks[i].props.g("railway"), Some("rail" | "narrow_gauge")) && tracks[i].ll.len() >= 2 && decided[i].as_ref().map_or(false, |d| d.s == "route" && passenger(&d.t)))
+        .collect();
+    let targets: Vec<usize> = (0..tracks.len())
+        .filter(|&i| {
+            let p = &tracks[i].props;
+            tracks[i].ll.iter().filter(|q| q.0 != i32::MIN).count() >= 2   // a way with no usable geometry keeps its type
+                && matches!(p.g("railway"), Some("rail" | "narrow_gauge"))
+                && !matches!(p.g("railway:traffic_mode"), Some("passenger" | "mixed"))
+                && decided[i].as_ref().map_or(false, |d| matches!(d.s, "tags" | "default") && matches!(d.t.as_str(), "intercity" | "regional"))
+                && !p.g("operator").map_or(false, |o| cfg.passenger_operators.iter().any(|r| r.is_match(o)))
+        })
+        .collect();
+    let mut kept = beside_routed(tracks, &routed, &targets);
+    if mode == Evidence::Stations {
+        kept.extend(near_station(tracks, &targets, pax));
+    }
+    for ti in targets {
+        if !kept.contains(&ti) {
+            if let Some(d) = decided[ti].as_mut() {
+                d.t = if tracks[ti].props.g("railway") == Some("narrow_gauge") { "other" } else { "freight" }.into(); // no evidence it is freight either (a heritage line tagged usage=branch)
+                d.s = "no-evidence";
             }
         }
     }
-    // A short piece of track whose type differs from all the track it joins (sidings and yard track do not count), when those agree, takes their type: a few metres of
-    // "Regional" in the middle of a freight line is a tagging gap, not a service.
-    let mut at_end: rustc_hash::FxHashMap<(i32, i32), Vec<usize>> = rustc_hash::FxHashMap::default();
-    for (i, tr) in tracks.iter().enumerate() {
-        if decided[i].is_some() && tr.props.g("railway") == Some("rail") {
-            for e in [tr.ll.first(), tr.ll.last()].into_iter().flatten() {
-                at_end.entry(*e).or_default().push(i);
-            }
-        }
-    }
-    let smoothable = |d: &Decided| matches!(d.s, "tags" | "default" | "name" | "no-station" | "short-spur" | "no-evidence") && matches!(d.t.as_str(), "intercity" | "regional" | "freight");
+}
+
+/// Types the neighbour passes may change.
+fn smoothable(d: &Decided) -> bool {
+    matches!(d.s, "tags" | "default" | "name" | "no-station" | "short-spur" | "no-evidence") && matches!(d.t.as_str(), "intercity" | "regional" | "freight")
+}
+
+/// A short piece of track whose type differs from all the track it joins (sidings and yard track do not count), when those agree, takes their type: a few metres of
+/// "Regional" in the middle of a freight line is a tagging gap, not a service.
+fn smooth_short_pieces(tracks: &[TrackIn], at_end: &FxHashMap<(i32, i32), Vec<usize>>, decided: &mut [Option<Decided>]) {
     for _ in 0..2 {
         let mut changes: Vec<(usize, String)> = Vec::new();
         for (i, tr) in tracks.iter().enumerate() {
@@ -1121,99 +1156,113 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
             }
         }
     }
-    // The same for a chain of Intercity pieces: unrouted track typed Intercity from its tags (`usage=main`) that meets the rest of the network
-    // only through Regional track is part of that Regional line (a loop, a bypass or an old alignment beside a routed line that no route
-    // relation lists). Pieces joined end to end, under MAX_CHAIN_KM in all, whose every contact with other track (sidings and yard track do
-    // not count) is Regional, become Regional. Only this direction: a chain of Freight or Regional pieces touching passenger track is a branch.
-    {
-        let elig: Vec<usize> = (0..tracks.len())
-            .filter(|&i| tracks[i].props.g("railway") == Some("rail") && tracks[i].ll.len() >= 2 && decided[i].as_ref().map_or(false, smoothable))
-            .collect();
-        let mut parent: Vec<usize> = (0..tracks.len()).collect();
-        fn root(p: &mut [usize], mut i: usize) -> usize {
-            while p[i] != i {
-                p[i] = p[p[i]];
-                i = p[i];
-            }
-            i
+}
+
+/// The same for a chain of Intercity pieces: unrouted track typed Intercity from its tags (`usage=main`) that meets the rest of the network
+/// only through Regional track is part of that Regional line (a loop, a bypass or an old alignment beside a routed line that no route
+/// relation lists). Pieces joined end to end, under MAX_CHAIN_KM in all, whose every contact with other track (sidings and yard track do
+/// not count) is Regional, become Regional. Only this direction: a chain of Freight or Regional pieces touching passenger track is a branch.
+fn smooth_chains(tracks: &[TrackIn], at_end: &FxHashMap<(i32, i32), Vec<usize>>, decided: &mut [Option<Decided>]) {
+    let elig: Vec<usize> = (0..tracks.len())
+        .filter(|&i| tracks[i].props.g("railway") == Some("rail") && tracks[i].ll.len() >= 2 && decided[i].as_ref().map_or(false, smoothable))
+        .collect();
+    let mut parent: Vec<usize> = (0..tracks.len()).collect();
+    fn root(p: &mut [usize], mut i: usize) -> usize {
+        while p[i] != i {
+            p[i] = p[p[i]];
+            i = p[i];
         }
-        let is_elig: FxHashSet<usize> = elig.iter().copied().collect();
-        for &i in &elig {
+        i
+    }
+    let is_elig: FxHashSet<usize> = elig.iter().copied().collect();
+    for &i in &elig {
+        for e in [tracks[i].ll.first().unwrap(), tracks[i].ll.last().unwrap()] {
+            for &j in at_end.get(e).into_iter().flatten().filter(|&&j| j != i && is_elig.contains(&j)) {
+                // only pieces of one type are joined: the chain is one line
+                if decided[i].as_ref().map(|d| &d.t) == decided[j].as_ref().map(|d| &d.t) {
+                    let (a, b) = (root(&mut parent, i), root(&mut parent, j));
+                    parent[a] = b;
+                }
+            }
+        }
+    }
+    let mut comps: FxHashMap<usize, Vec<usize>> = FxHashMap::default();
+    for &i in &elig {
+        let r = root(&mut parent, i);
+        comps.entry(r).or_default().push(i);
+    }
+    let mut changes: Vec<(usize, String)> = Vec::new();
+    for (_, members) in comps {
+        let km: f64 = members.iter().map(|&i| ll_km(&tracks[i].ll)).sum();
+        let t = decided[members[0]].as_ref().unwrap().t.clone();
+        if members.len() < 2 || km >= MAX_CHAIN_KM {
+            continue; // a single piece is the pass above
+        }
+        let inside: FxHashSet<usize> = members.iter().copied().collect();
+        let mut around: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        let mut attach = 0;
+        for &i in &members {
             for e in [tracks[i].ll.first().unwrap(), tracks[i].ll.last().unwrap()] {
-                for &j in at_end.get(e).into_iter().flatten().filter(|&&j| j != i && is_elig.contains(&j)) {
-                    // only pieces of one type are joined: the chain is one line
-                    if decided[i].as_ref().map(|d| &d.t) == decided[j].as_ref().map(|d| &d.t) {
-                        let (a, b) = (root(&mut parent, i), root(&mut parent, j));
-                        parent[a] = b;
-                    }
+                let n: Vec<&str> = at_end.get(e).into_iter().flatten().filter(|&&j| !inside.contains(&j)).filter_map(|&j| decided[j].as_ref().filter(|x| x.t != "yard").map(|x| x.t.as_str())).collect();
+                if !n.is_empty() {
+                    attach += 1;
+                    around.extend(n);
                 }
             }
         }
-        let mut comps: rustc_hash::FxHashMap<usize, Vec<usize>> = rustc_hash::FxHashMap::default();
-        for &i in &elig {
-            let r = root(&mut parent, i);
-            comps.entry(r).or_default().push(i);
-        }
-        let mut changes: Vec<(usize, String)> = Vec::new();
-        for (_, members) in comps {
-            let km: f64 = members.iter().map(|&i| ll_km(&tracks[i].ll)).sum();
-            let t = decided[members[0]].as_ref().unwrap().t.clone();
-            if members.len() < 2 || km >= MAX_CHAIN_KM {
-                continue; // a single piece is the pass above
-            }
-            let inside: FxHashSet<usize> = members.iter().copied().collect();
-            let mut around: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
-            let mut attach = 0;
-            for &i in &members {
-                for e in [tracks[i].ll.first().unwrap(), tracks[i].ll.last().unwrap()] {
-                    let n: Vec<&str> = at_end.get(e).into_iter().flatten().filter(|&&j| !inside.contains(&j)).filter_map(|&j| decided[j].as_ref().filter(|x| x.t != "yard").map(|x| x.t.as_str())).collect();
-                    if !n.is_empty() {
-                        attach += 1;
-                        around.extend(n);
-                    }
-                }
-            }
-            if attach >= 1 && around.len() == 1 {
-                let u = *around.iter().next().unwrap();
-                if t == "intercity" && u == "regional" {
-                    changes.extend(members.iter().map(|&i| (i, u.to_string())));
-                }
-            }
-        }
-        for (i, u) in changes {
-            if let Some(d) = decided[i].as_mut() {
-                d.t = u;
-                d.s = "neighbour";
+        if attach >= 1 && around.len() == 1 {
+            let u = *around.iter().next().unwrap();
+            if t == "intercity" && u == "regional" {
+                changes.extend(members.iter().map(|&i| (i, u.to_string())));
             }
         }
     }
-    // exemptions: applied last, so they win over everything above
+    for (i, u) in changes {
+        if let Some(d) = decided[i].as_mut() {
+            d.t = u;
+            d.s = "neighbour";
+        }
+    }
+}
+
+/// Exemptions, applied last so they win over everything above. Returns which tracks they drop.
+fn apply_exemptions(tracks: &[TrackIn], cfg: &Cfg, decided: &mut [Option<Decided>], ex_stats: &mut [ExStats]) -> Vec<bool> {
     let mut dropped = vec![false; tracks.len()];
-    if !cfg.exemptions.is_empty() {
-        for (ti, tr) in tracks.iter().enumerate() {
-            let Some(d) = decided[ti].as_mut() else { continue };
-            for (xi, x) in cfg.exemptions.iter().enumerate() {
-                if x.was_type.as_deref().map_or(false, |w| w != d.t) || x.was_source.as_deref().map_or(false, |w| w != d.s) || !x.rule.matches(&tr.props) {
-                    continue;
-                }
-                ex_stats[xi].tracks += 1;
-                ex_stats[xi].km += ll_km(&tr.ll);
-                dropped[ti] = false;
-                match &x.action {
-                    Action::Type(ty) => (d.t, d.s) = (ty.clone(), "exemption"),
-                    Action::Freight(true) => (d.t, d.s) = ("freight".into(), "exemption"),
-                    Action::Freight(false) => {
-                        if d.t == "freight" {
-                            // back to what its own tags say, or Regional when those say freight too
-                            d.t = d.own.clone().filter(|o| o != "freight").unwrap_or_else(|| "regional".into());
-                            d.s = "exemption";
-                        }
+    if cfg.exemptions.is_empty() {
+        return dropped;
+    }
+    for (ti, tr) in tracks.iter().enumerate() {
+        let Some(d) = decided[ti].as_mut() else { continue };
+        for (xi, x) in cfg.exemptions.iter().enumerate() {
+            if x.was_type.as_deref().map_or(false, |w| w != d.t) || x.was_source.as_deref().map_or(false, |w| w != d.s) || !x.rule.matches(&tr.props) {
+                continue;
+            }
+            ex_stats[xi].tracks += 1;
+            ex_stats[xi].km += ll_km(&tr.ll);
+            dropped[ti] = false;
+            match &x.action {
+                Action::Type(ty) => (d.t, d.s) = (ty.clone(), "exemption"),
+                Action::Freight(true) => (d.t, d.s) = ("freight".into(), "exemption"),
+                Action::Freight(false) => {
+                    if d.t == "freight" {
+                        // back to what its own tags say, or Regional when those say freight too
+                        d.t = d.own.clone().filter(|o| o != "freight").unwrap_or_else(|| "regional".into());
+                        d.s = "exemption";
                     }
-                    Action::Drop => dropped[ti] = true,
                 }
+                Action::Drop => dropped[ti] = true,
             }
         }
     }
+    dropped
+}
+
+/// features.typed.geojsonl: the copy of features.geojsonl where each track gets its type fields at the end of its properties.
+/// Also the track counts by type and by type and source.
+fn write_typed(feats: &[u8], tracks: &[TrackIn], decided: &mut [Option<Decided>], dropped: &[bool], con_mode: &[Option<&str>]) -> (Vec<u8>, Vec<(String, i64)>, std::collections::BTreeMap<(String, String), i64>) {
+    let mut typed = Vec::with_capacity(feats.len() + tracks.len() * 64);
+    let mut at = 0;
+    let (mut counts, mut sources): (Vec<(String, i64)>, std::collections::BTreeMap<(String, String), i64>) = (Vec::new(), Default::default());
     for (ti, tr) in tracks.iter().enumerate() {
         let Some(Decided { t, s, own }) = decided[ti].take() else { continue };
         let p = &tr.props;
@@ -1248,10 +1297,21 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         *sources.entry((t, s.to_string())).or_default() += 1;
     }
     typed.extend_from_slice(&feats[at..]);
+    (typed, counts, sources)
+}
 
+/// classify_report.json, and the warnings for exemptions that matched fewer features than their expect_min.
+fn report_json(
+    slug: &str,
+    cfg: &Cfg,
+    ex_stats: &[ExStats],
+    lines: &Lines,
+    counts: &[(String, i64)],
+    sources: &std::collections::BTreeMap<(String, String), i64>,
+) -> (Vec<String>, Vec<u8>) {
     let mut stale = Vec::new();
     let mut ex_report = Vec::new();
-    for (x, st) in cfg.exemptions.iter().zip(&ex_stats) {
+    for (x, st) in cfg.exemptions.iter().zip(ex_stats) {
         let matched = st.tracks + st.lines;
         let met = matched >= x.expect_min;
         if !met {
@@ -1271,18 +1331,66 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
     }
     let mut report = J::obj(vec![
         ("region", J::s(slug)),
-        ("track_by_type", J::Obj(most_common(&counts))),
+        ("track_by_type", J::Obj(most_common(counts))),
         ("track_by_type_and_source", J::Obj(sources.iter().map(|((t, s), n)| (format!("{t}/{s}"), J::Int(*n))).collect())),
-        ("lines", J::Int(line_ids.len() as i64)),
-        ("lines_by_type", J::Obj(most_common(&by_type))),
-        ("lines_by_type_source", J::Obj(most_common(&by_type_src))),
+        ("lines", J::Int(lines.ids.len() as i64)),
+        ("lines_by_type", J::Obj(most_common(&lines.by_type))),
+        ("lines_by_type_source", J::Obj(most_common(&lines.by_type_src))),
     ]);
     if let (J::Obj(fields), false) = (&mut report, ex_report.is_empty()) {
         fields.push(("exemptions".into(), J::Obj(ex_report)));
     }
     let mut rep = Vec::new();
     report.write_pretty(&mut rep, 0);
-    Out { stale, typed, lines: lines_out, report: rep, n_lines: line_ids.len() }
+    (stale, rep)
+}
+
+/// Types every track and line of the region: lines.json, features.typed.geojsonl and the report.
+pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[TrackIn], pax: &[(i32, i32)]) -> Out {
+    let con_mode = construction_modes(tracks, rows);
+    let norm: Vec<TrackIn>;
+    let tracks: &[TrackIn] = if con_mode.iter().any(Option::is_some) {
+        norm = with_construction_tags(tracks, &con_mode);
+        &norm
+    } else {
+        tracks
+    };
+
+    // routes -> lines -> types
+    let routes: Vec<&RelRow> = rows.iter().filter(|r| r.route && !route_under_construction(&r.tags)).collect();
+    let hs_routes = high_speed_routes(tracks, cfg);
+    let route_pos: FxHashMap<&str, usize> = routes.iter().enumerate().map(|(i, r)| (r.id.as_str(), i)).collect();
+    let mut route_master: FxHashMap<String, &str> = FxHashMap::default();
+    for m in rows.iter().filter(|r| r.master) {
+        for id in &m.rel_members {
+            route_master.insert(format!("relation/{id}"), m.id.as_str());
+        }
+    }
+    let mut ex_stats: Vec<ExStats> = cfg.exemptions.iter().map(|_| ExStats::default()).collect();
+    let rtype: Vec<(String, &'static str)> = routes.iter().map(|r| route_type(&r.tags, cfg, hs_routes.get(&r.id).copied().unwrap_or(HsTrack::No))).collect();
+    let lines = build_lines(cfg, rows, &routes, &route_master, &rtype, &mut ex_stats);
+    let route_lines = RouteLines { route_pos: &route_pos, route_master: &route_master, line_type: &lines.line_type };
+
+    // tracks: type, evidence, neighbours, exemptions
+    let mut decided = decide_tracks(tracks, cfg, pax, &route_lines);
+    if let Some(mode) = cfg.needs_evidence {
+        needs_evidence_pass(tracks, cfg, pax, mode, &mut decided);
+    }
+    let mut at_end: FxHashMap<(i32, i32), Vec<usize>> = FxHashMap::default();
+    for (i, tr) in tracks.iter().enumerate() {
+        if decided[i].is_some() && tr.props.g("railway") == Some("rail") {
+            for e in [tr.ll.first(), tr.ll.last()].into_iter().flatten() {
+                at_end.entry(*e).or_default().push(i);
+            }
+        }
+    }
+    smooth_short_pieces(tracks, &at_end, &mut decided);
+    smooth_chains(tracks, &at_end, &mut decided);
+    let dropped = apply_exemptions(tracks, cfg, &mut decided, &mut ex_stats);
+
+    let (typed, counts, sources) = write_typed(feats, tracks, &mut decided, &dropped, &con_mode);
+    let (stale, report) = report_json(slug, cfg, &ex_stats, &lines, &counts, &sources);
+    Out { stale, typed, lines: lines.out, report, n_lines: lines.ids.len() }
 }
 
 /// the feature text up to the end of its properties with `railway=<mode>` and `construction=<value>` rewritten as `railway=construction`, `construction=<mode>`

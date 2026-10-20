@@ -1,11 +1,10 @@
-//! Stations still being built, ported from pipeline/con_stations.py (docs/00-overview.md, 2026-10-11).
+//! Stations still being built (docs/00-overview.md, 2026-10-11).
 //!
 //! A named node is an under-construction station if it has railway=construction with construction=station|halt, or
 //! construction:railway=station|halt|stop, or construction:public_transport=station|stop_position. Nodes of the same name (or one
 //! name ending with the other) within 400 m are one station; a station is skipped when an open one of the same name stands within
 //! 600 m. Tier from what is being built around it: hsr if high-speed construction track runs within 200 m or the name says so;
-//! major if hsr with 4+ mainline construction pieces within 200 m, or the name matches main_station_re. Works in degrees, as the
-//! Python version did.
+//! major if hsr with 4+ mainline construction pieces within 200 m, or the name matches main_station_re. Works in degrees.
 
 use crate::geomx::{self, Index};
 use crate::pyjson::{f, py_round};
@@ -73,27 +72,9 @@ fn mode_of_track(t: &str) -> &'static str {
     }
 }
 
-/// Appends the construction stations to `stations` and `complexes` (the station model's output); returns a one-line summary.
-pub fn run(slug: &str, inp: &Input, stations: &mut Vec<Value>, complexes: &mut Vec<Value>) -> String {
-    let main_re = inp.cfg.get("main_station_re").and_then(Value::as_str).filter(|v| !v.is_empty()).map(|p| Regex::new(p).expect("main_station_re"));
-    let hs_name = Regex::new(r"(?i)高铁|高速铁路|high.speed").unwrap();
-    let nodes: Vec<usize> = (0..inp.feats.len())
-        .filter(|&i| inp.feats[i].gtype == "Point" && is_con(&inp.feats[i].p) && s(&inp.feats[i].p, "name").map_or(false, |n| !n.is_empty()))
-        .collect();
-    let con: Vec<usize> = (0..inp.feats.len()).filter(|&i| inp.feats[i].gtype == "LineString" && s(&inp.feats[i].p, "railway") == Some("construction")).collect();
-    let con_g: Vec<geomx::G> = con.iter().filter_map(|&i| geomx::from_geojson(&inp.feats[i].g, geomx::id)).collect();
-    let track_tree = Index::new(con_g.iter().map(geomx::bbox));
-    let tp = |k: usize, key: &str| s(&inp.feats[con[k]].p, key);
-    let open_pts: Vec<(Point<f64>, String)> = stations
-        .iter()
-        .map(|r| {
-            let c = &r["geometry"]["coordinates"];
-            (Point::new(c[0].as_f64().unwrap_or(0.0), c[1].as_f64().unwrap_or(0.0)), norm(r["properties"]["name"].as_str().unwrap_or("")))
-        })
-        .collect();
-    let open_tree = Index::new(open_pts.iter().map(|(p, _)| geomx::bbox(&Geometry::Point(*p))));
-
-    // cluster nodes: same name, or one name ending with the other (深圳机场东 / 机场东), within 400 m
+/// Cluster the nodes: same name, or one name ending with the other (深圳机场东 / 机场东), within 400 m.
+/// Returns the points, the normalised names, and the clusters (indexes into `nodes`).
+fn cluster_nodes(inp: &Input, nodes: &[usize]) -> (Vec<Point<f64>>, Vec<String>, Vec<Vec<usize>>) {
     let pt = |i: usize| -> Point<f64> {
         let c = &inp.feats[i].g["coordinates"];
         Point::new(c[0].as_f64().unwrap_or(0.0), c[1].as_f64().unwrap_or(0.0))
@@ -132,6 +113,30 @@ pub fn run(slug: &str, inp: &Input, stations: &mut Vec<Value>, complexes: &mut V
         });
         groups[k].push(i);
     }
+    (pts, nms, groups)
+}
+
+/// Appends the construction stations to `stations` and `complexes` (the station model's output); returns a one-line summary.
+pub fn run(slug: &str, inp: &Input, stations: &mut Vec<Value>, complexes: &mut Vec<Value>) -> String {
+    let main_re = inp.cfg.get("main_station_re").and_then(Value::as_str).filter(|v| !v.is_empty()).map(|p| Regex::new(p).expect("main_station_re"));
+    let hs_name = Regex::new(r"(?i)高铁|高速铁路|high.speed").unwrap();
+    let nodes: Vec<usize> = (0..inp.feats.len())
+        .filter(|&i| inp.feats[i].gtype == "Point" && is_con(&inp.feats[i].p) && s(&inp.feats[i].p, "name").map_or(false, |n| !n.is_empty()))
+        .collect();
+    let con: Vec<usize> = (0..inp.feats.len()).filter(|&i| inp.feats[i].gtype == "LineString" && s(&inp.feats[i].p, "railway") == Some("construction")).collect();
+    let con_g: Vec<geomx::G> = con.iter().filter_map(|&i| geomx::from_geojson(&inp.feats[i].g, geomx::id)).collect();
+    let track_tree = Index::new(con_g.iter().map(geomx::bbox));
+    let tp = |k: usize, key: &str| s(&inp.feats[con[k]].p, key);
+    let open_pts: Vec<(Point<f64>, String)> = stations
+        .iter()
+        .map(|r| {
+            let c = &r["geometry"]["coordinates"];
+            (Point::new(c[0].as_f64().unwrap_or(0.0), c[1].as_f64().unwrap_or(0.0)), norm(r["properties"]["name"].as_str().unwrap_or("")))
+        })
+        .collect();
+    let open_tree = Index::new(open_pts.iter().map(|(p, _)| geomx::bbox(&Geometry::Point(*p))));
+
+    let (pts, nms, groups) = cluster_nodes(inp, &nodes);
 
     let (mut skipped, mut added) = (0, 0);
     let mut tiers = [0usize; 4];
