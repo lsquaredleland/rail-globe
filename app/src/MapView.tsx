@@ -248,7 +248,9 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
   }, [])
 
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) applyState(m, props.state) }, [props.state])
-  useEffect(() => { const m = mapRef.current; if (m && loaded.current) highlightLine(m, props.highlightSlug, props.selectedLine, props.selectedTrackName) }, [props.highlightSlug, Array.isArray(props.selectedLine) ? props.selectedLine.join(',') : props.selectedLine, props.selectedTrackName])
+  // keyed by value: the parent may pass a fresh array with the same lines on every render; the effect reads the latest array through p
+  const selectedLineKey = Array.isArray(props.selectedLine) ? props.selectedLine.join(',') : props.selectedLine
+  useEffect(() => { const m = mapRef.current; if (m && loaded.current) highlightLine(m, props.highlightSlug, p.current.selectedLine, props.selectedTrackName) }, [props.highlightSlug, selectedLineKey, props.selectedTrackName])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) setFocus(m, props.focusSlug) }, [props.focusSlug])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) setStationFocus(m, props.focusStations) }, [props.focusStations])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) updateSelection(m, props.selectedStation) }, [props.selectedStation])
