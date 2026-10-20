@@ -2,7 +2,7 @@
 
 Command reference. First-time sequence from a fresh clone: `Run it` in the root `README.md`. The world build with timings: `docs/10-world-build.md`. Raw data to live site in one command: `pipeline/publish.sh` (stages: tools, cache, outlines, build, verify, upload, deploy, prune, live; `--dry-run` runs only the read-only checks; credentials in `r2/.env`; runbook `r2/README.md`). Publishing deploys the live site and needs the user's go.
 
-Needs stable Rust (tested with 1.99.0). The build uses no Python, tippecanoe or osmium. Python 3 (standard library only) is for the dev checks: `check.py`, `top.py`; `measure_views.py` also needs `pip install pmtiles`; `qa/` needs numpy and shapely 2.
+Needs stable Rust (tested with 1.99.0). The build uses no Python, tippecanoe or osmium. Errors print `error: ...` and exit 1. Python 3 (standard library only) is for the dev checks: `check.py`, `top.py`; `measure_views.py` also needs `pip install pmtiles`; `qa/` needs numpy and shapely 2.
 
 Run every command from the repository root. `RE` below is the extractor:
 
@@ -22,7 +22,7 @@ RE=pipeline/rail-extract/target/release/rail-extract
 - Change which tags are kept (`src/rules.rs`, `cache_key`) and you need a new cache. A cache from an older format is refused with a message.
 
 ### outlines
-`$RE outlines --level 2|4|5 [--country CC] [--cache FILE] [--out DIR]` and `$RE outlines --cities WANTED.json`
+`$RE outlines --level 2|4|5 [--country CC] [--cache FILE] [--out DIR] [--threads N]` and `$RE outlines --cities WANTED.json`
 - `--level 2` countries, `4` provinces and states, `5 --country CN` Chinese prefecture cities (needed by region cards). About 1 s each.
 - `--cities` takes `city-outlines-wanted.json` (written by `places`) and writes one outline per city (`docs/14-city-outlines-and-highlights.md`).
 - Writes `data/regions/<slug>.geojson` and `data/regions/index.json`. A hand-made outline in `pipeline/regions/<slug>.geojson` wins over a generated one with the same slug.
@@ -43,7 +43,7 @@ RE=pipeline/rail-extract/target/release/rail-extract
 - Region stats use `stat_areas` or `stat_auto` from the config (run `outlines --level 4` and `5` first).
 
 ### world
-`$RE world (--slugs-file FILE | <slug>...) [--data DIR] [--out DIR] [--name NAME] [--deep-zoom N] [--regions DIR]`
+`$RE world (--slugs-file FILE | <slug>...) [--threads N] [--data DIR] [--out DIR] [--name NAME] [--deep-zoom N] [--regions DIR]`
 - One memory-bounded tile writer run over every slug's `tiles_tmp`. Defaults: `--data data/world`, `--out app/public/data/world`, `--name world`, `--deep-zoom 6` (5 gives a byte-identical file).
 - Writes `<out>/world.pmtiles` and `world.parts.json`, then runs `places`: `places.json`, `search.json`, and `<data>/city-outlines-wanted.json`. About 1 min, 10.5 GB peak. Details: `docs/10-world-build.md`.
 
@@ -53,7 +53,7 @@ RE=pipeline/rail-extract/target/release/rail-extract
 - Writes `<data>/kept.txt` and `<data>/dropped.txt`.
 
 ### places
-`$RE places (--parts FILE | <slug>...) [--data DIR] [--out DIR] [--cache FILE]`
+`$RE places <slug>... [--data DIR] [--out DIR] [--cache FILE] [--threads N]` (pilots: `$RE places sf-bay-area paris chengdu`)
 - City, town and country labels and the search index, from the cache's place nodes and the stations of each region. No network. Run by `build` and `world`; run by hand only after changing code or outlines.
 - Writes `<out>/places.json` and `<out>/search.json` (one file for the whole index). Rules: `src/places.rs` header and `docs/00-overview.md` (search index row, 2026-10-16).
 

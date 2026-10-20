@@ -67,7 +67,7 @@ VITE_TILE_SOURCE=world npm --prefix app run build    # a build that shows the wo
 The input order of a feature in a layer (slug order, file order, line order) decides its draw order within a tile, as in `run`.
 
 Verification (2026-10-15; the `tiles` subcommand and the pilot join were removed later, the numbers stay as evidence):
-- `rail-extract tiles` (old path) on the pilot sources after the change: `cmp` identical to the build before the change (298,819,502 bytes).
+- `rail-extract tiles` (old path, removed) on the pilot sources after the change: `cmp` identical to the build before the change (298,819,502 bytes).
 - `rail-extract world` on the same six pilot sources: `cmp` identical to `run`'s `pilot.pmtiles`, 344,928 tiles; 15 s and 5.3 GB peak against 12.7 s and 9.4 GB.
 - World with `--deep-zoom 5` and `6`: `cmp` identical (partition does not matter).
 - Known edge: features share a slicer, and a slicer does not descend into a tile with no points, so grouping can in theory change pieces smaller than the simplification tolerance. It did not show in any comparison.
