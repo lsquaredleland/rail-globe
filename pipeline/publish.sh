@@ -12,9 +12,10 @@
 #   verify    check the output on disk (read only); stops the run on a failure
 #   upload    r2/sync.sh in copy mode: adds and updates files in R2, deletes nothing, so the live app keeps working
 #   deploy    git push origin main, which makes Vercel build the app (only with --push)
-#   prune     r2/sync.sh: now delete what the new build no longer has (old shard files, stale objects, slugs in data/world/dropped.txt)
-#   live      check R2 and the site over HTTPS (read only)
+#   prune     r2/sync.sh: now delete what the new build no longer has under world/ (old shard files, stale objects, slugs in data/world/dropped.txt)
+#   live      check R2 (bucket world/ equals app/public/data/world, nothing outside world/) and the site over HTTPS (read only)
 #
+# r2/sync.sh uploads and prunes only app/public/data/world -> bucket world/.
 # Credentials: r2/.env (gitignored, see r2/.env.example) or the environment. Nothing here reads or prints them.
 # --dry-run prints each command and runs only the read-only stages; upload and prune run rclone with --dry-run (that also proves the credentials).
 # The build stage is a full world build (about 2 min, 12 GB); it needs the user's go to publish (CLAUDE.md). A data-only refresh needs no --push (the app reads the data from R2); push when the
@@ -151,6 +152,23 @@ fi
 if want live; then
   say "live: R2 and the site"
   DATA_ORIGIN=$(node -e "const c=JSON.parse(require('fs').readFileSync('app/vercel.json','utf8')).headers[0].headers.find(h=>h.key==='Content-Security-Policy').value;const m=c.split(';').map(s=>s.trim()).find(s=>s.startsWith('connect-src '));console.log(m.split(' ').find(o=>o.startsWith('https://')&&!o.includes('openfreemap')))")
+  # the bucket against the local build, read only: world/ matches by size (hidden files excluded) and nothing exists outside world/
+  if [ -f r2/.env ]; then
+    while IFS='=' read -r k v; do
+      case "$k" in R2_ACCOUNT_ID|R2_BUCKET|R2_ACCESS_KEY_ID|R2_SECRET_ACCESS_KEY) [ -z "${!k:-}" ] && export "$k=$v" ;; esac
+    done < r2/.env
+  fi
+  : "${R2_ACCOUNT_ID:?live: R2 credentials missing (r2/.env or the environment)}" "${R2_BUCKET:?}" "${R2_ACCESS_KEY_ID:?}" "${R2_SECRET_ACCESS_KEY:?}"
+  export RCLONE_CONFIG=/dev/null RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare
+  export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+  export RCLONE_CONFIG_R2_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" RCLONE_CONFIG_R2_ACL=private
+  if rclone check "$DATA/world" "R2:${R2_BUCKET}/world" --one-way --size-only --fast-list --s3-no-check-bucket --filter '- .*' --filter '- .*/**' >/tmp/publish-r2-check.log 2>&1; then
+    echo "ok: bucket world/ has every local file at the same size"
+  else
+    tail -5 /tmp/publish-r2-check.log >&2; fail "bucket world/ differs from $DATA/world (see /tmp/publish-r2-check.log; run the upload stage)"
+  fi
+  outside=$(rclone lsf "R2:${R2_BUCKET}" --fast-list --s3-no-check-bucket --max-depth 1 | grep -v '^world/$' || true)
+  [ -z "$outside" ] && echo "ok: nothing in the bucket outside world/" || fail "bucket holds objects outside world/: $(echo $outside | tr '\n' ' ') (delete them: rclone purge or delete with the R2 credentials)"
   prefix=world/; tiles=world/world.pmtiles
   code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Range: bytes=0-15' -H "Origin: $SITE" "$DATA_ORIGIN/$tiles"); [ "$code" = 206 ] && echo "ok: $tiles range request 206" || fail "$tiles range request returned $code"
   code=$(curl -s -o /dev/null -w '%{http_code}' "$DATA_ORIGIN/${prefix}it/shards.json"); [ "$code" = 200 ] && echo "ok: ${prefix}it/shards.json" || fail "${prefix}it/shards.json returned $code"

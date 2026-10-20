@@ -31,7 +31,7 @@ Do these in order. Nothing here has been executed.
 10. Final check: cold load of the site with the browser network tab: protocol `h2` or `h3`, `content-encoding: br` on shards, no CORS or CSP errors.
 
 ## One command, raw data to live site
-`pipeline/publish.sh` (from the repo root) does planet cache, outlines, cut, build, tiles, places, a check of the output on disk, the R2 upload (copy mode), the push, the R2 prune and a live check of R2 and the site. Credentials: copy `r2/.env.example` to `r2/.env` (gitignored). Always start with `pipeline/publish.sh --dry-run`.
+`pipeline/publish.sh` (from the repo root) does planet cache, outlines, cut, build, tiles, places, a check of the output on disk, the R2 upload (copy mode), the push, the R2 prune and a live check of R2 (bucket `world/` equals the local `world/`, nothing outside `world/`) and the site. Credentials: copy `r2/.env.example` to `r2/.env` (gitignored). Always start with `pipeline/publish.sh --dry-run`.
 Hidden files and folders (such as tool state in `.omc/`) are never uploaded: `sync.sh` filters them out.
 
 ## Publish data
@@ -46,7 +46,7 @@ r2/sync.sh
 3. `r2/sync.sh -P` (now deletes the old per-record objects).
 A tab left open across step 3 shows "Could not load" on clicks until it is reloaded.
 
-Tiles and side files go under `world/` in the bucket (they are gitignored, so Vercel cannot ship them). Old `glyphs/` and `glyphs-v2/` folders from before the glyph-free decision (2026-10-17) are no longer read; `r2/sync.sh` in sync mode deletes them.
+Tiles and side files go under `world/` in the bucket (they are gitignored, so Vercel cannot ship them). `r2/sync.sh` uploads and prunes only `app/public/data/world` -> bucket `world/`; anything else under `app/public/data` can never reach the public bucket, and the bucket holds nothing outside `world/` (the stale objects outside it were deleted on 2026-10-20, 3,424 objects, 1.35 GB). The `live` stage of `pipeline/publish.sh` checks both.
 The app never gets write credentials; the browser only does GET/HEAD.
 
 ## Vercel
