@@ -18,11 +18,11 @@ rail-extract/target/release/rail-extract cut sf-bay-area china de fr ch it paris
 #   rail type rules: rail-extract/src/classify.rs (ported from classify.py 2026-10-12, same output byte for byte)
 rail-extract/target/release/rail-extract build sf-bay-area china de fr ch it
 #   per region, in parallel: station model (stations, complexes, size tiers), stations under construction, tile input and side files
-#   into ../app/public/data; then the Rust MLT tile writer (tilewriter.rs) for each region in turn -> <slug>.pmtiles (it holds a whole region in memory); skipped for the pilot sources when the pilot join runs (the app reads only pilot.pmtiles)
+#   into ../app/public/data; then the Rust MLT tile writer (tilewriter/) for each region in turn -> <slug>.pmtiles (it holds a whole region in memory); skipped for the pilot sources when the pilot join runs (the app reads only pilot.pmtiles)
 #   timings 2026-10-14 (earlier run, per-region files plus the pilot join): sf-bay-area, paris, china, de, fr, ch, it together 40.4 s wall, 14.1 GB peak RSS; in the orig-vs-mlt benchmark (pilot file only) the same seven slugs took 27.4 s. Tile step per region (earlier single runs): SF 0.1 s, Paris 0.3 s,
 #   China 4.3 s (133.3 MB, 5.3 GB; 4.1 s median of 3 runs in the benchmark, 4.9 s in another single run), Germany 3.8 s, France 2.4 s, Switzerland 0.6 s, Italy 1.0 s. (tippecanoe took China 28 to 37 s)
-#   construction and proposed track is written as real dashes, the tile layer `con_dash` (tiles.rs: merged end to end, parallel tracks made one line, cut for 22 half-zoom bands, no yard track): the app's dashes. Upload tiles before deploying the app: it has no fallback, so old tiles show no construction
-#   the tile input is tiles_tmp/*.geojsonl; each line's "zoom":{minzoom,maxzoom} member is the feature's zoom range (read by tilewriter.rs)
+#   construction and proposed track is written as real dashes, the tile layer `con_dash` (tiles/: merged end to end, parallel tracks made one line, cut for 22 half-zoom bands, no yard track): the app's dashes. Upload tiles before deploying the app: it has no fallback, so old tiles show no construction
+#   the tile input is tiles_tmp/*.geojsonl; each line's "zoom":{minzoom,maxzoom} member is the feature's zoom range (read by tilewriter/)
 #   whenever tiles are built and any of sf-bay-area, china, de, fr, ch, it is among the regions, one tile writer run over those six sources' tiles_tmp writes pilot.pmtiles (12.7 s; 298.8 MB now, 310.5 MB with FastPFOR and FSST on),
 #   so a partial rebuild refreshes the pilot; a source with no tile input is warned about and the join skipped. It also writes pilot.parts.json (each source's slug and its outline's bounds;
 #   bounds of neighbouring countries overlap, so they are not checked). Both are written to a temporary file and renamed.

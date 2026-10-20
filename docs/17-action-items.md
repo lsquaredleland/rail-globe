@@ -1,6 +1,6 @@
 # Open action items (the one to-do home; merged 2026-10-20)
 
-Everything fixed in the 2026-10-16/17 session has been removed from this list; what was done is in `/CHANGELOG.md` (root). What is left needs a decision from the user, a check, or follow-up work. Reply under each `Your call:`.
+Everything fixed in the 2026-10-16/17 session has been removed from this list; what was done is in `CHANGELOG.md` (root). What is left needs a decision from the user, a check, or follow-up work. Reply under each `Your call:`.
 
 Decided and closed (no action left): the app is glyph-free, all text drawn locally from system fonts (docs/00-overview.md 2026-10-17); 朔黄线 stays Freight; The Ghan and Indian Pacific both Intercity; Uruguay none; Peru, Bolivia, Cuba left alone; China tier-1 override stays narrowed; Berlin and Hamburg S-Bahn and Copenhagen S-tog stay Light rail; ICE, Frecciarossa, Railjet name overrides left out; the 150 km Intercity cut-off stays; the world build is the default (CLAUDE.md); stale country folders deleted and pruned.
 
@@ -24,7 +24,7 @@ In operator mode zoomed in over a country there is no card and no legend (the op
 - Your call:
 
 ### 1.4 Under-construction stations: shared predicate (proposed)
-The app already shows under-construction stations only when the construction flag is on (layers `stcon1-3`, `lblcon1-3`, built by `construction.rs`). `stations.rs` now keeps them out of the open-station model, but `construction.rs` only recognises some tag patterns, so a station skipped by `stations.rs` for `railway=station` + `construction=yes|station` or a `（在建）` name suffix (cn: 63 + 15 + 181) is never drawn, even with the flag on. Proposed: one shared predicate used by both files so every skipped station appears with the flag on. Small change, changes data, needs one more world build.
+The app already shows under-construction stations only when the construction flag is on (layers `stcon1-3`, `lblcon1-3`, built by `construction.rs`). `stations/` now keeps them out of the open-station model, but `construction.rs` only recognises some tag patterns, so a station skipped by `stations/` for `railway=station` + `construction=yes|station` or a `（在建）` name suffix (cn: 63 + 15 + 181) is never drawn, even with the flag on. Proposed: one shared predicate used by both files so every skipped station appears with the flag on. Small change, changes data, needs one more world build.
 - Your call:
 
 ### 1.5 Station construction skip: tags that cannot prove "open"

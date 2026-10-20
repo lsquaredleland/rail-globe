@@ -43,13 +43,13 @@ Top-level keys a region config may use (after merging; a `+key` counts as `key`)
 | Key | Type | Read by | Example |
 | --- | --- | --- | --- |
 | `_comment` | string | nothing (notes for people) | `"All of Mexico ..."` |
-| `china` | bool | `classify.rs` (250 km/h high-speed floor), `tiles.rs` (China-only styling) | `true` |
+| `china` | bool | `classify.rs` (250 km/h high-speed floor), `tiles/` (China-only styling) | `true` |
 | `exemptions` | list of objects | `classify.rs` (see Exemptions below) | `[{"id": "tren-maya-one-class", ...}]` |
 | `high_speed_min_kmh` | number | `stats.rs` writes it to `stats.json` as `hs_min_kmh`; default 200 | `200` |
 | `high_speed_networks_re` | list of regex | `classify.rs`: route network or name makes the route High-speed | `["^TGV", "^Eurostar"]` |
 | `high_speed_track_overrides` | list of match rules | `classify.rs`: promote tracks to High-speed (match rules as in `type_overrides`, without `type`) | `[{"osm_id": "way/123"}]` |
-| `main_station_re` | regex | `stations.rs`, `construction.rs`: names that are always major stations | `"^北京(东\|西\|南\|北)?站?$"` |
-| `main_terminals` | list of names | `stations.rs`: terminals that count as major | `["Gare de Bercy"]` |
+| `main_station_re` | regex | `stations/`, `construction.rs`: names that are always major stations | `"^北京(东\|西\|南\|北)?站?$"` |
+| `main_terminals` | list of names | `stations/`: terminals that count as major | `["Gare de Bercy"]` |
 | `passenger_needs_evidence` | `true`, `"routes"` or `"stations"` | `classify.rs` (docs/15) | `"routes"` |
 | `passenger_operator_re` | list of regex | `classify.rs`: operators that count as passenger evidence | `["(?i)Amtrak\|Metra"]` |
 | `passenger_stations_file` | file name | `classify.rs`: text file beside the config, one passenger station name per line; with it the list decides what is a passenger station | `"cn-passenger-stations.txt"` |

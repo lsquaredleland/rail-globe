@@ -222,7 +222,7 @@ Re-gzipped samples from `pilot.pmtiles`, dense Chinese cities. Largest tile per 
 
 ### Tile and style zoom mismatches
 
-Data sits in tiles a zoom before the style draws it (`track_minzoom` and `feat` calls in `pipeline/rail-extract/src/tiles.rs` against `minzoom` in `app/src/mapStyle.ts`):
+Data sits in tiles a zoom before the style draws it (`track_minzoom` and `feat` calls in `pipeline/rail-extract/src/tiles/` against `minzoom` in `app/src/mapStyle/`):
 
 | Layer | In tiles from | Drawn from |
 | --- | --- | --- |

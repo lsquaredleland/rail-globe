@@ -1,6 +1,6 @@
 # Telling freight from passenger track
 
-OSM has no reliable "freight only" flag. The OSM wiki says lines are assumed to carry passengers unless tagged otherwise, and most freight-only track in China (and much in Europe) is not tagged. This file holds what the research found and the rules the pipeline applies, in order. Code: `pipeline/rail-extract/src/classify.rs` (rules 1 to 9), `cut.rs` (stations, stray track), `stations.rs` (rule 10). Per-region settings: `pipeline/config/<slug>.json`.
+OSM has no reliable "freight only" flag. The OSM wiki says lines are assumed to carry passengers unless tagged otherwise, and most freight-only track in China (and much in Europe) is not tagged. This file holds what the research found and the rules the pipeline applies, in order. Code: `pipeline/rail-extract/src/classify.rs` (rules 1 to 9), `cut.rs` (stations, stray track), `stations/` (rule 10). Per-region settings: `pipeline/config/<slug>.json`.
 
 ## What the research found (2026-10-14)
 
@@ -30,7 +30,7 @@ Applied to each track way; "unrouted" means no passenger route relation (`route=
 7. **Short spurs.** A railway under 3 km with a dead end that no passenger station is beside is Freight.
 8. **Neighbours.** A way under 2 km, typed from its own tags, whose neighbours at both ends all have the same other type (Intercity, Regional, Freight or High-speed) takes that type. A few hundred metres of "Regional" in a freight line is a tagging gap.
 9. **Stray track.** A piece under 100 m that touches no other track and is on no route is dropped (not drawn, not counted).
-10. **Stations** (`stations.rs`). A train station with no Intercity, Regional or High-speed track near it is never a major station (not by name list, not by high-speed rule) and is at most the smallest size. Zhuhai West.
+10. **Stations** (`stations/`). A train station with no Intercity, Regional or High-speed track near it is never a major station (not by name list, not by high-speed rule) and is at most the smallest size. Zhuhai West.
 
 ## Settings and limits
 

@@ -1,6 +1,6 @@
 // Converts side files written before 2026-10-16 (one file per station and per line, 256 tag and name-hl shards) into the shard layout
-// that pipeline/rail-extract/src/tiles.rs writes now, without a rebuild: stations/, lines/, tags/ and name-hl/ become a few hash shards
-// plus shards.json (app/src/data.ts reads it). Same rules as tiles.rs: key hashed with fnv1a, count a power of two for ~256 KB a shard,
+// that pipeline/rail-extract/src/tiles/side.rs writes now, without a rebuild: stations/, lines/, tags/ and name-hl/ become a few hash shards
+// plus shards.json (app/src/data.ts reads it). Same rules as tiles/side.rs: key hashed with fnv1a, count a power of two for ~256 KB a shard,
 // lines over 64 KB stay their own file in lines-big/. Usage: node pipeline/repack_side_files.mjs <data root> [--dry-run]
 // Walks <data root> for region folders (a folder holding stations/ and no shards.json), so it covers world/<slug> too. Safe to re-run.
 import fs from 'node:fs'

@@ -5,13 +5,13 @@ What the filter keeps from the OSM planet, and what it drops. v3 (2026-10-11) ap
 ## Changes to implement (vs the prototype filter)
 
 - [x] Keep the OSM type and id on every feature as `osm_id` (e.g. `way/123`) (`classify.rs` `osm_id` on every track; checked 2026-10-17)
-- [x] Keep `highspeed`, `voltage`, `frequency` and `tracks` on track (`rules.rs` `KEEP`; `tiles.rs` writes `v`, `fq`, `tr`)
+- [x] Keep `highspeed`, `voltage`, `frequency` and `tracks` on track (`rules.rs` `KEEP`; `tiles/` writes `v`, `fq`, `tr`)
 - [x] Keep yard track (`service=yard`) (`rules.rs` `SERVICE_KEEP`; `cut.rs` labels `track:<rw>:yard`; type `yard` in `classify.rs`)
-- [x] Keep `wikidata`, `uic_ref`, `railway:ref`, `official_name`, `int_name` and `name:*` on stations, halts and platforms (`rules.rs` `KEEP` plus every `name:*` (`cut.rs`); read in `stations.rs`)
+- [x] Keep `wikidata`, `uic_ref`, `railway:ref`, `official_name`, `int_name` and `name:*` on stations, halts and platforms (`rules.rs` `KEEP` plus every `name:*` (`cut.rs`); read in `stations/features.rs`)
 - [x] Write the relations side table: `stop_area`, `stop_area_group`, route and `route_master`, with members, roles and the route `service` tag (`cut.rs` writes `relations.jsonl`; `REL_TAGS` has `service`; `RelKind::StopAreaGroup` in `rules.rs`)
 - [x] Write stop positions to a build-time file (not tiled) (`cut.rs` writes `stop_positions.jsonl`)
 - [x] Change `_routes` to hold route relation ids, not refs or names (`cut.rs` `way_routes`, `"relation/123"` ids)
-- [x] Add a derived `_stop_area` id to stations and platforms (`cut.rs` `member_area` writes `_stop_area`; used in `stations.rs`)
+- [x] Add a derived `_stop_area` id to stations and platforms (`cut.rs` `member_area` writes `_stop_area`; used in `stations/`)
 - [x] Stop copying `colour` onto ways; it stays on route records (`colour` is in `REL_TAGS` only, not in `KEEP`)
 - [x] Drop `passenger` (not in `KEEP` or `cache_key`)
 - [x] Drop proposed track (`railway=proposed`); keep construction (`classify.rs` drops it outside `proposed_region` (kept for Hong Kong only, as in `00-overview.md`); construction kept)
@@ -23,7 +23,7 @@ What the filter keeps from the OSM planet, and what it drops. v3 (2026-10-11) ap
 ## Source and processing
 
 - Source: OpenStreetMap planet extract filtered to railway-related objects
-- Output 1: GeoJSON features, converted to MapLibre Tiles (MLT) in a PMTiles file by the Rust tile writer (`pipeline/rail-extract/src/tilewriter.rs`); no tippecanoe, no MVT
+- Output 1: GeoJSON features, converted to MapLibre Tiles (MLT) in a PMTiles file by the Rust tile writer (`pipeline/rail-extract/src/tilewriter/`); no tippecanoe, no MVT
 - Output 2 (New): relations side table, JSONL, used at build time and for side files, never tiled
 - Output 3 (New): stop positions, JSONL, used at build time only
 - Every feature keeps its OSM type and id as `osm_id` (New)

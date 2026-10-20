@@ -31,7 +31,7 @@ City limits, not metro areas (Boston is 131 km of passenger route inside its lim
 2. **Lines with no pieces.** 17% of Italy's lines (88 of 509), 4% of France's and 1% of Germany's have an empty `hl.ways`: the route relation has no rail ways in the data (0 km: former tracks, tramways never mapped as rail, proposals, members dropped as yard or stray). They are listed in "Lines" and cannot be highlighted. Fix: do not write lines with 0 km, or flag them.
 3. **Border attribution** (found testing the world build). A track piece is mapped to its country's side files from where it lies (`regionOf`, the first point of the tile geometry), so a line near a border can be asked of the wrong country: about 14 requests like `de/lines/7843286.json` for Dutch lines (404, no highlight). Cause 1, **fixed 2026-10-16**: country outlines load lazily now, and the highlight prefetch ran before they were in; it waits for `warmParts` now. Cause 2, **open, intermittent**: pieces whose first point lies across the border. Fix: on a 404, try the other countries whose bounds hold the point (line ids are relation ids, unique worldwide).
 
-Recommended order: border fallback (small), drop empty lines (small), `ref` highlight (medium: `tiles.rs` and the side files).
+Recommended order: border fallback (small), drop empty lines (small), `ref` highlight (medium: `tiles/` and the side files).
 
 ## 3. Small countries are country level only (done)
 

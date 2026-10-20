@@ -7,7 +7,7 @@ Newest first. Decisions are in `docs/00-overview.md`; open items in `docs/17-act
 - `docs/00-overview.md`: a short "Current rules" section on top, the decision log newest first below it; 14 superseded rows moved verbatim to `docs/archive/decisions-superseded.md`.
 - Stale facts fixed in the docs (glyph steps, Python and tippecanoe processing, `pilot.pmtiles`, `--combined`, the `tiles` command, search shards).
 - `pipeline/README.md` is a command reference now; the pilot-era timing log is `docs/reference/pipeline-timings.md`.
-- One to-do home, `docs/17-action-items.md`: open items of `06-open-questions.md` and `11-performance-todos.md` moved there; closed material is in `docs/archive/`.
+- One to-do home, `docs/17-action-items.md`: open items of `06-open-questions.md` and `docs/archive/performance-todos-2026-10-17.md` moved there; closed material is in `docs/archive/`.
 - Dead scripts, raw Nominatim dumps and the low-zoom scratch tools moved to `pipeline/archive/` (see its README).
 - `docs/05-pilot-plan.md` has a Status column; phase 4 (Compare) was skipped.
 - `docs/18-changelog-2026-10-17.md` became this file.
@@ -29,7 +29,7 @@ Not deployed: the live site is older than both.
 
 ### 2. Pipeline code (uncommitted)
 
-#### Stations (`stations.rs`)
+#### Stations (`stations/`)
 - Merge by `wikidata` / `uic_ref` only within 1 km (3 km when the normalised names are equal); `railway:ref` is no longer a merge key. Poznań, Wrocław, Kraków, Saratov and Chelyabinsk are separate and correctly named again (about 600 Polish stations had been absorbed).
 - A way that is both `building=train_station` and a station is now a station (456 stations had been lost in 21 countries: Boston South/North, Rawalpindi, Kandy, Nairobi Central, Varanasi, València Nord…). A polygon with no stop area joins the nearest same-mode station within 100 m when names match or it is unnamed.
 - Mode comes from the station's own platforms when the guess came from the nearest track (Düsseldorf Hbf and Basel SBB were subway / light-rail only).
@@ -45,7 +45,7 @@ Not deployed: the live site is older than both.
 #### Config defaults (`site.rs`)
 - Own-file configs that `extends` a template now get `stat_name` / `stat_local` / `stat_auto.country` filled when they omit them. Without this, 23 new configs would have lost their area cards and outlines on the next build (card read "au", provinces and cities dropped). Test added; checked on au, kz, in, jp against the live `stats.json`.
 
-#### Tile writer (`tilewriter.rs`, docs/16 steps 1 to 3)
+#### Tile writer (`tilewriter/`, docs/16 steps 1 to 3)
 - At z0 to z8: repeated vertices dropped, Douglas-Peucker 4 units after the join (own segment-distance implementation), extent 2048 (airports stay 4096), and no stations or complexes at z0 to z5. `ln`, `nk`, `oc` and all other columns unchanged.
 - Subset (14 countries): z0 to z8 10.09 to 4.62 MB (-54%); Europe z5 laptop view 1,264 to 515 KB; z9+ tile content identical (247,591 tiles hashed); `--deep-zoom 5` and `6` identical; run time unchanged. `RAIL_LOWZOOM=off` restores the old path exactly (`cmp` identical). `vector_layers` minzoom for stations/complexes is 6 when on. 11 writer tests.
 - Not measured: the full world file. My estimate for Europe z5 on the full world is about 650 KB, so z5 and z6 laptop views may still be near 600 KB. Steps 4 to 7 of docs/16 are not built (the user is thinking about them).
@@ -100,7 +100,7 @@ GO for committing the code, configs, app and docs. `cargo test --release` 52 pas
 - New configs: jo fj ae pe sg kr; edited: au nz cn fr ke eg pl ru. Station label layers copied above the place labels from z9 (tier 1 and 2 names no longer hidden by district labels); search keeps the City row and drops the same-named Province row when they are about the same size.
 - Final world build (local, nothing published): all stages exit 0; `world.pmtiles` 1,159.4 MB, z0 to z8 15.9 MB gzip (31.3 MB before). Only Europe z5 on the laptop is over the 600 KB budget (678 KB). The first world view loads 21 glyph files (409 KB gzipped).
 - Opus final reviews found and the team fixed: search twin rule hiding big states, Bönningstedt dropped as under construction, running-route check for every mode, prune guard defeated by its own age check. A second look found that skipping `construction:*` stations drops some open ones; the rule was tightened (Montpellier line 5, Crumpsall, Arcueil-Cachan are open again).
-- Open: see docs/17 (Europe z5 678 KB, small-script local fonts, Turkey station tiers fell back and are not traced, construction predicate shared by `stations.rs` and `construction.rs`).
+- Open: see docs/17 (Europe z5 678 KB, small-script local fonts, Turkey station tiers fell back and are not traced, construction predicate shared by `stations/` and `construction.rs`).
 
 ### 9. Things that went wrong or were not verified
 

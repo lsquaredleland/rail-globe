@@ -43,7 +43,7 @@ A static web map of passenger rail built from OpenStreetMap, made for comparing 
 
 ## Stack (summary)
 
-- Pipeline: Rust extractor (`pipeline/rail-extract`: planet -> world rail cache -> region cuts, including rail type classification; `build`: station model, tile input, side files, MLT tiles through the Rust writer `tilewriter.rs`), PMTiles; no tippecanoe
+- Pipeline: Rust extractor (`pipeline/rail-extract`: planet -> world rail cache -> region cuts, including rail type classification; `build`: station model, tile input, side files, MLT tiles through the Rust writer `tilewriter/`), PMTiles; no tippecanoe
 - App: Vite + React + TypeScript, MapLibre GL JS, OpenFreeMap basemap restyled minimal
 - Hosting: Cloudflare R2 for tiles and side files (live on the `r2.dev` public URL, custom domain still to do), Vercel for the app (`rail-globe.vercel.app`); the app reads only the world build; `pipeline/publish.sh` runs raw data to live site
 
