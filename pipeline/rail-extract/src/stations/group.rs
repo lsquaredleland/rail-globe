@@ -2,8 +2,8 @@
 
 use super::features::{track_mode, Feats, It};
 use super::names::{core_name, decorated, norm_name, operator_tokens};
-use super::{groups, max_radius, point_index, Rels, Station, UF};
-use crate::geomx::{self, Index, G};
+use super::{groups, max_radius, point_index, Rels, Station};
+use crate::geomx::{self, Index, UnionFind, G};
 use geo::{Geometry, Point};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::{BTreeMap, BTreeSet};
@@ -207,7 +207,7 @@ fn combine(platforms: &[It], ms: &[&Station]) -> Station {
 }
 
 /// build the merged stations of a union-find's groups, and the old index -> new index map
-fn combine_groups(platforms: &[It], st: &[Station], uf: &mut UF) -> (Vec<Station>, Vec<usize>) {
+fn combine_groups(platforms: &[It], st: &[Station], uf: &mut UnionFind) -> (Vec<Station>, Vec<usize>) {
     let mut out: Vec<Station> = Vec::new();
     let mut new_of = vec![0usize; st.len()];
     for members in groups(uf, st.len()) {
@@ -223,7 +223,7 @@ fn combine_groups(platforms: &[It], st: &[Station], uf: &mut UF) -> (Vec<Station
 /// step 3: merge duplicates of the same mode (a shared wikidata or uic_ref, the same name close by, a polygon beside its own node)
 fn merge_same_mode(feats: &Feats, st: &mut [Station], s_tree: &Index) -> (Vec<Station>, Vec<usize>) {
     let station_feats = &feats.station_feats;
-    let mut uf = UF::new(st.len());
+    let mut uf = UnionFind::new(st.len());
     let mut keys_of: Vec<BTreeSet<(String, String)>> = Vec::with_capacity(st.len());
     for s_ in st.iter_mut() {
         let name = s_.feats.iter().find_map(|&k| station_feats[k].p("name").filter(|n| !n.is_empty())).unwrap_or("");
@@ -355,7 +355,7 @@ fn name_infos(feats: &Feats, rels: &Rels, stn: &[Station]) -> Vec<NameInfo> {
 fn merge_second_dot(feats: &Feats, rels: &Rels, stn: Vec<Station>, old_to_new: Vec<usize>) -> (Vec<Station>, Vec<usize>) {
     let infos = name_infos(feats, rels, &stn);
     let tree = point_index(&stn);
-    let mut uf2 = UF::new(stn.len());
+    let mut uf2 = UnionFind::new(stn.len());
     let mut merged_any = false;
     for i in 0..stn.len() {
         let pi = Geometry::Point(stn[i].pt);

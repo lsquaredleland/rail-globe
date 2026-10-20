@@ -289,3 +289,34 @@ impl Index {
         self.query(p.x(), p.y(), p.x(), p.y())
     }
 }
+
+/// Disjoint sets over `0..n` with path halving. The root of a set is deterministic, and callers that iterate by root rely on that.
+pub struct UnionFind(Vec<usize>);
+
+impl UnionFind {
+    pub fn new(n: usize) -> UnionFind {
+        UnionFind((0..n).collect())
+    }
+
+    pub fn find(&mut self, mut x: usize) -> usize {
+        while self.0[x] != x {
+            self.0[x] = self.0[self.0[x]];
+            x = self.0[x];
+        }
+        x
+    }
+
+    /// joins the sets of `a` and `b`; the smaller root becomes the root
+    pub fn union(&mut self, a: usize, b: usize) {
+        let (a, b) = (self.find(a), self.find(b));
+        if a != b {
+            self.0[a.max(b)] = a.min(b);
+        }
+    }
+
+    /// joins the sets of `a` and `b`; the root of `b` becomes the root (even if `a` and `b` are already joined, a no-op)
+    pub fn link(&mut self, a: usize, b: usize) {
+        let (a, b) = (self.find(a), self.find(b));
+        self.0[a] = b;
+    }
+}

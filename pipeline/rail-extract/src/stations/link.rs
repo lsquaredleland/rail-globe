@@ -1,9 +1,9 @@
 //! What is tied to the final stations: stop positions, the lines through each station, and the complexes.
 
 use super::size::Size;
-use super::{groups, max_radius, members, station_id, station_wikidata, Model, GROUP_RADIUS, UF};
+use super::{groups, max_radius, members, station_id, station_wikidata, Model, GROUP_RADIUS};
 use super::names::{english_name, norm_name};
-use crate::geomx;
+use crate::geomx::{self, UnionFind};
 
 use geo::{Geometry, Point};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -147,7 +147,7 @@ pub(super) struct Complexes {
 /// the same station building
 pub(super) fn complexes(m: &Model, sizes: &[Size]) -> Complexes {
     let (st, buildings) = (&m.st, &m.feats.buildings);
-    let mut cuf = UF::new(st.len());
+    let mut cuf = UnionFind::new(st.len());
     let mut mapped_pairs = 0;
     let group_stations = |g: &Value| -> BTreeSet<usize> { members(g).filter_map(|mb| m.area_to_station.get(&format!("{}/{}", mb.kind.unwrap_or(""), mb.id.unwrap_or(0))).copied()).collect() };
     for g in &m.rels.group_rows {

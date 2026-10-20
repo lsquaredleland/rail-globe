@@ -2,6 +2,7 @@
 
 use super::props::CityProps;
 use super::util::feat;
+use crate::geomx::UnionFind;
 use rustc_hash::FxHashMap;
 
 const CITY_LINK_KM: f64 = 3.0; // track samples this close (directly or through others) are one city dot
@@ -25,24 +26,14 @@ pub(super) fn city_dots(samples: &[(f64, f64, f64, u8)]) -> String {
     for (i, p) in samples.iter().enumerate() {
         grid.entry((cell(p.0), cell(p.1))).or_default().push(i);
     }
-    let mut parent: Vec<usize> = (0..samples.len()).collect();
-    fn find(parent: &mut [usize], mut i: usize) -> usize {
-        while parent[i] != i {
-            parent[i] = parent[parent[i]];
-            i = parent[i];
-        }
-        i
-    }
+    let mut uf = UnionFind::new(samples.len());
     for i in 0..samples.len() {
         let (cx, cy) = (cell(samples[i].0), cell(samples[i].1));
         for gx in cx - 1..=cx + 1 {
             for gy in cy - 1..=cy + 1 {
                 for &j in grid.get(&(gx, gy)).into_iter().flatten() {
                     if j > i && km((samples[i].0, samples[i].1), (samples[j].0, samples[j].1)) <= CITY_LINK_KM {
-                        let (a, b) = (find(&mut parent, i), find(&mut parent, j));
-                        if a != b {
-                            parent[a.max(b)] = a.min(b);
-                        }
+                        uf.union(i, j);
                     }
                 }
             }
@@ -50,7 +41,7 @@ pub(super) fn city_dots(samples: &[(f64, f64, f64, u8)]) -> String {
     }
     let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
     for i in 0..samples.len() {
-        let r = find(&mut parent, i);
+        let r = uf.find(i);
         groups.entry(r).or_default().push(i);
     }
     // a small group near a much bigger one is part of that city (a satellite district or suburb whose track is not linked to the main
@@ -58,7 +49,7 @@ pub(super) fn city_dots(samples: &[(f64, f64, f64, u8)]) -> String {
     let km_of = |m: &[usize]| m.iter().map(|&j| samples[j].2).sum::<f64>();
     let mut order: Vec<usize> = groups.keys().copied().collect();
     order.sort_by(|a, b| km_of(&groups[b]).partial_cmp(&km_of(&groups[a])).unwrap_or(std::cmp::Ordering::Equal).then(a.cmp(b)));
-    let mut owner: Vec<usize> = (0..samples.len()).map(|i| find(&mut parent, i)).collect();
+    let mut owner: Vec<usize> = (0..samples.len()).map(|i| uf.find(i)).collect();
     let mut total: FxHashMap<usize, f64> = order.iter().map(|&g| (g, km_of(&groups[&g]))).collect();
     for &g in &order {
         let mine = total[&g];

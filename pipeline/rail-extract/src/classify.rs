@@ -5,6 +5,7 @@
 //! added to track), lines.json (one record per line: route_master, else route) and classify_report.json.
 //! Per-region rules stay in pipeline/config/<slug>.json.
 
+use crate::geomx::UnionFind;
 use crate::out::{js, py_str, J};
 use crate::region::Region;
 use crate::rules::{List, Tags};
@@ -647,14 +648,7 @@ fn freight_by_evidence(tracks: &[TrackIn], cand: &[bool], pax: &[(i32, i32)]) ->
         }
     }
     // unnamed ways without a ref are joined end to end into one railway
-    let mut parent: Vec<usize> = (0..tracks.len()).collect();
-    fn find(p: &mut [usize], mut i: usize) -> usize {
-        while p[i] != i {
-            p[i] = p[p[i]];
-            i = p[i];
-        }
-        i
-    }
+    let mut uf = UnionFind::new(tracks.len());
     let anon = |t: &TrackIn| t.props.g("name").map_or(true, str::is_empty) && t.props.g("ref").map_or(true, str::is_empty);
     let mut at: FxHashMap<(i32, i32), usize> = FxHashMap::default();
     for (i, t) in tracks.iter().enumerate() {
@@ -664,10 +658,7 @@ fn freight_by_evidence(tracks: &[TrackIn], cand: &[bool], pax: &[(i32, i32)]) ->
         for e in [t.ll.first(), t.ll.last()].into_iter().flatten() {
             match at.get(e) {
                 Some(&j) => {
-                    let (a, b) = (find(&mut parent, i), find(&mut parent, j));
-                    if a != b {
-                        parent[a.max(b)] = a.min(b);
-                    }
+                    uf.union(i, j);
                 }
                 None => {
                     at.insert(*e, i);
@@ -680,7 +671,7 @@ fn freight_by_evidence(tracks: &[TrackIn], cand: &[bool], pax: &[(i32, i32)]) ->
         if !cand[i] {
             continue;
         }
-        let key = if anon(t) { format!("a:{}", find(&mut parent, i)) } else { format!("n:{}|{}", t.props.g("name").unwrap_or(""), t.props.g("ref").unwrap_or("")) };
+        let key = if anon(t) { format!("a:{}", uf.find(i)) } else { format!("n:{}|{}", t.props.g("name").unwrap_or(""), t.props.g("ref").unwrap_or("")) };
         groups.entry(key).or_default().push(i);
     }
     let len_km = |ll: &[(i32, i32)]| -> f64 {
@@ -1166,29 +1157,21 @@ fn smooth_chains(tracks: &[TrackIn], at_end: &FxHashMap<(i32, i32), Vec<usize>>,
     let elig: Vec<usize> = (0..tracks.len())
         .filter(|&i| tracks[i].props.g("railway") == Some("rail") && tracks[i].ll.len() >= 2 && decided[i].as_ref().map_or(false, smoothable))
         .collect();
-    let mut parent: Vec<usize> = (0..tracks.len()).collect();
-    fn root(p: &mut [usize], mut i: usize) -> usize {
-        while p[i] != i {
-            p[i] = p[p[i]];
-            i = p[i];
-        }
-        i
-    }
+    let mut uf = UnionFind::new(tracks.len());
     let is_elig: FxHashSet<usize> = elig.iter().copied().collect();
     for &i in &elig {
         for e in [tracks[i].ll.first().unwrap(), tracks[i].ll.last().unwrap()] {
             for &j in at_end.get(e).into_iter().flatten().filter(|&&j| j != i && is_elig.contains(&j)) {
                 // only pieces of one type are joined: the chain is one line
                 if decided[i].as_ref().map(|d| &d.t) == decided[j].as_ref().map(|d| &d.t) {
-                    let (a, b) = (root(&mut parent, i), root(&mut parent, j));
-                    parent[a] = b;
+                    uf.link(i, j);
                 }
             }
         }
     }
     let mut comps: FxHashMap<usize, Vec<usize>> = FxHashMap::default();
     for &i in &elig {
-        let r = root(&mut parent, i);
+        let r = uf.find(i);
         comps.entry(r).or_default().push(i);
     }
     let mut changes: Vec<(usize, String)> = Vec::new();

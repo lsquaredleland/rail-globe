@@ -6,7 +6,7 @@
 //! 600 m. Tier from what is being built around it: hsr if high-speed construction track runs within 200 m or the name says so;
 //! major if hsr with 4+ mainline construction pieces within 200 m, or the name matches main_station_re. Works in degrees.
 
-use crate::geomx::{self, Index};
+use crate::geomx::{self, Index, UnionFind};
 use crate::pyjson::{f, py_round};
 use crate::site::{s, Input};
 use crate::stations::english_name;
@@ -81,14 +81,7 @@ fn cluster_nodes(inp: &Input, nodes: &[usize]) -> (Vec<Point<f64>>, Vec<String>,
     };
     let pts: Vec<Point<f64>> = nodes.iter().map(|&i| pt(i)).collect();
     let nms: Vec<String> = nodes.iter().map(|&i| norm(s(&inp.feats[i].p, "name").unwrap_or(""))).collect();
-    let mut parent: Vec<usize> = (0..nodes.len()).collect();
-    fn find(p: &mut [usize], mut i: usize) -> usize {
-        while p[i] != i {
-            p[i] = p[p[i]];
-            i = p[i];
-        }
-        i
-    }
+    let mut uf = UnionFind::new(nodes.len());
     let node_tree = Index::new(pts.iter().map(|p| geomx::bbox(&Geometry::Point(*p))));
     for i in 0..nodes.len() {
         for j in node_tree.near(&Geometry::Point(pts[i]), CLUSTER_DEG) {
@@ -98,15 +91,14 @@ fn cluster_nodes(inp: &Input, nodes: &[usize]) -> (Vec<Point<f64>>, Vec<String>,
             let (a, b) = (&nms[i], &nms[j]);
             let compat = a == b || (a.chars().count().min(b.chars().count()) >= 3 && (a.ends_with(b.as_str()) || b.ends_with(a.as_str())));
             if compat && geomx::dist_pt(&Geometry::Point(pts[i]), &pts[j]) <= CLUSTER_DEG {
-                let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
-                parent[ri] = rj;
+                uf.link(i, j);
             }
         }
     }
     let mut groups: Vec<Vec<usize>> = Vec::new();
     let mut gix: FxHashMap<usize, usize> = FxHashMap::default();
     for i in 0..nodes.len() {
-        let r = find(&mut parent, i);
+        let r = uf.find(i);
         let k = *gix.entry(r).or_insert_with(|| {
             groups.push(Vec::new());
             groups.len() - 1
