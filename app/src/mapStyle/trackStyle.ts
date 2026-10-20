@@ -3,7 +3,7 @@ import { ALL_TYPES, byType, get, type Expr } from './shared'
 
 /** layers that also have a high-speed twin (`<name>-hs`), see addRailSource */
 export const TWINS = new Set(['track', 'strand', 'strand-casing'])
-export const rank = byType((t) => (ALL_TYPES.length - ALL_TYPES.indexOf(t)))
+export const rank = byType((t) => ALL_TYPES.length - ALL_TYPES.indexOf(t))
 /** Grey-out mode has one definition of "active": high-speed track, and the stations that high-speed rail serves.
  *  Track (open or under construction), track names and stations all test these two expressions, so they cannot drift apart. */
 export const activeTrack: Expr = ['==', get('type'), 'high_speed'] as Expr

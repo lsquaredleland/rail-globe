@@ -15,7 +15,27 @@ if (!existsSync(root)) {
 /** [required, optional] keys per record kind */
 const CONTRACT = {
   station: [
-    ['id', 'name', 'name_en', 'tier', 'terminus', 'hsr', 'modes', 'platforms', 'platform_count', 'platform_refs', 'platform_refs_other', 'line_count', 'lines', 'complex', 'osm', 'wikidata', 'pt', 'tags', 'model'],
+    [
+      'id',
+      'name',
+      'name_en',
+      'tier',
+      'terminus',
+      'hsr',
+      'modes',
+      'platforms',
+      'platform_count',
+      'platform_refs',
+      'platform_refs_other',
+      'line_count',
+      'lines',
+      'complex',
+      'osm',
+      'wikidata',
+      'pt',
+      'tags',
+      'model',
+    ],
     ['construction', 'rail_lines', 'airport', 'logo'],
   ],
   line: [
@@ -23,7 +43,10 @@ const CONTRACT = {
     ['name_en', 'hl'],
   ],
   'line index entry': [['n', 'r', 'c', 't', 'o', 'f', 'to', 'km'], ['ne']],
-  'stats area': [['slug', 'name', 'local', 'kind', 'bbox', 'km', 'lines', 'stations'], ['speed', 'speed_con', 'speed_prop', 'hs_min_kmh']],
+  'stats area': [
+    ['slug', 'name', 'local', 'kind', 'bbox', 'km', 'lines', 'stations'],
+    ['speed', 'speed_con', 'speed_prop', 'hs_min_kmh'],
+  ],
 }
 
 const problems = []
@@ -36,7 +59,9 @@ function check(kind, rec, where) {
 const read = (p) => JSON.parse(readFileSync(p, 'utf8'))
 const first = (o) => o[Object.keys(o)[0]]
 
-const slugs = readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory() && existsSync(join(root, d.name, 'shards.json'))).map((d) => d.name)
+const slugs = readdirSync(root, { withFileTypes: true })
+  .filter((d) => d.isDirectory() && existsSync(join(root, d.name, 'shards.json')))
+  .map((d) => d.name)
 if (!slugs.length) {
   console.log(`check-data-contract: no country with side files in ${root}, nothing to check`)
   process.exit(0)
@@ -49,7 +74,8 @@ check('line', first(read(join(dir, 'lines', '0.json'))), `${slug}/lines/0.json`)
 check('line index entry', first(read(join(dir, 'lines-index.json'))), `${slug}/lines-index.json`)
 const { areas } = read(join(dir, 'stats.json'))
 check('stats area', areas.find((a) => a.kind === 'region') ?? areas[0], `${slug}/stats.json (region row)`)
-if (areas.find((a) => a.kind === 'region')?.hs_min_kmh === undefined) notes.push('stats.json region row has no hs_min_kmh yet (the app falls back to 250 for China, 200 elsewhere)')
+if (areas.find((a) => a.kind === 'region')?.hs_min_kmh === undefined)
+  notes.push('stats.json region row has no hs_min_kmh yet (the app falls back to 250 for China, 200 elsewhere)')
 
 for (const n of notes) console.log(`note: ${n}`)
 if (problems.length) {

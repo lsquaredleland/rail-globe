@@ -6,7 +6,17 @@ export const BOLD_STACK = ['Noto Sans Bold', 'Noto Sans', 'Helvetica Neue', 'Ari
 export const REG_STACK = ['Noto Sans Regular', 'Noto Sans', 'Helvetica Neue', 'Arial', 'sans-serif']
 
 export type ColorMode = 'type' | 'operator' | 'speed'
-export interface MapState { mode: ColorMode; construction: boolean; proposed: boolean; freight: boolean; hidden: string[]; hiddenSpeed: number[]; hsrOnly: boolean; lang: 'local' | 'en'; theme: Theme }
+export interface MapState {
+  mode: ColorMode
+  construction: boolean
+  proposed: boolean
+  freight: boolean
+  hidden: string[]
+  hiddenSpeed: number[]
+  hsrOnly: boolean
+  lang: 'local' | 'en'
+  theme: Theme
+}
 
 export type Expr = ExpressionSpecification
 export const get = (k: string): Expr => ['get', k]

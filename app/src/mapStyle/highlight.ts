@@ -6,33 +6,54 @@ import { L, byType, hitLayers, type Expr, type RailCtx } from './shared'
 import { typeColor } from './trackStyle'
 
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
-const HL_NONE = ['==', ['get', 'id'], ''] as Expr   // matches no track piece
+const HL_NONE = ['==', ['get', 'id'], ''] as Expr // matches no track piece
 
 /** the highlight layers: the hovered or selected line drawn wider in its own colour */
 export function addHighlightLayers({ map, source, hlLayer }: RailCtx) {
   // highlight for the hovered or selected line: the same line drawn wider in its own colour, no outline
-  const hlW: Expr = ['interpolate', ['linear'], ['zoom'],
-    8, ['+', ['*', byType((t) => TYPE_WIDTH[t][0]), 1.8], 2], 12, ['+', ['*', byType((t) => TYPE_WIDTH[t][1]), 1.8], 2.5],
-    15, ['+', ['*', byType((t) => TYPE_WIDTH[t][2]), 1.8], 3]] as Expr
+  const hlW: Expr = [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    8,
+    ['+', ['*', byType((t) => TYPE_WIDTH[t][0]), 1.8], 2],
+    12,
+    ['+', ['*', byType((t) => TYPE_WIDTH[t][1]), 1.8], 2.5],
+    15,
+    ['+', ['*', byType((t) => TYPE_WIDTH[t][2]), 1.8], 3],
+  ] as Expr
   // The highlight layers come after the casing, so no twin is needed; high-speed sorts last within each.
   // z9 and closer: the track pieces whose `id` property ("way/123") is in the filter set by highlightLine. No feature state:
   // MapLibre decodes every loaded MLT tile on the main thread as soon as a source has any feature state.
   // Own source (same PMTiles, z9 and closer only): a filter change reloads every tile of the layer's source, and on the main
   // source that drops each tile's decoded copy, which MLT then decodes again whole on the next hover query.
   map.addSource(L(source, 'hls'), { type: 'vector', url: pmtilesUrl(source), encoding: 'mlt', minzoom: 9 })
-  hlLayer({ id: L(source, 'hl-fs'), type: 'line', source: L(source, 'hls'), 'source-layer': 'track', minzoom: 9,
+  hlLayer({
+    id: L(source, 'hl-fs'),
+    type: 'line',
+    source: L(source, 'hls'),
+    'source-layer': 'track',
+    minzoom: 9,
     layout: { 'line-cap': 'round', 'line-join': 'round' },
-    filter: HL_NONE, paint: { 'line-color': typeColor, 'line-width': hlW } })
+    filter: HL_NONE,
+    paint: { 'line-color': typeColor, 'line-width': hlW },
+  })
   // below z9 the merged overview has no per-piece ids: the line's simplified geometry from its side file
   map.addSource(L(source, 'hl'), { type: 'geojson', data: EMPTY })
-  hlLayer({ id: L(source, 'hl'), type: 'line', source: L(source, 'hl'), maxzoom: 9,
-    layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': typeColor, 'line-width': hlW } })
+  hlLayer({
+    id: L(source, 'hl'),
+    type: 'line',
+    source: L(source, 'hl'),
+    maxzoom: 9,
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': typeColor, 'line-width': hlW },
+  })
 }
 
-let hlKey = ''          // what was asked for last
-let hlShown = ''        // what is on the map
+let hlKey = '' // what was asked for last
+let hlShown = '' // what is on the map
 let hlCurrent = false
-const hlLoaded = new Map<string, Highlight | null>()   // highlight data already fetched, by key: shown with no wait
+const hlLoaded = new Map<string, Highlight | null>() // highlight data already fetched, by key: shown with no wait
 
 function clearHighlight(map: MLMap, setFilter = true) {
   if (hlCurrent && setFilter && map.getLayer(L(TILES, 'hl-fs'))) map.setFilter(L(TILES, 'hl-fs'), HL_NONE)
@@ -61,7 +82,10 @@ function showHighlight(map: MLMap, hs: Highlight[]) {
   const base = map.getPaintProperty(L(TILES, 'hl'), 'line-color')
   map.setPaintProperty(L(TILES, 'hl-fs'), 'line-color', (hs.length === 1 ? pinLine(base, hs[0]) : base) as never)
   const src = map.getSource(L(TILES, 'hl')) as GeoJSONSource | undefined
-  src?.setData({ type: 'FeatureCollection', features: hs.filter((h) => h.geom).map((h) => ({ type: 'Feature', properties: { type: h.type, ...(h.oc ? { oc: h.oc } : {}) }, geometry: h.geom! })) })
+  src?.setData({
+    type: 'FeatureCollection',
+    features: hs.filter((h) => h.geom).map((h) => ({ type: 'Feature', properties: { type: h.type, ...(h.oc ? { oc: h.oc } : {}) }, geometry: h.geom! })),
+  })
 }
 
 function apply(map: MLMap, key: string, slug: string | null, hs: Highlight[]) {
@@ -78,16 +102,26 @@ export function highlightLine(map: MLMap, slug: string | null, lineIds: number |
   if (key === hlKey) return
   hlKey = key
   if (key === hlShown) return
-  if (!key) { apply(map, '', null, []); return }
+  if (!key) {
+    apply(map, '', null, [])
+    return
+  }
   const parts = ids.length ? ids.map((id) => `${slug}|${id}`) : [`${slug}|n|${trackName}`]
   const ready = () => parts.map((k) => hlLoaded.get(k)).filter((h): h is Highlight => !!h)
-  if (parts.every((k) => hlLoaded.has(k))) { apply(map, key, slug, ready()); return }
+  if (parts.every((k) => hlLoaded.has(k))) {
+    apply(map, key, slug, ready())
+    return
+  }
   void (async () => {
-    await Promise.all(parts.filter((k) => !hlLoaded.has(k)).map(async (k) => {
-      const h = await (ids.length ? loadLineHighlight(slug!, Number(k.split('|')[1])) : loadNameHighlight(slug!, trackName!)).catch(() => null)
-      hlLoaded.set(k, h)
-    }))
-    if (hlKey === key) apply(map, key, slug, ready())   // else something else was asked for while this loaded
+    await Promise.all(
+      parts
+        .filter((k) => !hlLoaded.has(k))
+        .map(async (k) => {
+          const h = await (ids.length ? loadLineHighlight(slug!, Number(k.split('|')[1])) : loadNameHighlight(slug!, trackName!)).catch(() => null)
+          hlLoaded.set(k, h)
+        })
+    )
+    if (hlKey === key) apply(map, key, slug, ready()) // else something else was asked for while this loaded
   })()
 }
 
@@ -115,7 +149,10 @@ export function prefetchHighlights(map: MLMap): Promise<boolean> {
     while (Array.isArray(c) && Array.isArray(c[0])) c = c[0]
     const cell = Array.isArray(c) ? `${Math.round(Number(c[0]) * 20)},${Math.round(Number(c[1]) * 20)}` : ''
     let slug = cellRegion.get(cell)
-    if (slug === undefined) { slug = regionOf(f); if (cell) cellRegion.set(cell, slug) }
+    if (slug === undefined) {
+      slug = regionOf(f)
+      if (cell) cellRegion.set(cell, slug)
+    }
     const key = isLine ? `${slug}|${ln}` : `${slug}|n|${f.properties.n}`
     if (todo.has(key)) continue
     const s = slug
@@ -127,7 +164,10 @@ export function prefetchHighlights(map: MLMap): Promise<boolean> {
   // as the map moves again (or a newer prefetch starts), so a pan's tile requests do not queue behind a prefetch nobody is waiting for
   const run = async () => {
     while (jobs.length) {
-      if (map.isMoving() || gen !== prefetchGen) { complete = false; return }
+      if (map.isMoving() || gen !== prefetchGen) {
+        complete = false
+        return
+      }
       await jobs.shift()!().catch(() => null)
     }
   }
