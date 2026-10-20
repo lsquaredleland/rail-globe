@@ -33,7 +33,20 @@ pub fn assemble_outline(ways: &[&[P]], max_gap_deg: f64) -> Result<(Vec<Poly>, V
 }
 
 fn assemble_gaps(ways: &[&[P]], strict: bool, max_gap_deg: f64) -> Result<(Vec<Poly>, Vec<f64>), Fail> {
-    // ---- segments, normalised so (a, b) and (b, a) compare equal
+    let mut uniq = unique_segments(ways)?;
+    // like libosmium, any two segments that cross or overlap make the area invalid
+    if strict && intersects(&uniq) {
+        return Err(Fail::Geometry);
+    }
+    let mut adj = adjacency(&uniq);
+    let gaps = close_gaps(&mut uniq, &mut adj, max_gap_deg)?;
+    let rings = trace_rings(&uniq, &adj)?;
+    Ok((nest_rings(rings), gaps))
+}
+
+/// Segments of all member ways, normalised so (a, b) and (b, a) compare equal, with duplicates removed in pairs (an even run
+/// vanishes, an odd run leaves one). `Fail::Location` for a missing node location, `Fail::Geometry` when fewer than 3 remain.
+fn unique_segments(ways: &[&[P]]) -> Result<Vec<(P, P)>, Fail> {
     let mut segs: Vec<(P, P)> = Vec::new();
     for w in ways {
         let mut prev: Option<P> = None;
@@ -50,7 +63,6 @@ fn assemble_gaps(ways: &[&[P]], strict: bool, max_gap_deg: f64) -> Result<(Vec<P
         }
     }
     segs.sort_unstable();
-    // remove duplicates in pairs: an even run vanishes, an odd run leaves one
     let mut uniq: Vec<(P, P)> = Vec::with_capacity(segs.len());
     let mut i = 0;
     while i < segs.len() {
@@ -66,95 +78,106 @@ fn assemble_gaps(ways: &[&[P]], strict: bool, max_gap_deg: f64) -> Result<(Vec<P
     if uniq.len() < 3 {
         return Err(Fail::Geometry);
     }
-    // like libosmium, any two segments that cross or overlap make the area invalid
-    if strict && intersects(&uniq) {
-        return Err(Fail::Geometry);
-    }
+    Ok(uniq)
+}
 
-    // ---- adjacency: point -> segments; every point needs an even degree for the rings to close
+/// Point -> indices of the segments that end there.
+fn adjacency(uniq: &[(P, P)]) -> FxHashMap<P, Vec<u32>> {
     let mut adj: FxHashMap<P, Vec<u32>> = FxHashMap::default();
     for (k, &(a, b)) in uniq.iter().enumerate() {
         adj.entry(a).or_default().push(k as u32);
         adj.entry(b).or_default().push(k as u32);
     }
+    adj
+}
+
+/// Every point needs an even degree for the rings to close. Odd points (loose ends) are paired, nearest pairs first, within
+/// `max_gap_deg` and joined with a new segment; returns the length of every gap closed. `Fail::Geometry` if a loose end is left.
+fn close_gaps(uniq: &mut Vec<(P, P)>, adj: &mut FxHashMap<P, Vec<u32>>, max_gap_deg: f64) -> Result<Vec<f64>, Fail> {
     let mut gaps = Vec::new();
     let odd: Vec<P> = adj.iter().filter(|(_, v)| v.len() % 2 == 1).map(|(p, _)| *p).collect();
-    if !odd.is_empty() {
-        if max_gap_deg <= 0.0 {
-            return Err(Fail::Geometry);
-        }
-        // pair loose ends, nearest pairs first, and join each pair with a segment
-        let dist = |a: P, b: P| -> f64 {
-            let k = (a.0 as f64 * 1e-7).to_radians().cos();
-            (((a.0 - b.0) as f64 * 1e-7).powi(2) + ((a.1 - b.1) as f64 * 1e-7 * k).powi(2)).sqrt()
-        };
-        let mut pairs: Vec<(f64, usize, usize)> = Vec::new();
-        for i in 0..odd.len() {
-            for j in i + 1..odd.len() {
-                let d = dist(odd[i], odd[j]);
-                if d <= max_gap_deg {
-                    pairs.push((d, i, j));
-                }
+    if odd.is_empty() {
+        return Ok(gaps);
+    }
+    if max_gap_deg <= 0.0 {
+        return Err(Fail::Geometry);
+    }
+    let dist = |a: P, b: P| -> f64 {
+        let k = (a.0 as f64 * 1e-7).to_radians().cos();
+        (((a.0 - b.0) as f64 * 1e-7).powi(2) + ((a.1 - b.1) as f64 * 1e-7 * k).powi(2)).sqrt()
+    };
+    let mut pairs: Vec<(f64, usize, usize)> = Vec::new();
+    for i in 0..odd.len() {
+        for j in i + 1..odd.len() {
+            let d = dist(odd[i], odd[j]);
+            if d <= max_gap_deg {
+                pairs.push((d, i, j));
             }
-        }
-        pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let mut done = vec![false; odd.len()];
-        for (d, i, j) in pairs {
-            if done[i] || done[j] {
-                continue;
-            }
-            done[i] = true;
-            done[j] = true;
-            let (a, b) = (odd[i], odd[j]);
-            let k = uniq.len() as u32;
-            uniq.push(if a < b { (a, b) } else { (b, a) });
-            adj.get_mut(&a).unwrap().push(k);
-            adj.get_mut(&b).unwrap().push(k);
-            gaps.push(d);
-        }
-        if done.iter().any(|d| !d) {
-            return Err(Fail::Geometry);
         }
     }
+    pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut done = vec![false; odd.len()];
+    for (d, i, j) in pairs {
+        if done[i] || done[j] {
+            continue;
+        }
+        done[i] = true;
+        done[j] = true;
+        let (a, b) = (odd[i], odd[j]);
+        let k = uniq.len() as u32;
+        uniq.push(if a < b { (a, b) } else { (b, a) });
+        adj.get_mut(&a).unwrap().push(k);
+        adj.get_mut(&b).unwrap().push(k);
+        gaps.push(d);
+    }
+    if done.iter().any(|d| !d) {
+        return Err(Fail::Geometry);
+    }
+    Ok(gaps)
+}
 
-    // ---- trace rings; a walk that comes back to a point already on the path closes a ring there. Where rings touch (a point
-    // with more than two segments) the walk takes the sharpest turn the same way every time, so rings touch but never cross.
+/// Walk one unused segment out of `p` (the sharpest turn from the way back to `prev`, or any when there is no `prev`), mark it
+/// used and return its other end; None when `p` has no unused segment left.
+fn take_segment(uniq: &[(P, P)], prev: Option<P>, p: P, used: &mut [bool], adj: &FxHashMap<P, Vec<u32>>) -> Option<P> {
+    let other = |k: u32| {
+        let (a, b) = uniq[k as usize];
+        if a == p {
+            b
+        } else {
+            a
+        }
+    };
+    let mut best: Option<(f64, u32)> = None;
+    for &k in &adj[&p] {
+        if used[k as usize] {
+            continue;
+        }
+        let Some(q) = prev else {
+            best = Some((0.0, k));
+            break;
+        };
+        // angle from the way back (p -> prev) counter-clockwise to the way out (p -> next), in (0, 2 pi]
+        let n = other(k);
+        let back = ((q.0 - p.0) as f64).atan2((q.1 - p.1) as f64);
+        let out = ((n.0 - p.0) as f64).atan2((n.1 - p.1) as f64);
+        let mut a = out - back;
+        while a <= 0.0 {
+            a += std::f64::consts::TAU;
+        }
+        if best.is_none_or(|(b, _)| a < b) {
+            best = Some((a, k));
+        }
+    }
+    let (_, k) = best?;
+    used[k as usize] = true;
+    Some(other(k))
+}
+
+/// Trace rings; a walk that comes back to a point already on the path closes a ring there. Where rings touch (a point with
+/// more than two segments) the walk takes the sharpest turn the same way every time, so rings touch but never cross.
+fn trace_rings(uniq: &[(P, P)], adj: &FxHashMap<P, Vec<u32>>) -> Result<Vec<Vec<P>>, Fail> {
     let mut used = vec![false; uniq.len()];
     let mut rings: Vec<Vec<P>> = Vec::new();
-    let take = |prev: Option<P>, p: P, used: &mut Vec<bool>, adj: &FxHashMap<P, Vec<u32>>| -> Option<P> {
-        let other = |k: u32| {
-            let (a, b) = uniq[k as usize];
-            if a == p {
-                b
-            } else {
-                a
-            }
-        };
-        let mut best: Option<(f64, u32)> = None;
-        for &k in &adj[&p] {
-            if used[k as usize] {
-                continue;
-            }
-            let Some(q) = prev else {
-                best = Some((0.0, k));
-                break;
-            };
-            // angle from the way back (p -> prev) counter-clockwise to the way out (p -> next), in (0, 2 pi]
-            let n = other(k);
-            let back = ((q.0 - p.0) as f64).atan2((q.1 - p.1) as f64);
-            let out = ((n.0 - p.0) as f64).atan2((n.1 - p.1) as f64);
-            let mut a = out - back;
-            while a <= 0.0 {
-                a += std::f64::consts::TAU;
-            }
-            if best.is_none_or(|(b, _)| a < b) {
-                best = Some((a, k));
-            }
-        }
-        let (_, k) = best?;
-        used[k as usize] = true;
-        Some(other(k))
-    };
     for s in 0..uniq.len() {
         if used[s] {
             continue;
@@ -166,7 +189,7 @@ fn assemble_gaps(ways: &[&[P]], strict: bool, max_gap_deg: f64) -> Result<(Vec<P
         let mut cur = start;
         loop {
             let prev = if path.len() >= 2 { Some(path[path.len() - 2]) } else { None };
-            let Some(next) = take(prev, cur, &mut used, &adj) else {
+            let Some(next) = take_segment(uniq, prev, cur, &mut used, adj) else {
                 if path.len() == 1 {
                     break;
                 }
@@ -191,8 +214,12 @@ fn assemble_gaps(ways: &[&[P]], strict: bool, max_gap_deg: f64) -> Result<(Vec<P
     if rings.is_empty() {
         return Err(Fail::Geometry);
     }
+    Ok(rings)
+}
 
-    // ---- nesting by containment, largest rings first
+/// Nest rings by containment, largest first: even depth is an outer ring (counter-clockwise), odd depth an inner ring of its
+/// parent (clockwise).
+fn nest_rings(rings: Vec<Vec<P>>) -> Vec<Poly> {
     let area2 = |r: &[P]| -> i128 {
         // twice the signed area in (lon, lat): > 0 counter-clockwise
         r.windows(2).map(|w| w[0].1 as i128 * w[1].0 as i128 - w[1].1 as i128 * w[0].0 as i128).sum()
@@ -230,7 +257,7 @@ fn assemble_gaps(ways: &[&[P]], strict: bool, max_gap_deg: f64) -> Result<(Vec<P
             polys[p].push(ring);
         }
     }
-    Ok((polys, gaps))
+    polys
 }
 
 /// libosmium SegmentList::find_intersections + calculate_intersection: do any two (distinct) segments cross in a point that is
