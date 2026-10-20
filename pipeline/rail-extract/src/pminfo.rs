@@ -42,7 +42,12 @@ fn entries(file: &[u8], dir: &[u8], leaf_off: u64, out: &mut Vec<(u64, u64, u64,
     let mut at = 0;
     let n = varint(&d, &mut at) as usize;
     let mut id = 0u64;
-    let ids: Vec<u64> = (0..n).map(|_| { id += varint(&d, &mut at); id }).collect();
+    let ids: Vec<u64> = (0..n)
+        .map(|_| {
+            id += varint(&d, &mut at);
+            id
+        })
+        .collect();
     let runs: Vec<u64> = (0..n).map(|_| varint(&d, &mut at)).collect();
     let lens: Vec<u64> = (0..n).map(|_| varint(&d, &mut at)).collect();
     let mut prev_end = 0u64;
@@ -85,7 +90,15 @@ pub fn run(path: &Path, tsv: Option<&Path>, top: usize) {
     let (root_off, root_len, meta_off, meta_len, leaf_off, data_off) = (h(8), h(16), h(24), h(32), h(40), h(56));
     println!(
         "{}: {:.1} MB, addressed tiles {}, tile entries {}, tile contents {}, zoom {}..{}, type {}, tile compression {}",
-        path.display(), file.len() as f64 / 1e6, h(72), h(80), h(88), file[100], file[101], file[99], file[98]
+        path.display(),
+        file.len() as f64 / 1e6,
+        h(72),
+        h(80),
+        h(88),
+        file[100],
+        file[101],
+        file[99],
+        file[98]
     );
     let meta = gunzip(&file[meta_off as usize..(meta_off + meta_len) as usize]);
     println!("metadata: {}", String::from_utf8_lossy(&meta).chars().take(300).collect::<String>());

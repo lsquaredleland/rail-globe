@@ -9,7 +9,12 @@ const RAW: &str = include_str!("../../../../shared/constants.json");
 static JSON: LazyLock<Value> = LazyLock::new(|| serde_json::from_str(RAW).expect("shared/constants.json is not valid JSON"));
 
 static SPEED_BAND_MINS: LazyLock<Vec<i64>> = LazyLock::new(|| {
-    JSON["speed_band_mins"].as_array().expect("constants.json: speed_band_mins").iter().map(|v| v.as_i64().expect("constants.json: speed_band_mins entry")).collect()
+    JSON["speed_band_mins"]
+        .as_array()
+        .expect("constants.json: speed_band_mins")
+        .iter()
+        .map(|v| v.as_i64().expect("constants.json: speed_band_mins entry"))
+        .collect()
 });
 
 /// lower bound (km/h) of each speed colour band, fastest first; the last is 0

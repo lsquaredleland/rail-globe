@@ -37,7 +37,12 @@ pub fn run(data: &Path, slugs: &[String], min_km: f64) {
     }
     std::fs::write(data.join("kept.txt"), &kept).expect("write kept.txt");
     std::fs::write(data.join("dropped.txt"), &dropped).expect("write dropped.txt");
-    eprintln!("world-list: {} kept, {} dropped (>= {min_km} km of open passenger track) -> {}/{{kept,dropped}}.txt", kept.lines().count(), dropped.lines().count(), data.display());
+    eprintln!(
+        "world-list: {} kept, {} dropped (>= {min_km} km of open passenger track) -> {}/{{kept,dropped}}.txt",
+        kept.lines().count(),
+        dropped.lines().count(),
+        data.display()
+    );
 }
 
 #[cfg(test)]

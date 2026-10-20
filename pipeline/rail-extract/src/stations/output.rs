@@ -6,7 +6,6 @@ use super::names::{bare_kind, clean_name, english_name, place_before, qualified}
 use super::size::{ref_key, ref_tokens, Size};
 use super::{station_id, station_wikidata, Model, Out, Station, GROUP_RADIUS};
 use crate::geomx;
-use crate::pyjson::f;
 use geo::Geometry;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -34,7 +33,11 @@ impl Model<'_> {
 
     /// is `c` an operator or network of x's features
     fn is_op(&self, x: &Station, c: &str) -> bool {
-        x.feats.iter().any(|&k| ["operator", "network", "operator:short", "brand"].iter().any(|key| self.feats.station_feats[k].p(key).map_or(false, |v| v.split(';').any(|t| t.trim() == c))))
+        x.feats.iter().any(|&k| {
+            ["operator", "network", "operator:short", "brand"]
+                .iter()
+                .any(|key| self.feats.station_feats[k].p(key).is_some_and(|v| v.split(';').any(|t| t.trim() == c)))
+        })
     }
 
     /// a name cleaned of operator and format noise (clean_name), judged against the stations around x
@@ -47,18 +50,26 @@ impl Model<'_> {
     /// no place nodes at this stage, so nothing else is available; None leaves the bare name.
     fn place_of(&self, x: &Station, kind: &str) -> Option<String> {
         let (st, station_feats) = (&self.st, &self.feats.station_feats);
-        let tag = |m: &Map<String, Value>| ["addr:city", "addr:place"].iter().find_map(|k| m.get(*k).and_then(Value::as_str).filter(|v| !v.is_empty()).map(String::from));
-        if let Some(c) = x.feats.iter().find_map(|&k| tag(&station_feats[k].f.p)).or_else(|| x.areas.iter().find_map(|a| self.rels.area_tag_map(a).and_then(tag))) {
+        let tag = |m: &Map<String, Value>| {
+            ["addr:city", "addr:place"].iter().find_map(|k| m.get(*k).and_then(Value::as_str).filter(|v| !v.is_empty()).map(String::from))
+        };
+        if let Some(c) =
+            x.feats.iter().find_map(|&k| tag(&station_feats[k].f.p)).or_else(|| x.areas.iter().find_map(|a| self.rels.area_tag_map(a).and_then(tag)))
+        {
             return Some(c);
         }
         let here = Geometry::Point(x.pt);
         let mut best: Option<(f64, String)> = None;
         for j in self.st_tree.near(&here, 800.0) {
             let d = geomx::dist_pt(&here, &st[j].pt);
-            if d > 800.0 || best.as_ref().map_or(false, |b| b.0 <= d) {
+            if d > 800.0 || best.as_ref().is_some_and(|b| b.0 <= d) {
                 continue;
             }
-            let names = st[j].feats.iter().flat_map(|&k| [station_feats[k].p("name"), station_feats[k].p("official_name")]).flatten()
+            let names = st[j]
+                .feats
+                .iter()
+                .flat_map(|&k| [station_feats[k].p("name"), station_feats[k].p("official_name")])
+                .flatten()
                 .chain(st[j].areas.iter().filter_map(|a| self.rels.area_name(a)));
             if let Some(p) = names.into_iter().find_map(|n| place_before(n, kind)) {
                 best = Some((d, p));
@@ -83,10 +94,19 @@ impl Model<'_> {
     /// (the label, the tags it came from, the source name) of a station
     fn station_name(&self, x: &Station) -> (Option<String>, Map<String, Value>, Option<String>) {
         let station_feats = &self.feats.station_feats;
-        let best = x.feats.iter().copied().fold(None, |a: Option<usize>, k| {
-            let rank = |k: usize| (station_feats[k].p("name").map_or(false, |v| !v.is_empty()), matches!(station_feats[k].g, Geometry::Point(_)));
-            if a.map_or(true, |b| rank(k) > rank(b)) { Some(k) } else { a }
-        }).unwrap();
+        let best = x
+            .feats
+            .iter()
+            .copied()
+            .fold(None, |a: Option<usize>, k| {
+                let rank = |k: usize| (station_feats[k].p("name").is_some_and(|v| !v.is_empty()), matches!(station_feats[k].g, Geometry::Point(_)));
+                if a.is_none_or(|b| rank(k) > rank(b)) {
+                    Some(k)
+                } else {
+                    a
+                }
+            })
+            .unwrap();
         let own = station_feats[best].p("name").filter(|v| !v.is_empty());
         let area = x.areas.iter().find_map(|sa| {
             let tags = self.rels.area_tag_map(sa)?;
@@ -104,7 +124,9 @@ impl Model<'_> {
         };
         // a bare "Station" with no other name: another feature of the station that has one
         let picked = picked.filter(|(n, _)| bare_kind(&self.label(x, n)) != Some("Station") || self.place_of(x, "Station").is_some()).or_else(|| {
-            x.feats.iter().find_map(|&k| station_feats[k].p("name").filter(|n| !n.is_empty() && bare_kind(n).is_none()).map(|n| (n, station_feats[k].f.p.clone())))
+            x.feats
+                .iter()
+                .find_map(|&k| station_feats[k].p("name").filter(|n| !n.is_empty() && bare_kind(n).is_none()).map(|n| (n, station_feats[k].f.p.clone())))
         });
         match picked {
             Some((src, tags)) => (self.kinded(x, &self.label(x, src)), tags, Some(src.to_string())),
@@ -116,7 +138,7 @@ impl Model<'_> {
     /// (a stop area named "Dadar (Central)" does not give the station labelled "Dadar" its name:en); a label in another script takes all
     /// of the station's name:* tags, which is where its English comes from (北京 gets "Beijing Railway Station" from its stop area)
     fn name_tags(&self, x: &Station, src: Option<&str>) -> Map<String, Value> {
-        let strict = src.map_or(false, |n| crate::rules::latin(n.as_bytes()));
+        let strict = src.is_some_and(|n| crate::rules::latin(n.as_bytes()));
         let mut t = Map::new();
         for &k in &x.feats {
             let feat = &self.feats.station_feats[k];
@@ -152,7 +174,9 @@ impl Model<'_> {
 
 /// the operator's Wikidata id (operator:wikidata, else brand:wikidata) of the station's features: the logo key
 fn operator_wikidata(m: &Model, x: &Station) -> Option<String> {
-    ["operator:wikidata", "brand:wikidata"].iter().find_map(|key| x.feats.iter().find_map(|&k| m.feats.station_feats[k].p(key).filter(|v| !v.is_empty()).map(String::from)))
+    ["operator:wikidata", "brand:wikidata"]
+        .iter()
+        .find_map(|key| x.feats.iter().find_map(|&k| m.feats.station_feats[k].p(key).filter(|v| !v.is_empty()).map(String::from)))
 }
 
 /// stations.geojsonl rows
@@ -176,7 +200,8 @@ fn station_rows(m: &Model, proj: &Proj, sizes: &[Size], lines: &Lines, cx: &Comp
         let mut rail: Vec<&Value> = lines.st_rail[i].values().collect();
         rail.sort_by(|a, b| (a["name"].as_str().unwrap_or(""), a["id"].as_str()).cmp(&(b["name"].as_str().unwrap_or(""), b["id"].as_str())));
         let refs = |train: bool| -> Value {
-            let set: BTreeSet<String> = x.platforms.iter().filter(|&&k| platforms[k].modes.contains("train") == train).flat_map(|&k| ref_tokens(platforms[k].p("ref"))).collect();
+            let set: BTreeSet<String> =
+                x.platforms.iter().filter(|&&k| platforms[k].modes.contains("train") == train).flat_map(|&k| ref_tokens(platforms[k].p("ref"))).collect();
             let mut v: Vec<String> = set.into_iter().collect();
             v.sort_by_key(|r| ref_key(r));
             json!(v)
@@ -186,9 +211,9 @@ fn station_rows(m: &Model, proj: &Proj, sizes: &[Size], lines: &Lines, cx: &Comp
         let wd = station_wikidata(&m.feats, x);
         let props = json!({
             "id": station_id(&m.feats, x), "complex": cx.of[i], "name": nm, "name_en": m.name_en(x, tg, src.as_deref()),
-            "modes": x.modes.iter().collect::<Vec<_>>(), "tier": z.tier, "score": f(z.score), "terminus": z.terminus,
+            "modes": x.modes.iter().collect::<Vec<_>>(), "tier": z.tier, "score": Value::from(z.score), "terminus": z.terminus,
             "mainline_platforms": z.mainline_platforms, "platform_count": z.platform_count,
-            "land_ha": f(z.land_ha), "building_ha": f(z.building_ha), "mainline_track_ways": z.mainline_track_ways,
+            "land_ha": Value::from(z.land_ha), "building_ha": Value::from(z.building_ha), "mainline_track_ways": z.mainline_track_ways,
             "dead_ends": z.dead_ends, "hsr": z.hsr, "major": z.major,
             "rail_lines": rail, "platform_refs": refs(true), "platform_refs_other": refs(false),
             "line_count": lids.len(), "line_counts": Value::Object(by_type.into_iter().map(|(k, n)| (k, json!(n))).collect()), "line_ids": lids,

@@ -180,7 +180,7 @@ pub struct Cache {
 
 unsafe fn table<T>(b: &[u8]) -> &[T] {
     let n = b.len() / std::mem::size_of::<T>();
-    assert!(b.as_ptr() as usize % std::mem::align_of::<T>() == 0, "cache section misaligned");
+    assert!((b.as_ptr() as usize).is_multiple_of(std::mem::align_of::<T>()), "cache section misaligned");
     std::slice::from_raw_parts(b.as_ptr() as *const T, n)
 }
 
@@ -334,7 +334,7 @@ pub fn write(path: &Path, secs: [&[u8]; NSEC]) -> std::io::Result<()> {
         for s in &secs {
             head.extend_from_slice(&(off as u64).to_le_bytes());
             head.extend_from_slice(&(s.len() as u64).to_le_bytes());
-            off += (s.len() + 7) / 8 * 8;
+            off += s.len().div_ceil(8) * 8;
         }
         w.write_all(&head)?;
         for s in &secs {

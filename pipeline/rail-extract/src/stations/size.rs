@@ -3,11 +3,10 @@
 use super::features::{track_mode, It};
 use super::names::norm_name;
 use super::{Model, Station};
-use crate::geomx::{self, Index, G};
-use crate::pyjson::py_round;
+use crate::geomx::{self, round, Index, G};
 use geo::{Geometry, MultiPolygon, Point};
-use regex::Regex;
 use rayon::prelude::*;
+use regex::Regex;
 use rustc_hash::FxHashMap;
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -16,7 +15,7 @@ const LAND_DISC: f64 = 500.0; // railway land counts only near the station (land
 const HS_NEAR: f64 = 80.0; // "next to high-speed track"
 const HS_MAJOR_PLATFORMS: i64 = 8;
 const TERMINUS_ZONE: f64 = 120.0; // around the station's mainline platforms
-// size score weights and tiers (tuned on the answer lists)
+                                  // size score weights and tiers (tuned on the answer lists)
 const W_PLATFORM: f64 = 3.0;
 const W_TRACK: f64 = 0.5;
 const W_TRACK_CAP: f64 = 40.0;
@@ -54,7 +53,13 @@ impl TrackIndex {
         let main_tracks: Vec<usize> = (0..tracks.len())
             .filter(|&i| tracks[i].p("railway") == Some("rail") && matches!(tracks[i].p("type"), Some("high_speed" | "intercity" | "regional")))
             .collect();
-        let line_of = |i: usize| -> Option<&geo::LineString<f64>> { if let Geometry::LineString(l) = &tracks[i].g { Some(l) } else { None } };
+        let line_of = |i: usize| -> Option<&geo::LineString<f64>> {
+            if let Geometry::LineString(l) = &tracks[i].g {
+                Some(l)
+            } else {
+                None
+            }
+        };
         let key = |c: &geo::Coord<f64>| (c.x.round_ties_even() as i64, c.y.round_ties_even() as i64);
         let mut ends: FxHashMap<(i64, i64), u32> = FxHashMap::default();
         for &i in &main_tracks {
@@ -76,7 +81,8 @@ impl TrackIndex {
         let dead_tree = Index::new(dead_pts.iter().map(|p| geomx::bbox(&Geometry::Point(*p))));
         let mt_tree = Index::new(main_tracks.iter().map(|&i| geomx::bbox(&tracks[i].g)));
         // high-speed track by its OWN tags (a classic line that TGVs merely use does not count)
-        let hs: Vec<usize> = (0..tracks.len()).filter(|&i| tracks[i].p("own_type") == Some("high_speed") && tracks[i].p("railway") != Some("construction")).collect();
+        let hs: Vec<usize> =
+            (0..tracks.len()).filter(|&i| tracks[i].p("own_type") == Some("high_speed") && tracks[i].p("railway") != Some("construction")).collect();
         let hs_tree = Index::new(hs.iter().map(|&i| geomx::bbox(&tracks[i].g)));
         TrackIndex { main_tracks, mt_tree, dead_pts, dead_tree, hs, hs_tree }
     }
@@ -92,7 +98,15 @@ impl MajorRules {
     fn new(cfg: &serde_json::Map<String, Value>) -> MajorRules {
         MajorRules {
             name_re: cfg.get("main_station_re").and_then(Value::as_str).filter(|v| !v.is_empty()).map(|p| Regex::new(p).expect("main_station_re")),
-            canonical: cfg.get("main_terminals").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(norm_name).filter(|n| !n.is_empty()).collect(),
+            canonical: cfg
+                .get("main_terminals")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(norm_name)
+                .filter(|n| !n.is_empty())
+                .collect(),
         }
     }
 }
@@ -125,7 +139,11 @@ pub(super) fn ref_key(r: &str) -> (bool, u128, String) {
 pub(super) fn plat_key(t: &str) -> String {
     let d: String = t.chars().take_while(|c| c.is_ascii_digit()).collect();
     let rest = &t[d.len()..];
-    if !d.is_empty() && (1..=2).contains(&rest.chars().count()) && rest.chars().all(|c| c.is_ascii_alphabetic()) { d } else { t.to_string() }
+    if !d.is_empty() && (1..=2).contains(&rest.chars().count()) && rest.chars().all(|c| c.is_ascii_alphabetic()) {
+        d
+    } else {
+        t.to_string()
+    }
 }
 
 /// railway land and building (hectares) holding the station's point or its platforms
@@ -151,9 +169,13 @@ fn footprint_ha(m: &Model, x: &Station) -> (f64, f64) {
     } else {
         let u = geomx::union_all(land_ids.iter().map(|&i| geomx::polys(&f.lands[i].g)).collect());
         let local: MultiPolygon<f64> = geomx::intersection(&u, &geomx::circle(x.pt, LAND_DISC));
-        if local.0.is_empty() { 0.0 } else { py_round(geomx::area(&Geometry::MultiPolygon(local)) / 10000.0, 2) }
+        if local.0.is_empty() {
+            0.0
+        } else {
+            round(geomx::area(&Geometry::MultiPolygon(local)) / 10000.0, 2)
+        }
     };
-    let building_ha = py_round(bld_ids.iter().map(|&i| geomx::area(&f.buildings[i].g) / 10000.0).sum::<f64>(), 3);
+    let building_ha = round(bld_ids.iter().map(|&i| geomx::area(&f.buildings[i].g) / 10000.0).sum::<f64>(), 3);
     (land_ha, building_ha)
 }
 
@@ -174,7 +196,12 @@ fn serving_tracks<'a>(m: &'a Model, ti: &TrackIndex, x: &Station, mp: &[usize]) 
     }
     // no platform mapped, or none beside a mainline track (Nanjing South: one platform away from the tracks): look near the point
     // (only when no platform has a heavy-rail or heritage track beside it (a metro track does not count): a heritage station next to a main line stays without passenger track)
-    let platform_by_track = mp.iter().any(|&k| f.track_tree.near(&platforms[k].g, 20.0).into_iter().any(|t| matches!(track_mode(tracks[t].p("type").unwrap_or("")), "train" | "other") && geomx::dist(&tracks[t].g, &platforms[k].g) <= 20.0));
+    let platform_by_track = mp.iter().any(|&k| {
+        f.track_tree
+            .near(&platforms[k].g, 20.0)
+            .into_iter()
+            .any(|t| matches!(track_mode(tracks[t].p("type").unwrap_or("")), "train" | "other") && geomx::dist(&tracks[t].g, &platforms[k].g) <= 20.0)
+    });
     if near.is_empty() && x.modes.contains("train") && !platform_by_track {
         for t in ti.mt_tree.near(&pg, 80.0) {
             if geomx::dist(&tracks[ti.main_tracks[t]].g, &pg) <= 80.0 {
@@ -212,8 +239,7 @@ pub(super) fn score_stations(m: &Model) -> Vec<Size> {
     let f = &m.feats;
     let ti = TrackIndex::new(&f.tracks);
     let rules = MajorRules::new(&m.inp.cfg);
-    m.st
-        .par_iter()
+    m.st.par_iter()
         .map(|x| {
             let mp: Vec<usize> = x.platforms.iter().copied().filter(|&k| f.platforms[k].modes.contains("train")).collect();
             let mainline_platforms = count_platforms(&f.platforms, &mp);
@@ -222,12 +248,21 @@ pub(super) fn score_stations(m: &Model) -> Vec<Size> {
             let near = serving_tracks(m, &ti, x, &mp);
             let dead = dead_ends_near(m, &ti, x, &mp);
             let terminus = dead >= 2;
-            let score = py_round(
-                W_PLATFORM * mainline_platforms as f64 + W_TRACK * (near.len() as f64).min(W_TRACK_CAP) + W_LAND * land_ha.sqrt()
-                    + W_BUILDING * building_ha.sqrt() + if terminus { W_TERMINUS } else { 0.0 },
+            let score = round(
+                W_PLATFORM * mainline_platforms as f64
+                    + W_TRACK * (near.len() as f64).min(W_TRACK_CAP)
+                    + W_LAND * land_ha.sqrt()
+                    + W_BUILDING * building_ha.sqrt()
+                    + if terminus { W_TERMINUS } else { 0.0 },
                 1,
             );
-            let mut tier = if score >= 60.0 { 1 } else if score >= 25.0 { 2 } else { 3 };
+            let mut tier = if score >= 60.0 {
+                1
+            } else if score >= 25.0 {
+                2
+            } else {
+                3
+            };
             let pg = Geometry::Point(x.pt);
             let hsr = ti.hs_tree.near(&pg, HS_NEAR).into_iter().any(|t| geomx::dist(&f.tracks[ti.hs[t]].g, &pg) <= HS_NEAR);
             let names: Vec<&str> = x.feats.iter().map(|&k| f.station_feats[k].p("name").unwrap_or("")).collect();
@@ -235,7 +270,7 @@ pub(super) fn score_stations(m: &Model) -> Vec<Size> {
             norms.insert(x.norm.clone());
             let mut major = None;
             if x.modes.contains("train") {
-                if rules.name_re.as_ref().map_or(false, |re| names.iter().any(|n| re.is_match(n))) {
+                if rules.name_re.as_ref().is_some_and(|re| names.iter().any(|n| re.is_match(n))) {
                     major = Some("name_pattern");
                 } else if norms.iter().any(|n| rules.canonical.contains(n)) {
                     major = Some("canonical_list");
@@ -253,7 +288,19 @@ pub(super) fn score_stations(m: &Model) -> Vec<Size> {
             if major.is_some() {
                 tier = 1;
             }
-            Size { mainline_platforms, platform_count, land_ha, building_ha, mainline_track_ways: near.len() as i64, dead_ends: dead, terminus, score, tier, hsr, major }
+            Size {
+                mainline_platforms,
+                platform_count,
+                land_ha,
+                building_ha,
+                mainline_track_ways: near.len() as i64,
+                dead_ends: dead,
+                terminus,
+                score,
+                tier,
+                hsr,
+                major,
+            }
         })
         .collect()
 }

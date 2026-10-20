@@ -1,7 +1,6 @@
 //! Small helpers of the tile input and side files: rail type order, colours and labels, shard files, one GeoJSON feature line.
 
-use crate::geomx;
-use crate::pyjson::{self, py_round, COMPACT};
+use crate::geomx::{self, round};
 use regex::Regex;
 use serde_json::{Map, Value};
 use std::fs;
@@ -9,9 +8,40 @@ use std::path::Path;
 
 const TYPE_ORDER: [&str; 8] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "other"];
 const SHARD_TARGET_BYTES: usize = 256 * 1024; // side-file shards hold about this much JSON each (the app fetches one per click)
-const CSS_NAMES: [&str; 32] = ["red", "blue", "green", "yellow", "orange", "purple", "pink", "brown", "black", "grey", "gray", "darkblue", "skyblue",
-    "lightblue", "darkgreen", "lightgreen", "cyan", "magenta", "violet", "gold", "navy", "teal", "maroon", "lime", "olive", "silver",
-    "turquoise", "crimson", "indigo", "darkred", "darkorange", "white"];
+const CSS_NAMES: [&str; 32] = [
+    "red",
+    "blue",
+    "green",
+    "yellow",
+    "orange",
+    "purple",
+    "pink",
+    "brown",
+    "black",
+    "grey",
+    "gray",
+    "darkblue",
+    "skyblue",
+    "lightblue",
+    "darkgreen",
+    "lightgreen",
+    "cyan",
+    "magenta",
+    "violet",
+    "gold",
+    "navy",
+    "teal",
+    "maroon",
+    "lime",
+    "olive",
+    "silver",
+    "turquoise",
+    "crimson",
+    "indigo",
+    "darkred",
+    "darkorange",
+    "white",
+];
 
 pub(super) fn rank(t: &str) -> usize {
     TYPE_ORDER.iter().position(|x| *x == t).unwrap_or(9)
@@ -62,7 +92,27 @@ pub(super) fn badge_of(r: Option<&str>) -> Option<String> {
 
 /// true when a #rgb / #rrggbb colour is light enough that a badge needs dark text on it
 pub(super) fn is_light(c: &str) -> bool {
-    if ["white", "yellow", "lime", "cyan", "aqua", "gold", "silver", "lightgreen", "skyblue", "lightblue", "pink", "orange", "beige", "ivory", "khaki", "lightgray", "lightgrey"].contains(&c) {
+    if [
+        "white",
+        "yellow",
+        "lime",
+        "cyan",
+        "aqua",
+        "gold",
+        "silver",
+        "lightgreen",
+        "skyblue",
+        "lightblue",
+        "pink",
+        "orange",
+        "beige",
+        "ivory",
+        "khaki",
+        "lightgray",
+        "lightgrey",
+    ]
+    .contains(&c)
+    {
         return true;
     }
     let h = c.trim_start_matches('#');
@@ -70,7 +120,13 @@ pub(super) fn is_light(c: &str) -> bool {
         return false;
     }
     let v = |i: usize, w: usize| u32::from_str_radix(&h[i..i + w], 16).ok().map(|x| if w == 1 { x * 17 } else { x } as f64);
-    let (r, g, b) = if h.len() == 3 { (v(0, 1), v(1, 1), v(2, 1)) } else if h.len() == 6 { (v(0, 2), v(2, 2), v(4, 2)) } else { return false };
+    let (r, g, b) = if h.len() == 3 {
+        (v(0, 1), v(1, 1), v(2, 1))
+    } else if h.len() == 6 {
+        (v(0, 2), v(2, 2), v(4, 2))
+    } else {
+        return false;
+    };
     match (r, g, b) {
         (Some(r), Some(g), Some(b)) => 0.299 * r + 0.587 * g + 0.114 * b > 160.0,
         _ => false,
@@ -100,7 +156,7 @@ pub(crate) fn haversine_len(c: &[(f64, f64)]) -> f64 {
 pub(super) fn area_ha(g: &Value) -> f64 {
     let Some(geo) = geomx::from_geojson(g, geomx::id) else { return 0.0 };
     let lat = geomx::centroid(&geo).map_or(0.0, |c| c.y());
-    py_round(geomx::area(&geo) * 111320.0 * lat.to_radians().cos() * 110540.0 / 10000.0, 2)
+    round(geomx::area(&geo) * 111320.0 * lat.to_radians().cos() * 110540.0 / 10000.0, 2)
 }
 
 pub(super) fn fnv1a(s: &str) -> u32 {
@@ -124,7 +180,7 @@ pub(super) fn write_shards(dir: &Path, recs: &[(String, String)]) -> u32 {
     for (k, v) in recs {
         let sh = &mut out[(fnv1a(k) % n) as usize];
         sh.push(if sh.is_empty() { '{' } else { ',' });
-        sh.push_str(&pyjson::to_string(&Value::String(k.clone()), pyjson::COMPACT));
+        sh.push_str(&Value::String(k.clone()).to_string());
         sh.push(':');
         sh.push_str(v);
     }
@@ -142,7 +198,7 @@ pub(super) fn write_shards(dir: &Path, recs: &[(String, String)]) -> u32 {
 /// one tile input line: {"type":"Feature","properties":...,"geometry":...,"zoom":{"minzoom":..,"maxzoom":..}} ("zoom" is read by tilewriter.rs)
 pub(super) fn feat(out: &mut String, props: &Map<String, Value>, geom: &str, minzoom: Option<i64>, maxzoom: Option<i64>) {
     out.push_str("{\"type\":\"Feature\",\"properties\":");
-    pyjson::write_map(out, props, COMPACT);
+    out.push_str(&serde_json::to_string(props).unwrap());
     out.push_str(",\"geometry\":");
     out.push_str(geom);
     if minzoom.is_some() || maxzoom.is_some() {
@@ -159,7 +215,7 @@ pub(super) fn feat(out: &mut String, props: &Map<String, Value>, geom: &str, min
 }
 
 pub(super) fn write_json(path: &Path, v: &Value) {
-    fs::write(path, pyjson::to_string(v, COMPACT)).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    fs::write(path, v.to_string()).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
 
 /// a string property of a feature, when it is there and not empty

@@ -3,11 +3,10 @@
 
 use super::constants::{speed_band_index, speed_band_min};
 use super::props::{AreaProps, OverviewProps, PlatformLineProps, StrandProps, TrackProps};
-use super::util::{area_ha, badge_of, coords, colour, feat, is_light, label_of, rank, nonempty, short, track_minzoom};
+use super::util::{area_ha, badge_of, colour, coords, feat, is_light, label_of, nonempty, rank, short, track_minzoom};
 use super::{haversine_len, Lookup, OVERVIEW_MAXZOOM, SKETCH_MINZOOM};
 use crate::classify::speed_kmh;
 use crate::geomx;
-use crate::pyjson;
 use crate::site::{s, Feat, Input};
 use crate::stations::english_name;
 use rustc_hash::FxHashMap;
@@ -73,18 +72,40 @@ fn tracks_div(p: &Map<String, Value>) -> f64 {
 impl<'a> Scan<'a> {
     pub fn run(inp: &'a Input, lk: &Lookup) -> Scan<'a> {
         let mut sc = Scan {
-            track: String::new(), strands: String::new(), areas: String::new(), buildings: String::new(), plats: String::new(),
-            n_track: 0, n_strands: 0, n_areas: 0, n_bld: 0, n_plats: 0,
-            overview: Vec::new(), con_groups: BTreeMap::new(), line_ways: FxHashMap::default(), name_ways: Vec::new(), name_types: Vec::new(),
-            way_geom: FxHashMap::default(), way_len: FxHashMap::default(), named: Vec::new(), railways: Vec::new(),
-            pax: Vec::new(), pax_sb: Vec::new(), con_pax: Vec::new(), con_sb: Vec::new(), frt: Vec::new(), city_track: Vec::new(),
-            name_ix: FxHashMap::default(), named_ix: FxHashMap::default(), nk_of: FxHashMap::default(),
+            track: String::new(),
+            strands: String::new(),
+            areas: String::new(),
+            buildings: String::new(),
+            plats: String::new(),
+            n_track: 0,
+            n_strands: 0,
+            n_areas: 0,
+            n_bld: 0,
+            n_plats: 0,
+            overview: Vec::new(),
+            con_groups: BTreeMap::new(),
+            line_ways: FxHashMap::default(),
+            name_ways: Vec::new(),
+            name_types: Vec::new(),
+            way_geom: FxHashMap::default(),
+            way_len: FxHashMap::default(),
+            named: Vec::new(),
+            railways: Vec::new(),
+            pax: Vec::new(),
+            pax_sb: Vec::new(),
+            con_pax: Vec::new(),
+            con_sb: Vec::new(),
+            frt: Vec::new(),
+            city_track: Vec::new(),
+            name_ix: FxHashMap::default(),
+            named_ix: FxHashMap::default(),
+            nk_of: FxHashMap::default(),
         };
         for fe in &inp.feats {
             let p = &fe.p;
             let t = s(p, "type").filter(|v| !v.is_empty());
-            if fe.gtype == "LineString" && t.is_some() {
-                sc.add_track(fe, t.unwrap(), lk);
+            if let (true, Some(t)) = (fe.gtype == "LineString", t) {
+                sc.add_track(fe, t, lk);
             } else if fe.gtype == "Polygon" || fe.gtype == "MultiPolygon" {
                 sc.add_area(fe);
             } else if fe.gtype == "LineString" && (s(p, "railway") == Some("platform") || s(p, "public_transport") == Some("platform")) {
@@ -105,11 +126,18 @@ impl<'a> Scan<'a> {
         }
         let prop = s(p, "railway") == Some("proposed");
         let con = s(p, "railway") == Some("construction") || prop;
-        if !con && s(p, "service").map_or(true, str::is_empty) {
+        if !con && s(p, "service").is_none_or(str::is_empty) {
             self.sample_city_track(p, t, &c);
         }
-        let mut lids: Vec<&str> = p.get("_routes").and_then(Value::as_array).into_iter().flatten()
-            .filter_map(|r| lk.route_line.get(r.as_str().unwrap_or("")).copied()).collect::<BTreeSet<_>>().into_iter().collect();
+        let mut lids: Vec<&str> = p
+            .get("_routes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|r| lk.route_line.get(r.as_str().unwrap_or("")).copied())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
         lids.sort_by_key(|l| (rank(lk.ls(l, "type").unwrap_or("")), short(l)));
         let tp = Self::track_props(p, osm_id, t, con, prop, &lids, lk);
         let name = tp.name().map(String::from);
@@ -162,7 +190,14 @@ impl<'a> Scan<'a> {
 
     /// samples of open passenger metro, tram and monorail track about every km, for the city dots
     fn sample_city_track(&mut self, p: &Map<String, Value>, t: &str, c: &[(f64, f64)]) {
-        let Some(kind) = (match (s(p, "railway"), t) { (_, "metro") => Some(0u8), (Some("tram"), _) => Some(1), (_, "monorail") => Some(2), _ => None }) else { return };
+        let Some(kind) = (match (s(p, "railway"), t) {
+            (_, "metro") => Some(0u8),
+            (Some("tram"), _) => Some(1),
+            (_, "monorail") => Some(2),
+            _ => None,
+        }) else {
+            return;
+        };
         let mut acc = 0.0;
         for (i, w) in c.windows(2).enumerate() {
             acc += haversine_len(w);
@@ -176,14 +211,27 @@ impl<'a> Scan<'a> {
     /// the properties of one track way
     fn track_props(p: &Map<String, Value>, osm_id: &str, t: &str, con: bool, prop: bool, lids: &[&str], lk: &Lookup) -> TrackProps {
         let mut tp = TrackProps {
-            id: osm_id.to_string(), ty: t.to_string(),
-            usage: nonempty(p, "usage"), el: nonempty(p, "electrified"), v: nonempty(p, "voltage"), ms: nonempty(p, "maxspeed"), g: nonempty(p, "gauge"),
-            tr: nonempty(p, "tracks"), n: nonempty(p, "name"), fq: nonempty(p, "frequency"),
+            id: osm_id.to_string(),
+            ty: t.to_string(),
+            usage: nonempty(p, "usage"),
+            el: nonempty(p, "electrified"),
+            v: nonempty(p, "voltage"),
+            ms: nonempty(p, "maxspeed"),
+            g: nonempty(p, "gauge"),
+            tr: nonempty(p, "tracks"),
+            n: nonempty(p, "name"),
+            fq: nonempty(p, "frequency"),
             kmh: speed_kmh(s(p, "maxspeed")).filter(|k| *k != 0.0).map(|k| k.round_ties_even() as i64),
-            n_rwy: None, ne: None, sv: nonempty(p, "service"),
-            tun: s(p, "tunnel").map_or(false, |v| !v.is_empty() && v != "no"),
-            br: s(p, "bridge").map_or(false, |v| !v.is_empty() && v != "no"),
-            con, prop, ln: None, nl: None, oc: None,
+            n_rwy: None,
+            ne: None,
+            sv: nonempty(p, "service"),
+            tun: s(p, "tunnel").is_some_and(|v| !v.is_empty() && v != "no"),
+            br: s(p, "bridge").is_some_and(|v| !v.is_empty() && v != "no"),
+            con,
+            prop,
+            ln: None,
+            nl: None,
+            oc: None,
         };
         // track with no name of its own is named after its railway (the route=railway relation it belongs to: LGV Sud-Est), not after its services
         let own_name = s(p, "name").filter(|v| !v.is_empty());
@@ -244,7 +292,11 @@ impl<'a> Scan<'a> {
     /// the zoomed-out overview: attributes reduced to what the overview draws, so equal neighbours merge
     fn add_overview(&mut self, fe: &'a Feat, tp: &TrackProps, name: Option<&str>, t: &str, con: bool, mz: i64) {
         let ov = OverviewProps {
-            ty: tp.ty.clone(), con: tp.con, prop: tp.prop, oc: tp.oc.clone(), ln: tp.ln.clone(),
+            ty: tp.ty.clone(),
+            con: tp.con,
+            prop: tp.prop,
+            oc: tp.oc.clone(),
+            ln: tp.ln.clone(),
             kmh: tp.kmh.map(speed_band_min),
             // a click opens the first line (ln); every named track also carries its railway number (nk): the hover names the railway, not the services
             nk: name.map(|n| self.nk_of[n]),
@@ -253,9 +305,9 @@ impl<'a> Scan<'a> {
         // a sketch of the metro network for z4-6, with no attributes but the type, so it merges into a few long lines
         if t == "metro" && !con {
             let sk = OverviewProps::sketch_metro().to_map();
-            self.overview.push((pyjson::sorted_key(&Value::Object(sk.clone())), sk, fe.graw.as_str(), SKETCH_MINZOOM, mz - 1));
+            self.overview.push((sorted_key(&Value::Object(sk.clone())), sk, fe.graw.as_str(), SKETCH_MINZOOM, mz - 1));
         }
-        self.overview.push((pyjson::sorted_key(&Value::Object(ov.clone())), ov, fe.graw.as_str(), mz, OVERVIEW_MAXZOOM));
+        self.overview.push((sorted_key(&Value::Object(ov.clone())), ov, fe.graw.as_str(), mz, OVERVIEW_MAXZOOM));
     }
 
     /// one strand per line on the way
@@ -270,7 +322,7 @@ impl<'a> Scan<'a> {
                 n: lids.len(),
                 lb: label_of(lk.ls(l, "name"), lk.ls(l, "ref")),
                 lbe: lk.ls(l, "name_en").filter(|v| !v.is_empty()).map(|en| label_of(Some(en), lk.ls(l, "ref"))),
-                rl: rf.is_some() && c.as_deref().map_or(false, is_light),
+                rl: rf.is_some() && c.as_deref().is_some_and(is_light),
                 rf,
                 c,
             }
@@ -283,10 +335,10 @@ impl<'a> Scan<'a> {
     /// railway land, yards, station buildings and platform polygons
     fn add_area(&mut self, fe: &Feat) {
         let p = &fe.p;
-        let ap = |k: &'static str, platform_ref: Option<String>| AreaProps {
-            id: s(p, "osm_id").unwrap_or("").to_string(), ha: area_ha(&fe.g), n: nonempty(p, "name"), op: nonempty(p, "operator"), k, platform_ref,
-        }
-        .to_map();
+        let ap = |k: &'static str, platform_ref: Option<String>| {
+            AreaProps { id: s(p, "osm_id").unwrap_or("").to_string(), ha: area_ha(&fe.g), n: nonempty(p, "name"), op: nonempty(p, "operator"), k, platform_ref }
+                .to_map()
+        };
         if s(p, "landuse") == Some("railway") {
             feat(&mut self.areas, &ap("land", None), &fe.graw, Some(10), None);
             self.n_areas += 1;
@@ -301,4 +353,20 @@ impl<'a> Scan<'a> {
             self.n_plats += 1;
         }
     }
+}
+
+/// the overview merge key: the value with its keys sorted at every level, as compact JSON
+fn sorted_key(v: &Value) -> String {
+    fn sort(v: &Value) -> Value {
+        match v {
+            Value::Object(m) => {
+                let mut ks: Vec<&String> = m.keys().collect();
+                ks.sort();
+                Value::Object(ks.into_iter().map(|k| (k.clone(), sort(&m[k]))).collect())
+            }
+            Value::Array(a) => Value::Array(a.iter().map(sort).collect()),
+            x => x.clone(),
+        }
+    }
+    sort(v).to_string()
 }

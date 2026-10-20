@@ -6,11 +6,11 @@
 //! is sorted on per tile and layer), --coalesce (consecutive same-attribute pieces of a layer in a tile become one multi-geometry),
 //! and the vector_layers metadata.
 
+use geojson::{Feature, FeatureCollection, Value as Gv};
+use geojson_vt_rs::{GeoJSONVT, Options, TileOptions};
 use mlt_core::encoder::EncoderConfig;
 use mlt_core::geo_types::Coord;
 use mlt_core::{FeatureWriter, GeometryType, LayerWriter, MltResult, PropKind, PropertyKey};
-use geojson::{Feature, FeatureCollection, Value as Gv};
-use geojson_vt_rs::{GeoJSONVT, Options, TileOptions};
 use pmtiles::{Compression, PmTilesStreamWriter, PmTilesWriter, TileCoord, TileId, TileType};
 use rayon::prelude::*;
 use serde_json::{json, Map, Value};
@@ -100,7 +100,15 @@ fn merc(p: &[f64]) -> (f64, f64) {
 /// tolerance instead (see `slice_group`), so every id survives at every zoom of its range.
 fn tiny(g: &Gv, lo: u8) -> bool {
     let tol = SIMPLIFY / (EXTENT as f64 * f64::from(1u32 << lo));
-    let line = |l: &[Vec<f64>]| l.windows(2).map(|w| { let (a, b) = (merc(&w[0]), merc(&w[1])); (b.0 - a.0).hypot(b.1 - a.1) }).sum::<f64>() <= tol;
+    let line = |l: &[Vec<f64>]| {
+        l.windows(2)
+            .map(|w| {
+                let (a, b) = (merc(&w[0]), merc(&w[1]));
+                (b.0 - a.0).hypot(b.1 - a.1)
+            })
+            .sum::<f64>()
+            <= tol
+    };
     let ring = |r: &[Vec<f64>]| {
         let pts: Vec<(f64, f64)> = r.iter().map(|p| merc(p)).collect();
         let twice: f64 = pts.windows(2).map(|w| w[0].0 * w[1].1 - w[1].0 * w[0].1).sum();
@@ -336,14 +344,24 @@ impl Kind {
         use Kind::*;
         match (self, o) {
             (a, b) if a == b => a,
-            (Int | Int64 | Float, Int | Int64 | Float) => if self == Float || o == Float { Float } else { Int64 },
+            (Int | Int64 | Float, Int | Int64 | Float) => {
+                if self == Float || o == Float {
+                    Float
+                } else {
+                    Int64
+                }
+            }
             _ => Str,
         }
     }
 
     /// i64 beyond i32 is stored as f64 (exact to 2^53; MapLibre's JS decoder returns BigInt for 64-bit integer columns)
     fn stored(self) -> Kind {
-        if self == Kind::Int64 { Kind::Float } else { self }
+        if self == Kind::Int64 {
+            Kind::Float
+        } else {
+            self
+        }
     }
 
     fn field_type(self) -> &'static str {
@@ -468,7 +486,11 @@ fn lowzoom_on() -> bool {
 
 /// the first zoom whose tiles hold `layer`: stations and complexes are left out of tiles up to NO_STATIONS_ZOOM (vector_layers metadata)
 fn layer_minzoom(layer: &str, minzoom: u8) -> u8 {
-    if lowzoom_on() && matches!(layer, "stations" | "complexes") { minzoom.max(NO_STATIONS_ZOOM + 1) } else { minzoom }
+    if lowzoom_on() && matches!(layer, "stations" | "complexes") {
+        minzoom.max(NO_STATIONS_ZOOM + 1)
+    } else {
+        minzoom
+    }
 }
 
 /// one tile's pieces per layer -> MLT layers in seq order (consecutive same-attribute pieces coalesced; overview clean-up at z <= LOW_ZOOM) -> gzip.
@@ -477,7 +499,14 @@ fn encode_tile(z: u8, layers: &mut [Vec<Piece>], layer_names: &[&str], kinds: &[
     encode_tile_with(lowzoom_on(), z, layers, layer_names, kinds, gz)
 }
 
-fn encode_tile_with(low: bool, z: u8, layers: &mut [Vec<Piece>], layer_names: &[&str], kinds: &[BTreeMap<String, Kind>], gz: &mut libdeflater::Compressor) -> Vec<u8> {
+fn encode_tile_with(
+    low: bool,
+    z: u8,
+    layers: &mut [Vec<Piece>],
+    layer_names: &[&str],
+    kinds: &[BTreeMap<String, Kind>],
+    gz: &mut libdeflater::Compressor,
+) -> Vec<u8> {
     let layers: Vec<(&str, u32, &BTreeMap<String, Kind>, Vec<Piece>)> = layers
         .iter_mut()
         .enumerate()
@@ -539,8 +568,7 @@ fn gather_tiles(sliced: Vec<(usize, Vec<(TileKey, Vec<Piece>)>)>, n_layers: usiz
             }
         }
     }
-    let mut order: Vec<(u64, TileKey)> =
-        tiles.keys().map(|&(z, x, y)| (TileId::from(TileCoord::new(z, x, y).expect("coord")).value(), (z, x, y))).collect();
+    let mut order: Vec<(u64, TileKey)> = tiles.keys().map(|&(z, x, y)| (TileId::from(TileCoord::new(z, x, y).expect("coord")).value(), (z, x, y))).collect();
     order.sort_unstable();
     order.into_iter().map(|(id, k)| (id, k, tiles.remove(&k).unwrap())).collect()
 }
@@ -549,7 +577,10 @@ fn gather_tiles(sliced: Vec<(usize, Vec<(TileKey, Vec<Piece>)>)>, n_layers: usiz
 fn encode_buckets(buckets: &mut [Bucket], layer_names: &[&str], kinds: &[BTreeMap<String, Kind>]) -> Vec<Vec<u8>> {
     buckets
         .par_iter_mut()
-        .map_init(|| libdeflater::Compressor::new(libdeflater::CompressionLvl::default()), |gz, (_, key, layers)| encode_tile(key.0, layers, layer_names, kinds, gz))
+        .map_init(
+            || libdeflater::Compressor::new(libdeflater::CompressionLvl::default()),
+            |gz, (_, key, layers)| encode_tile(key.0, layers, layer_names, kinds, gz),
+        )
         .collect()
 }
 
@@ -560,7 +591,8 @@ fn tile_metadata(name: &str, layer_names: &[&str], kinds: &[BTreeMap<String, Kin
         .filter(|&li| seq[li] > 0)
         .map(|li| json!({"id": layer_names[li], "fields": fields[li], "minzoom": layer_minzoom(layer_names[li], zooms[li].0), "maxzoom": zooms[li].1}))
         .collect();
-    json!({"name": name, "format": "mlt", "minzoom": "0", "maxzoom": MAX_ZOOM.to_string(), "vector_layers": vector_layers, "generator": "rail-extract"}).to_string()
+    json!({"name": name, "format": "mlt", "minzoom": "0", "maxzoom": MAX_ZOOM.to_string(), "vector_layers": vector_layers, "generator": "rail-extract"})
+        .to_string()
 }
 
 /// Writes <out>/<name>.pmtiles: `add_tiles` adds the tiles in tile-id order to the writer; the file is written to <name>.tmp.pmtiles and renamed on
@@ -611,14 +643,20 @@ pub fn run(data: &Path, slugs: &[String], out: &Path, name: &str) {
             };
             let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
             // the overview (track_overview) always carries a zoom range: without one the file is from before the rename, rebuild the region
-            assert!(file != "track_overview.geojsonl" || lines.first().map_or(true, |l| l.contains("\"zoom\":")), "{slug}: stale tile input (no \"zoom\" member); run `rail-extract build {slug}` again");
+            assert!(
+                file != "track_overview.geojsonl" || lines.first().is_none_or(|l| l.contains("\"zoom\":")),
+                "{slug}: stale tile input (no \"zoom\" member); run `rail-extract build {slug}` again"
+            );
             let feats: Vec<Feature> = lines
                 .par_iter()
                 .enumerate()
                 .map(|(i, l)| serde_json::from_str::<Feature>(l).unwrap_or_else(|e| panic!("{slug}: {file} line {}: bad feature: {e}", i + 1)))
                 .collect();
             for mut f in feats {
-                assert!(f.foreign_members.as_ref().map_or(true, |m| !m.contains_key("tippecanoe")), "{slug}: stale tile input ({file} has a \"tippecanoe\" member); run `rail-extract build {slug}` again");
+                assert!(
+                    f.foreign_members.as_ref().is_none_or(|m| !m.contains_key("tippecanoe")),
+                    "{slug}: stale tile input ({file} has a \"tippecanoe\" member); run `rail-extract build {slug}` again"
+                );
                 let tp = f.foreign_members.as_ref().and_then(|m| m.get("zoom")).cloned().unwrap_or(Value::Null);
                 let (raw_lo, raw_hi) = (tp["minzoom"].as_u64().unwrap_or(0), tp["maxzoom"].as_u64().unwrap_or(MAX_ZOOM as u64));
                 let lo = u8::try_from(raw_lo).unwrap_or(u8::MAX).min(MAX_ZOOM);
@@ -640,7 +678,10 @@ pub fn run(data: &Path, slugs: &[String], out: &Path, name: &str) {
                             .and_modify(|e| {
                                 let m = e.merge(kd);
                                 if m == Kind::Str && *e != Kind::Str {
-                                    eprintln!("warning: {slug}: layer {} key {k:?} has mixed value types ({e:?} and {kd:?}); stored as String", layer_names[li]);
+                                    eprintln!(
+                                        "warning: {slug}: layer {} key {k:?} has mixed value types ({e:?} and {kd:?}); stored as String",
+                                        layer_names[li]
+                                    );
                                 }
                                 *e = m;
                             })
@@ -686,7 +727,6 @@ pub fn run(data: &Path, slugs: &[String], out: &Path, name: &str) {
     eprintln!("[{:6.2}s] {} : {} tiles, {mb:.1} MB", t0.elapsed().as_secs_f64(), path.display(), encoded.iter().filter(|b| !b.is_empty()).count());
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -729,11 +769,7 @@ mod tests {
         let outer2 = [(200, 200), (300, 200), (300, 300), (200, 200)];
         let pieces = vec![
             Piece { seq: 0, props: props(json!({"name": "a", "n": 1, "ok": true, "mix": 5})), geom: geom(Gv::Point(vec![10.0, 20.0])) },
-            Piece {
-                seq: 1,
-                props: props(json!({"name": "b", "n": 2.5, "mix": "x"})),
-                geom: geom(Gv::MultiPoint(vec![vec![1.0, 2.0], vec![3.0, 4.0]])),
-            },
+            Piece { seq: 1, props: props(json!({"name": "b", "n": 2.5, "mix": "x"})), geom: geom(Gv::MultiPoint(vec![vec![1.0, 2.0], vec![3.0, 4.0]])) },
             Piece {
                 seq: 2,
                 props: props(json!({"name": "c", "big": 5_000_000_000i64, "mix": true})),
@@ -777,10 +813,7 @@ mod tests {
             Geometry::LineString(gring(&[(0, 0), (50, 60), (70, 10)])),
             Geometry::MultiLineString(MultiLineString::new(vec![gring(&[(0, 0), (5, 5)]), gring(&[(10, 10), (20, 30), (40, 30)])])),
             Geometry::Polygon(Polygon::new(gring(&outer), vec![gring(&hole)])),
-            Geometry::MultiPolygon(MultiPolygon::new(vec![
-                Polygon::new(gring(&outer), vec![gring(&hole)]),
-                Polygon::new(gring(&outer2), vec![]),
-            ])),
+            Geometry::MultiPolygon(MultiPolygon::new(vec![Polygon::new(gring(&outer), vec![gring(&hole)]), Polygon::new(gring(&outer2), vec![])])),
         ];
         let feats = layer.features();
         assert_eq!(feats.len(), want_geoms.len());
@@ -903,10 +936,7 @@ mod tests {
 
     #[test]
     fn dedupe_drops_repeats_and_degenerate_lines() {
-        let mut ps = vec![
-            line_piece(0, &[[0, 0], [0, 0], [3, 3], [3, 3], [3, 3], [9, 9]]),
-            line_piece(1, &[[5, 5], [5, 5], [5, 5]]),
-        ];
+        let mut ps = vec![line_piece(0, &[[0, 0], [0, 0], [3, 3], [3, 3], [3, 3], [9, 9]]), line_piece(1, &[[5, 5], [5, 5], [5, 5]])];
         dedupe_lines(&mut ps);
         assert_eq!(ps.len(), 1);
         assert_eq!(lines_of(&ps[0]), &vec![vec![[0, 0], [3, 3], [9, 9]]]);
@@ -923,9 +953,9 @@ mod tests {
     #[test]
     fn low_zoom_track_layer_removes_collapsing_lines_and_halves() {
         let mut ps = vec![
-            line_piece(0, &[[0, 0], [1, 1], [2, 0]]),         // DP keeps all three; halve -> [0,0],[1,1],[1,0]
+            line_piece(0, &[[0, 0], [1, 1], [2, 0]]),             // DP keeps all three; halve -> [0,0],[1,1],[1,0]
             line_piece(1, &[[100, 100], [101, 100], [100, 101]]), // DP keeps ends; halve -> [50,50],[51,50],[50,51]
-            line_piece(2, &[[11, 11], [12, 12]]),             // both ends halve to [6, 6]: removed
+            line_piece(2, &[[11, 11], [12, 12]]),                 // both ends halve to [6, 6]: removed
         ];
         let extent = low_zoom_layer("track", &mut ps);
         assert_eq!(extent, LOW_EXTENT);
@@ -956,4 +986,3 @@ mod tests {
         assert!(!encode_tile_with(false, 5, &mut mk(), &names, &kinds, &mut gz).is_empty(), "switch off: old behaviour");
     }
 }
-

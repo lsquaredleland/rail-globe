@@ -164,11 +164,15 @@ pub fn index(f: &File, cache: &Path) -> Result<(Vec<BlobRef>, bool), String> {
     let mtime = md.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
     let stamp = [md.len(), mtime];
     if let Ok(b) = fs::read(cache) {
-        if b.len() >= 16 && (b.len() - 16) % 13 == 0 && u64::from_le_bytes(b[0..8].try_into().unwrap()) == stamp[0]
+        if b.len() >= 16
+            && (b.len() - 16) % 13 == 0
+            && u64::from_le_bytes(b[0..8].try_into().unwrap()) == stamp[0]
             && u64::from_le_bytes(b[8..16].try_into().unwrap()) == stamp[1]
         {
             let v = b[16..]
-                .chunks_exact(13)
+                .as_chunks::<13>()
+                .0
+                .iter()
                 .map(|c| BlobRef {
                     off: u64::from_le_bytes(c[0..8].try_into().unwrap()),
                     len: u32::from_le_bytes(c[8..12].try_into().unwrap()),

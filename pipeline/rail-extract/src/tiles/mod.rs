@@ -36,10 +36,20 @@ const SKETCH_MINZOOM: i64 = 4; // the metro sketch (type only) is drawn from her
 const BIG_LINE_BYTES: usize = 64 * 1024; // a line record over this (long highlight geometry) stays its own file in lines-big/ instead of bloating a shard
 
 /// the tile layers of one region: (tile layer, file in tiles_tmp), in stacking order (the overview is the first "track" file)
-pub const TILE_LAYERS: [(&str, &str); 12] = [("track", "track_overview.geojsonl"), ("track", "track.geojsonl"), ("con_dash", "con_dash.geojsonl"),
-    ("lines", "lines.geojsonl"), ("areas", "areas.geojsonl"), ("buildings", "buildings.geojsonl"), ("platforms", "platforms.geojsonl"),
-    ("stations", "stations.geojsonl"), ("complexes", "complexes.geojsonl"), ("airports", "airports.geojsonl"),
-    ("airport_pts", "airport_pts.geojsonl"), ("cities", "cities.geojsonl")];
+pub const TILE_LAYERS: [(&str, &str); 12] = [
+    ("track", "track_overview.geojsonl"),
+    ("track", "track.geojsonl"),
+    ("con_dash", "con_dash.geojsonl"),
+    ("lines", "lines.geojsonl"),
+    ("areas", "areas.geojsonl"),
+    ("buildings", "buildings.geojsonl"),
+    ("platforms", "platforms.geojsonl"),
+    ("stations", "stations.geojsonl"),
+    ("complexes", "complexes.geojsonl"),
+    ("airports", "airports.geojsonl"),
+    ("airport_pts", "airport_pts.geojsonl"),
+    ("cities", "cities.geojsonl"),
+];
 
 pub struct Prepared {
     pub summary: String,
@@ -83,12 +93,21 @@ impl Logos {
     fn load(inp: &Input, out: &Path) -> Logos {
         // logos/logos.json sits in app/static, beside the data folder's parent (app/public/data, or app/public/data/world for the world build)
         let logos_json = out.ancestors().map(|a| a.join("static/logos/logos.json")).find(|p| p.exists());
-        let ids: std::collections::HashSet<String> = logos_json.as_ref().and_then(|p| std::fs::read_to_string(p).ok())
-            .and_then(|t| serde_json::from_str::<Map<String, Value>>(&t).ok()).map(|m| m.into_iter().map(|(k, _)| k).collect()).unwrap_or_default();
+        let ids: std::collections::HashSet<String> = logos_json
+            .as_ref()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|t| serde_json::from_str::<Map<String, Value>>(&t).ok())
+            .map(|m| m.into_iter().map(|(k, _)| k).collect())
+            .unwrap_or_default();
         if ids.is_empty() {
             eprintln!("warning: no logos/logos.json found above {}; stations get no logo", out.display());
         }
-        let china = inp.cfg.get("china").map_or(false, |v| match v { Value::Bool(b) => *b, Value::String(s) => !s.is_empty() && s != "false", Value::Number(n) => n.as_f64() != Some(0.0), _ => false });
+        let china = inp.cfg.get("china").is_some_and(|v| match v {
+            Value::Bool(b) => *b,
+            Value::String(s) => !s.is_empty() && s != "false",
+            Value::Number(n) => n.as_f64() != Some(0.0),
+            _ => false,
+        });
         Logos { ids, china }
     }
 
@@ -110,7 +129,7 @@ impl Logos {
         if let Some(best) = n.into_iter().max_by_key(|e| e.1) {
             return Some(best.0);
         }
-        (self.china && p["modes"].as_array().map_or(false, |m| m.iter().any(|x| x.as_str() == Some("train"))) && self.ids.contains("Q1073489"))
+        (self.china && p["modes"].as_array().is_some_and(|m| m.iter().any(|x| x.as_str() == Some("train"))) && self.ids.contains("Q1073489"))
             .then(|| "Q1073489".to_string())
     }
 }
@@ -147,8 +166,16 @@ fn write_tile_input(tmp: &Path, texts: [&String; 12]) {
 
 /// Writes the tile input (tiles_tmp), then the side files; the caller runs the tile writer afterwards. `stations` and `complexes`
 /// are the station model's features, construction stations appended.
-pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Value], route_order: &Map<String, Value>, data: &Path, out: &Path,
-    regions_dirs: &[std::path::PathBuf]) -> Prepared {
+pub fn run(
+    slug: &str,
+    inp: &Input,
+    stations: &mut [Value],
+    complexes: &mut [Value],
+    route_order: &Map<String, Value>,
+    data: &Path,
+    out: &Path,
+    regions_dirs: &[std::path::PathBuf],
+) -> Prepared {
     let tmp = data.join("tiles_tmp");
     let side_dir = out.join(slug);
     prepare_dirs(&tmp, &side_dir);
@@ -173,11 +200,37 @@ pub fn run(slug: &str, inp: &Input, stations: &mut [Value], complexes: &mut [Val
     for (_, props, geom, mz, xz) in &overview {
         util::feat(&mut ov_text, props, geom, Some(*mz), Some(*xz));
     }
-    write_tile_input(&tmp, [&ov_text, &sc.track, &con_dash, &sc.strands, &sc.areas, &sc.buildings, &sc.plats, &rows.stations, &rows.complexes,
-        &airports.airports, &airports.airport_pts, &cities_text]);
+    write_tile_input(
+        &tmp,
+        [
+            &ov_text,
+            &sc.track,
+            &con_dash,
+            &sc.strands,
+            &sc.areas,
+            &sc.buildings,
+            &sc.plats,
+            &rows.stations,
+            &rows.complexes,
+            &airports.airports,
+            &airports.airport_pts,
+            &cities_text,
+        ],
+    );
 
     let n_named = side::Side {
-        slug, inp, lk: &lk, sc: &sc, stations, complexes, route_order, airport_of: &rows.airport_of, logos: &logos, dir: &side_dir, out, regions_dirs,
+        slug,
+        inp,
+        lk: &lk,
+        sc: &sc,
+        stations,
+        complexes,
+        route_order,
+        airport_of: &rows.airport_of,
+        logos: &logos,
+        dir: &side_dir,
+        out,
+        regions_dirs,
     }
     .write_all();
     Prepared {

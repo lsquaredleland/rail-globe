@@ -3,7 +3,7 @@
 use super::constants::con_band;
 use super::props::ConDashProps;
 use super::util::feat;
-use crate::pyjson::{self, f, py_round, COMPACT};
+use crate::geomx::round;
 use geo::{Geometry, LineString, Simplify};
 use rustc_hash::FxHashMap;
 use serde_json::{json, Map, Value};
@@ -78,19 +78,31 @@ pub(super) fn dedupe_parallel(mut lines: Vec<Vec<(f64, f64)>>) -> Vec<Vec<(f64, 
                 s.push((w[0].0 + (w[1].0 - w[0].0) * t, w[0].1 + (w[1].1 - w[0].1) * t));
             }
         }
-        let covered: Vec<bool> = s.iter().map(|&p| { let (cx, cy) = cell(p); (-1..=1).any(|dx| (-1..=1).any(|dy| taken.contains(&(cx + dx, cy + dy)))) }).collect();
+        let covered: Vec<bool> = s
+            .iter()
+            .map(|&p| {
+                let (cx, cy) = cell(p);
+                (-1..=1).any(|dx| (-1..=1).any(|dy| taken.contains(&(cx + dx, cy + dy))))
+            })
+            .collect();
         let mut run: Vec<(f64, f64)> = Vec::new();
         for (i, &p) in s.iter().enumerate() {
             if !covered[i] {
                 run.push(p);
             } else if !run.is_empty() {
-                if run.len() > 1 { out.push(std::mem::take(&mut run)); } else { run.clear(); }
+                if run.len() > 1 {
+                    out.push(std::mem::take(&mut run));
+                } else {
+                    run.clear();
+                }
             }
         }
         if run.len() > 1 {
             out.push(run);
         }
-        for &p in &s { taken.insert(cell(p)); }
+        for &p in &s {
+            taken.insert(cell(p));
+        }
     }
     out
 }
@@ -112,9 +124,15 @@ pub(super) fn con_dashes(out: &mut String, ty: &str, prop: bool, band: i64, merc
         let zc = if b == nb { z + bands.step } else { z + bands.step / 2.0 };
         let px = 1.0 / (512.0 * 2f64.powf(zc));
         let p = ConDashProps { ty: ty.to_string(), prop, kmh: (band >= 0).then_some(band), b }.to_map();
-        for d in cut_dashes(&merc, CON_DASH_PX * px, CON_GAP_PX * px) {
-            let coords: Vec<Value> = d.iter().map(|&q| { let (x, y) = from_merc(q); json!([x, y]) }).collect();
-            feat(out, &p, &pyjson::to_string(&json!({"type": "LineString", "coordinates": coords}), COMPACT), Some(tile_zoom), Some(tile_zoom));
+        for d in cut_dashes(merc, CON_DASH_PX * px, CON_GAP_PX * px) {
+            let coords: Vec<Value> = d
+                .iter()
+                .map(|&q| {
+                    let (x, y) = from_merc(q);
+                    json!([x, y])
+                })
+                .collect();
+            feat(out, &p, &json!({"type": "LineString", "coordinates": coords}).to_string(), Some(tile_zoom), Some(tile_zoom));
         }
     }
 }
@@ -186,7 +204,7 @@ pub(super) fn hl_record(ids: &[String], way_geom: &FxHashMap<String, Vec<(f64, f
             .map(|p| {
                 let ls: LineString<f64> = p.into_iter().map(|(x, y)| geo::Coord { x, y }).collect();
                 let ls = ls.simplify(HL_SIMPLIFY);
-                Value::Array(ls.0.iter().map(|c| json!([f(py_round(c.x, 5)), f(py_round(c.y, 5))])).collect())
+                Value::Array(ls.0.iter().map(|c| json!([Value::from(round(c.x, 5)), Value::from(round(c.y, 5))])).collect())
             })
             .collect();
         json!({"type": "MultiLineString", "coordinates": parts})
@@ -201,12 +219,13 @@ pub(super) fn hl_record(ids: &[String], way_geom: &FxHashMap<String, Vec<(f64, f
 }
 
 pub(super) fn geojson_value(g: &Geometry<f64>) -> Value {
-    let ring = |l: &LineString<f64>| Value::Array(l.0.iter().map(|c| json!([f(c.x), f(c.y)])).collect());
+    let ring = |l: &LineString<f64>| Value::Array(l.0.iter().map(|c| json!([Value::from(c.x), Value::from(c.y)])).collect());
     match g {
         Geometry::Polygon(p) => json!({"type": "Polygon", "coordinates": std::iter::once(p.exterior()).chain(p.interiors()).map(ring).collect::<Vec<_>>()}),
-        Geometry::MultiPolygon(m) => json!({"type": "MultiPolygon", "coordinates": m.0.iter().map(|p| std::iter::once(p.exterior()).chain(p.interiors()).map(ring).collect::<Vec<_>>()).collect::<Vec<_>>()}),
-        Geometry::Point(p) => json!({"type": "Point", "coordinates": [f(p.x()), f(p.y())]}),
+        Geometry::MultiPolygon(m) => {
+            json!({"type": "MultiPolygon", "coordinates": m.0.iter().map(|p| std::iter::once(p.exterior()).chain(p.interiors()).map(ring).collect::<Vec<_>>()).collect::<Vec<_>>()})
+        }
+        Geometry::Point(p) => json!({"type": "Point", "coordinates": [Value::from(p.x()), Value::from(p.y())]}),
         _ => Value::Null,
     }
 }
-

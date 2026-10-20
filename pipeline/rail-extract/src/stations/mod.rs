@@ -23,7 +23,7 @@ mod tests;
 
 pub use names::english_name;
 
-use crate::geomx::{self, Index};
+use crate::geomx::{self, Index, UnionFind};
 use crate::site::Input;
 use features::{Feats, Proj};
 use geo::{Geometry, Point};
@@ -38,7 +38,11 @@ const RADIUS_OTHER: f64 = 100.0;
 const GROUP_RADIUS: f64 = 300.0;
 
 fn radius(m: &str) -> f64 {
-    if m == "train" { RADIUS_TRAIN } else { RADIUS_OTHER }
+    if m == "train" {
+        RADIUS_TRAIN
+    } else {
+        RADIUS_OTHER
+    }
 }
 
 fn max_radius(ms: &BTreeSet<String>) -> f64 {
@@ -139,28 +143,8 @@ fn point_index(st: &[Station]) -> Index {
     Index::new(st.iter().map(|x| geomx::bbox(&Geometry::Point(x.pt))))
 }
 
-struct UF(Vec<usize>);
-impl UF {
-    fn new(n: usize) -> UF {
-        UF((0..n).collect())
-    }
-    fn find(&mut self, mut x: usize) -> usize {
-        while self.0[x] != x {
-            self.0[x] = self.0[self.0[x]];
-            x = self.0[x];
-        }
-        x
-    }
-    fn union(&mut self, a: usize, b: usize) {
-        let (a, b) = (self.find(a), self.find(b));
-        if a != b {
-            self.0[b] = a;
-        }
-    }
-}
-
 /// groups in order of their first member
-fn groups(uf: &mut UF, n: usize) -> Vec<Vec<usize>> {
+fn groups(uf: &mut UnionFind, n: usize) -> Vec<Vec<usize>> {
     let mut by_root: FxHashMap<usize, usize> = FxHashMap::default();
     let mut out: Vec<Vec<usize>> = Vec::new();
     for i in 0..n {

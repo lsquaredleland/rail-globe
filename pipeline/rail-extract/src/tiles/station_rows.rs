@@ -7,7 +7,6 @@ use super::track::{Scan, SB_NONE};
 use super::util::{feat, rank};
 use super::{Logos, Lookup};
 use crate::geomx::{self, Index};
-use crate::pyjson::{self, COMPACT};
 use geo::{Geometry, Point};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::{json, Value};
@@ -55,11 +54,16 @@ pub(super) fn demote_construction(slug: &str, sc: &Scan, stations: &mut [Value],
     let mut demoted = 0;
     for stv in stations.iter_mut() {
         let p = &stv["properties"];
-        if p["construction"].as_bool() != Some(true) && p["line_counts"].as_object().map_or(true, |o| o.is_empty()) {
-            let allowed: FxHashSet<&str> = p["modes"].as_array().into_iter().flatten().filter_map(Value::as_str).flat_map(|m| mode_types(m).iter().copied()).collect();
+        if p["construction"].as_bool() != Some(true) && p["line_counts"].as_object().is_none_or(|o| o.is_empty()) {
+            let allowed: FxHashSet<&str> =
+                p["modes"].as_array().into_iter().flatten().filter_map(Value::as_str).flat_map(|m| mode_types(m).iter().copied()).collect();
             let pg = Geometry::Point(station_pt(stv));
             let near = |tree: &Index, rows: &[(geomx::G, String)]| -> BTreeSet<String> {
-                tree.near(&pg, NEAR).into_iter().filter(|&i| allowed.contains(rows[i].1.as_str()) && geomx::dist(&rows[i].0, &pg) <= NEAR).map(|i| rows[i].1.clone()).collect()
+                tree.near(&pg, NEAR)
+                    .into_iter()
+                    .filter(|&i| allowed.contains(rows[i].1.as_str()) && geomx::dist(&rows[i].0, &pg) <= NEAR)
+                    .map(|i| rows[i].1.clone())
+                    .collect()
             };
             let con_ty = if near(&pax_tree, &sc.pax).is_empty() { near(&con_tree, &sc.con_pax) } else { BTreeSet::new() };
             if !con_ty.is_empty() {
@@ -104,7 +108,8 @@ pub(super) fn rows(sc: &Scan, stations: &[Value], complexes: &[Value], airports:
             p["rail_types"].as_array().into_iter().flatten().filter_map(Value::as_str).map(String::from).collect()
         } else {
             let mut ty: BTreeSet<String> = p["line_counts"].as_object().into_iter().flatten().map(|(k, _)| k.clone()).collect();
-            let allowed: FxHashSet<&str> = p["modes"].as_array().into_iter().flatten().filter_map(Value::as_str).flat_map(|m| mode_types(m).iter().copied()).collect();
+            let allowed: FxHashSet<&str> =
+                p["modes"].as_array().into_iter().flatten().filter_map(Value::as_str).flat_map(|m| mode_types(m).iter().copied()).collect();
             let pg = Geometry::Point(station_pt(stv));
             for i in pax_tree.near(&pg, NEAR) {
                 if allowed.contains(sc.pax[i].1.as_str()) && geomx::dist(&sc.pax[i].0, &pg) <= NEAR {
@@ -153,8 +158,12 @@ pub(super) fn rows(sc: &Scan, stations: &[Value], complexes: &[Value], airports:
             lct,
         };
         airport_of.push(ap);
-        let minz = match tier { 1 => 5, 2 => 7, _ => 9 };
-        feat(&mut st_rows, &sp.to_map(), &pyjson::to_string(&stv["geometry"], COMPACT), Some(minz), None);
+        let minz = match tier {
+            1 => 5,
+            2 => 7,
+            _ => 9,
+        };
+        feat(&mut st_rows, &sp.to_map(), &stv["geometry"].to_string(), Some(minz), None);
     }
     for c in complexes.iter() {
         let p = &c["properties"];
@@ -168,11 +177,18 @@ pub(super) fn rows(sc: &Scan, stations: &[Value], complexes: &[Value], airports:
             term: p["terminus"].as_bool().unwrap_or(false),
             ns: p["station_count"].clone(),
             con: p["construction"].as_bool() == Some(true),
-            sb: format!(",{},", cx_sb.get(p["id"].as_str().unwrap_or("")).map_or("9".to_string(), |v| v.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(","))),
+            sb: format!(
+                ",{},",
+                cx_sb.get(p["id"].as_str().unwrap_or("")).map_or("9".to_string(), |v| v.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(","))
+            ),
             ty: ty.map_or(String::new(), |t| format!(",{},", t.iter().cloned().collect::<Vec<_>>().join(","))),
         };
-        let minz = match tier { 1 => 5, 2 => 8, _ => 10 };
-        feat(&mut cx_rows, &cp.to_map(), &pyjson::to_string(&c["geometry"], COMPACT), Some(minz), None);
+        let minz = match tier {
+            1 => 5,
+            2 => 8,
+            _ => 10,
+        };
+        feat(&mut cx_rows, &cp.to_map(), &c["geometry"].to_string(), Some(minz), None);
     }
     StationRows { stations: st_rows, complexes: cx_rows, airport_of }
 }

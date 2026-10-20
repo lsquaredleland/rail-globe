@@ -1,8 +1,8 @@
 //! Geometry for the station model and tile build, on `geo` (shapely/GEOS in the Python version) and `rstar` (shapely's STRtree).
 
 use geo::{
-    Area, BooleanOps, BoundingRect, Centroid, Contains, Coord, Distance, Euclidean, Geometry, InteriorPoint, LineString, MultiLineString,
-    MultiPolygon, Point, Polygon, Rect,
+    Area, BooleanOps, BoundingRect, Centroid, Contains, Coord, Distance, Euclidean, Geometry, InteriorPoint, LineString, MultiLineString, MultiPolygon, Point,
+    Polygon, Rect,
 };
 use rstar::{primitives::GeomWithData, primitives::Rectangle, RTree, AABB};
 use serde_json::Value;
@@ -136,14 +136,14 @@ fn area_point(polys: &[Polygon<f64>]) -> Option<Point<f64>> {
         let mut pt = Point::from(shell.0[0]);
         let mut width = 0.0;
         xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        for pair in xs.chunks_exact(2) {
+        for pair in xs.as_chunks::<2>().0 {
             let w = pair[1] - pair[0];
             if w > width {
                 width = w;
                 pt = Point::new(avg(pair[0], pair[1]), y);
             }
         }
-        if best.map_or(true, |(bw, _)| width > bw) {
+        if best.is_none_or(|(bw, _)| width > bw) {
             best = Some((width, pt));
         }
     }
@@ -166,7 +166,7 @@ fn line_point(lines: &[LineString<f64>]) -> Option<Point<f64>> {
     let mut best: Option<(f64, Coord<f64>)> = None;
     let add = |c: Coord<f64>, best: &mut Option<(f64, Coord<f64>)>| {
         let d = ((c.x - cx).powi(2) + (c.y - cy).powi(2)).sqrt();
-        if best.map_or(true, |(bd, _)| d < bd) {
+        if best.is_none_or(|(bd, _)| d < bd) {
             *best = Some((d, c));
         }
     };
@@ -264,7 +264,7 @@ pub struct Index {
 }
 
 impl Index {
-    pub fn new<'a>(geoms: impl Iterator<Item = Option<Rect<f64>>>) -> Index {
+    pub fn new(geoms: impl Iterator<Item = Option<Rect<f64>>>) -> Index {
         let items = geoms
             .enumerate()
             .filter_map(|(i, r)| r.map(|r| GeomWithData::new(Rectangle::from_corners([r.min().x, r.min().y], [r.max().x, r.max().y]), i)))
@@ -273,8 +273,7 @@ impl Index {
     }
     /// indices whose box meets [x0, x1] x [y0, y1]
     pub fn query(&self, x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<usize> {
-        let mut v: Vec<usize> =
-            self.tree.locate_in_envelope_intersecting(AABB::from_corners([x0, y0], [x1, y1])).map(|g| g.data).collect();
+        let mut v: Vec<usize> = self.tree.locate_in_envelope_intersecting(AABB::from_corners([x0, y0], [x1, y1])).map(|g| g.data).collect();
         v.sort_unstable();
         v
     }
@@ -287,5 +286,52 @@ impl Index {
     }
     pub fn at(&self, p: &Point<f64>) -> Vec<usize> {
         self.query(p.x(), p.y(), p.x(), p.y())
+    }
+}
+
+/// Disjoint sets over `0..n` with path halving. The root of a set is deterministic, and callers that iterate by root rely on that.
+pub struct UnionFind(Vec<usize>);
+
+impl UnionFind {
+    pub fn new(n: usize) -> UnionFind {
+        UnionFind((0..n).collect())
+    }
+
+    pub fn find(&mut self, mut x: usize) -> usize {
+        while self.0[x] != x {
+            self.0[x] = self.0[self.0[x]];
+            x = self.0[x];
+        }
+        x
+    }
+
+    /// joins the sets of `a` and `b`; the smaller root becomes the root
+    pub fn union(&mut self, a: usize, b: usize) {
+        let (a, b) = (self.find(a), self.find(b));
+        if a != b {
+            self.0[a.max(b)] = a.min(b);
+        }
+    }
+
+    /// joins the sets of `a` and `b`; the root of `b` becomes the root (even if `a` and `b` are already joined, a no-op)
+    pub fn link(&mut self, a: usize, b: usize) {
+        let (a, b) = (self.find(a), self.find(b));
+        self.0[a] = b;
+    }
+}
+
+/// `x` rounded to `n` decimals on its exact binary value (ties to even), as a float again. Keeps the short decimals in the JSON side files.
+pub fn round(x: f64, n: usize) -> f64 {
+    format!("{:.*}", n, x).parse().unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::round;
+
+    #[test]
+    fn rounds_on_the_binary_value() {
+        assert_eq!(round(2.675, 2), 2.67);
+        assert_eq!(round(0.125, 2), 0.12);
     }
 }

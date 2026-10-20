@@ -5,6 +5,7 @@
 //!   2. a grid over the box whose cells are marked inside, outside or edge (one lookup; most points stop here);
 //!   3. for points in edge cells only, an even-odd crossing test against the polygon edges of the point's horizontal band,
 //!      in integer arithmetic (1e-7 degrees), so the answer is exact.
+//!
 //! This keeps a large outline (China: about 1.6 MB of GeoJSON) as cheap per point as a small one.
 
 use crate::cache::BBox;
@@ -12,7 +13,7 @@ use std::path::Path;
 
 pub struct Region {
     pub slug: String,
-    pub bbox: BBox, // min lat, min lon, max lat, max lon
+    pub bbox: BBox,       // min lat, min lon, max lat, max lon
     edges: Vec<[i64; 4]>, // lon1, lat1, lon2, lat2
     // bands over latitude: edges whose latitude range overlaps each band
     band_h: i64,
@@ -32,20 +33,13 @@ fn deg7(v: f64) -> i64 {
 
 pub fn rings_of(geom: &serde_json::Value) -> Vec<Vec<(i64, i64)>> {
     let ring = |r: &serde_json::Value| -> Vec<(i64, i64)> {
-        r.as_array()
-            .expect("ring")
-            .iter()
-            .map(|p| (deg7(p[0].as_f64().expect("lon")), deg7(p[1].as_f64().expect("lat"))))
-            .collect()
+        r.as_array().expect("ring").iter().map(|p| (deg7(p[0].as_f64().expect("lon")), deg7(p[1].as_f64().expect("lat")))).collect()
     };
     match geom["type"].as_str() {
         Some("Polygon") => geom["coordinates"].as_array().expect("coordinates").iter().map(ring).collect(),
-        Some("MultiPolygon") => geom["coordinates"]
-            .as_array()
-            .expect("coordinates")
-            .iter()
-            .flat_map(|p| p.as_array().expect("polygon").iter().map(ring))
-            .collect(),
+        Some("MultiPolygon") => {
+            geom["coordinates"].as_array().expect("coordinates").iter().flat_map(|p| p.as_array().expect("polygon").iter().map(ring)).collect()
+        }
         Some("Feature") => rings_of(&geom["geometry"]),
         Some("FeatureCollection") => geom["features"].as_array().expect("features").iter().flat_map(rings_of).collect(),
         t => panic!("unsupported GeoJSON type {t:?}"),
@@ -54,10 +48,9 @@ pub fn rings_of(geom: &serde_json::Value) -> Vec<Vec<(i64, i64)>> {
 
 impl Region {
     pub fn load(slug: &str, path: &Path) -> Region {
-        let v: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read region outline {}: {e}", path.display())),
-        )
-        .expect("parse region outline");
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read region outline {}: {e}", path.display())))
+                .expect("parse region outline");
         Region::new(slug, rings_of(&v))
     }
 
@@ -94,8 +87,8 @@ impl Region {
         let mut lists: Vec<Vec<u32>> = vec![Vec::new(); nbands];
         for (i, e) in edges.iter().enumerate() {
             let (lo, hi) = (e[1].min(e[3]), e[1].max(e[3]));
-            for b in ((lo - y0) / band_h) as usize..=((hi - y0) / band_h) as usize {
-                lists[b].push(i as u32);
+            for list in &mut lists[((lo - y0) / band_h) as usize..=((hi - y0) / band_h) as usize] {
+                list.push(i as u32);
             }
         }
         let mut band_start = Vec::with_capacity(nbands + 1);

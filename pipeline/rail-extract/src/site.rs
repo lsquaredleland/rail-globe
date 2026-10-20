@@ -1,7 +1,6 @@
 //! `rail-extract build <slug>`: the station model, stations under construction, tile input and side files for one
 //! region, from the cut's files in data/<slug>/ (was stations.py, con_stations.py and build_tiles.py). Writes the same files.
 
-use crate::pyjson::{self, COMPACT, SPACED};
 use crate::{construction, stations, stats, tiles};
 use rayon::prelude::*;
 use serde_json::{Map, Value};
@@ -76,7 +75,7 @@ pub fn load(dir: &Path, cfg: &Path) -> Input {
 fn write_lines(path: &Path, rows: &[Value]) {
     let mut out = String::new();
     for r in rows {
-        pyjson::write(&mut out, r, COMPACT);
+        out.push_str(&r.to_string());
         out.push('\n');
     }
     fs::write(path, out).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
@@ -88,7 +87,7 @@ pub fn config_path(config_dir: &Path, slug: &str) -> (PathBuf, bool) {
     if own.exists() {
         (own, false)
     } else if let Some(group) = config_group(config_dir, slug) {
-        (config_dir.join(format!("{group}.json")), true)   // a template like the default: names are filled from the outline
+        (config_dir.join(format!("{group}.json")), true) // a template like the default: names are filled from the outline
     } else {
         (config_dir.join("_default.json"), true)
     }
@@ -99,7 +98,7 @@ pub fn config_path(config_dir: &Path, slug: &str) -> (PathBuf, bool) {
 fn config_group(config_dir: &Path, slug: &str) -> Option<String> {
     let path = config_dir.join("_groups.json");
     let text = std::fs::read_to_string(&path).ok()?; // no file: no groups
-    // a broken _groups.json must stop the run (the whole group would quietly use _default.json)
+                                                     // a broken _groups.json must stop the run (the whole group would quietly use _default.json)
     let v: Value = serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
     let groups = v.as_object().unwrap_or_else(|| panic!("{} must be a JSON object", path.display()));
     let mut found: Vec<&String> = Vec::new();
@@ -120,7 +119,7 @@ fn config_group(config_dir: &Path, slug: &str) -> Option<String> {
 
 /// True when the config file itself starts from a template (has an `extends` key).
 fn extends_template(path: &Path) -> bool {
-    fs::read_to_string(path).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).map_or(false, |v| v.get("extends").is_some())
+    fs::read_to_string(path).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).is_some_and(|v| v.get("extends").is_some())
 }
 
 /// Fill the slug-specific keys of the template from the region's outline properties: stat_name <- name_en (else name),
@@ -164,7 +163,10 @@ pub struct Paths {
 pub fn preflight(slug: &str, paths: &Paths) -> Result<(), String> {
     let dir = paths.data.join(slug);
     if !dir.join("features.typed.geojsonl").exists() {
-        return Err(format!("no cut for {slug}: {} is missing; run `rail-extract cut {slug}` first (or `cut {slug} --build`)", dir.join("features.typed.geojsonl").display()));
+        return Err(format!(
+            "no cut for {slug}: {} is missing; run `rail-extract cut {slug}` first (or `cut {slug} --build`)",
+            dir.join("features.typed.geojsonl").display()
+        ));
     }
     let (cfg, _) = config_path(&paths.config, slug);
     if !cfg.exists() {
@@ -191,9 +193,7 @@ pub fn build(slug: &str, paths: &Paths) -> Vec<String> {
     // a file of its own that says "extends" gets the same fill for the keys it leaves out; the hand-written pilot configs (no extends) stay as written
     if is_default || extends_template(&cfg_path) {
         let outline = paths.regions.iter().map(|d| d.join(format!("{slug}.geojson"))).find(|p| p.exists());
-        let props = outline
-            .and_then(|p| serde_json::from_str::<Value>(&fs::read_to_string(p).ok()?).ok())
-            .map_or(Value::Null, |v| v["properties"].clone());
+        let props = outline.and_then(|p| serde_json::from_str::<Value>(&fs::read_to_string(p).ok()?).ok()).map_or(Value::Null, |v| v["properties"].clone());
         fill_default(&mut inp.cfg, &props);
         if is_default {
             log.push(format!("  config: pipeline/config/_default.json (no {slug}.json)"));
@@ -203,8 +203,8 @@ pub fn build(slug: &str, paths: &Paths) -> Vec<String> {
     lap(&mut log, &mut t, format!("read {} features, {} relations, {} stop positions", inp.feats.len(), inp.rels.len(), inp.stops.len()));
 
     let mut st = stations::run(slug, &inp);
-    fs::write(dir.join("route_stations.json"), pyjson::to_string(&Value::Object(st.route_order.clone()), SPACED)).expect("write route_stations.json");
-    fs::write(dir.join("stations_report.json"), pyjson::pretty_ascii(&st.report)).expect("write stations_report.json");
+    fs::write(dir.join("route_stations.json"), serde_json::to_string(&st.route_order).unwrap()).expect("write route_stations.json");
+    fs::write(dir.join("stations_report.json"), serde_json::to_string_pretty(&st.report).unwrap()).expect("write stations_report.json");
     lap(&mut log, &mut t, format!("station model: {} stations, {} complexes", st.stations.len(), st.complexes.len()));
 
     let con = construction::run(slug, &inp, &mut st.stations, &mut st.complexes);

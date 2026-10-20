@@ -2,7 +2,6 @@
 //! `to_map` writes the keys in the order of the fields (serde_json preserve_order), which is the order of the tile input files.
 //! Flags (`con`, `prop`, `tun`, ...) are written as the number 1 and left out when false; options are left out when `None`.
 
-use crate::pyjson::f;
 use serde_json::{json, Map, Value};
 
 fn opt(m: &mut Map<String, Value>, key: &str, v: &Option<String>) {
@@ -224,7 +223,7 @@ impl AreaProps {
     pub fn to_map(&self) -> Map<String, Value> {
         let mut m = Map::new();
         m.insert("id".into(), json!(self.id));
-        m.insert("ha".into(), f(self.ha));
+        m.insert("ha".into(), Value::from(self.ha));
         opt(&mut m, "n", &self.n);
         opt(&mut m, "op", &self.op);
         m.insert("k".into(), json!(self.k));
@@ -281,7 +280,7 @@ impl AirportProps {
         m.insert("id".into(), self.id.clone());
         m.insert("k".into(), self.k.clone());
         m.insert("lb".into(), json!(self.lb));
-        m.insert("ha".into(), f(self.ha));
+        m.insert("ha".into(), Value::from(self.ha));
         opt(&mut m, "n", &self.n);
         opt(&mut m, "ne", &self.ne);
         opt(&mut m, "iata", &self.iata);

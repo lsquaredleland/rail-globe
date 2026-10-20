@@ -9,7 +9,7 @@
 //! ("cn-sichuan", "us-california"). data/regions/index.json lists every outline written, for picking regions to compare.
 
 use crate::assemble::{self, Poly};
-use crate::cache::{bbox_add, Cache, BBox, EMPTY};
+use crate::cache::{bbox_add, BBox, Cache, EMPTY};
 use crate::out::*;
 use crate::rules::{self, List, Tags};
 use rayon::prelude::*;
@@ -119,9 +119,7 @@ pub fn inside(polys: &[Poly], lat: f64, lon: f64) -> bool {
 
 /// a point inside the largest polygon: the middle of the widest inside span on the horizontal line through its middle
 pub fn interior_point(polys: &[Poly]) -> Option<(f64, f64)> {
-    let area = |r: &[(i32, i32)]| -> f64 {
-        r.windows(2).map(|w| w[0].1 as f64 * w[1].0 as f64 - w[1].1 as f64 * w[0].0 as f64).sum::<f64>().abs()
-    };
+    let area = |r: &[(i32, i32)]| -> f64 { r.windows(2).map(|w| w[0].1 as f64 * w[1].0 as f64 - w[1].1 as f64 * w[0].0 as f64).sum::<f64>().abs() };
     let p = polys.iter().max_by(|a, b| area(&a[0]).total_cmp(&area(&b[0])))?;
     let (lo, hi) = p[0].iter().fold((i32::MAX, i32::MIN), |(lo, hi), q| (lo.min(q.0), hi.max(q.0)));
     let lat = (lo as f64 + hi as f64) / 2.0 * 1e-7 + 1.234e-9; // off any vertex
@@ -135,7 +133,7 @@ pub fn interior_point(polys: &[Poly]) -> Option<(f64, f64)> {
         }
     }
     xs.sort_by(|a, b| a.total_cmp(b));
-    xs.chunks_exact(2).max_by(|a, b| (a[1] - a[0]).total_cmp(&(b[1] - b[0]))).map(|s| (lat, (s[0] + s[1]) / 2.0))
+    xs.as_chunks::<2>().0.iter().max_by(|a, b| (a[1] - a[0]).total_cmp(&(b[1] - b[0]))).map(|s| (lat, (s[0] + s[1]) / 2.0))
 }
 
 /// lower-case ASCII slug; common Latin accents folded ("Île-de-France" -> "ile-de-france")
@@ -175,39 +173,35 @@ pub fn slugify(s: &str) -> String {
     out.trim_end_matches('-').to_string()
 }
 
-
 /// the GeoJSON Feature of one outline (same layout for every level); `city` marks a city outline (index.json `city: true`)
 fn feature_bytes(slug: &str, b: &Bnd, name_en: Option<&str>, cc: Option<&str>, iso: Option<&str>, city: bool) -> Vec<u8> {
     let mut o = b"{\"type\":\"Feature\",\"properties\":{\"slug\":".to_vec();
-        js(&mut o, slug.as_bytes());
-        for (k, v) in [
-            ("name", b.name.as_deref()),
-            ("name_en", name_en),
-            ("admin_level", Some(b.level.as_str())),
-            ("country", cc.as_deref()),
-            ("iso", iso),
-        ] {
-            o.push(b',');
-            js(&mut o, k.as_bytes());
-            o.push(b':');
-            js_opt(&mut o, v.map(str::as_bytes));
-        }
-        o.extend_from_slice(format!(",\"osm_id\":\"relation/{}\"{}}},\"geometry\":{{\"type\":\"MultiPolygon\",\"coordinates\":[", b.id, if city { ",\"city\":true" } else { "" }).as_bytes());
-        for (i, poly) in b.polys.iter().enumerate() {
-            o.extend_from_slice(if i > 0 { b",[" } else { b"[" });
-            for (j, ring) in poly.iter().enumerate() {
-                o.extend_from_slice(if j > 0 { b",[" } else { b"[" });
-                for (k, q) in ring.iter().enumerate() {
-                    if k > 0 {
-                        o.push(b',');
-                    }
-                    pt(&mut o, q.0, q.1);
+    js(&mut o, slug.as_bytes());
+    for (k, v) in [("name", b.name.as_deref()), ("name_en", name_en), ("admin_level", Some(b.level.as_str())), ("country", cc), ("iso", iso)] {
+        o.push(b',');
+        js(&mut o, k.as_bytes());
+        o.push(b':');
+        js_opt(&mut o, v.map(str::as_bytes));
+    }
+    o.extend_from_slice(
+        format!(",\"osm_id\":\"relation/{}\"{}}},\"geometry\":{{\"type\":\"MultiPolygon\",\"coordinates\":[", b.id, if city { ",\"city\":true" } else { "" })
+            .as_bytes(),
+    );
+    for (i, poly) in b.polys.iter().enumerate() {
+        o.extend_from_slice(if i > 0 { b",[" } else { b"[" });
+        for (j, ring) in poly.iter().enumerate() {
+            o.extend_from_slice(if j > 0 { b",[" } else { b"[" });
+            for (k, q) in ring.iter().enumerate() {
+                if k > 0 {
+                    o.push(b',');
                 }
-                o.push(b']');
+                pt(&mut o, q.0, q.1);
             }
             o.push(b']');
         }
-        o.extend_from_slice(b"]}}\n");
+        o.push(b']');
+    }
+    o.extend_from_slice(b"]}}\n");
     o
 }
 
@@ -232,7 +226,10 @@ fn country_of(b: &Bnd, countries: &[&Bnd]) -> Option<String> {
 fn area_km2(polys: &[Poly]) -> f64 {
     let ring = |r: &[(i32, i32)]| -> f64 {
         let lat0 = (r.iter().map(|q| q.0 as f64).sum::<f64>() / r.len().max(1) as f64 * 1e-7).to_radians().cos();
-        r.windows(2).map(|w| (w[0].1 as f64 * 1e-7 * lat0) * (w[1].0 as f64 * 1e-7) - (w[1].1 as f64 * 1e-7 * lat0) * (w[0].0 as f64 * 1e-7)).sum::<f64>().abs() / 2.0 * 111.32 * 110.54
+        r.windows(2).map(|w| (w[0].1 as f64 * 1e-7 * lat0) * (w[1].0 as f64 * 1e-7) - (w[1].1 as f64 * 1e-7 * lat0) * (w[0].0 as f64 * 1e-7)).sum::<f64>().abs()
+            / 2.0
+            * 111.32
+            * 110.54
     };
     polys.iter().map(|p| ring(&p[0]) - p[1..].iter().map(|h| ring(h)).sum::<f64>()).sum()
 }
@@ -244,8 +241,10 @@ fn area_km2(polys: &[Poly]) -> f64 {
 /// (the cities' boundaries are only in the cache then).
 pub fn city_outlines(c: &Cache, wanted_file: &Path, out: &Path) {
     let t0 = std::time::Instant::now();
-    let wanted: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(wanted_file).unwrap_or_else(|e| panic!("read {}: {e} (run `rail-extract places` first)", wanted_file.display())))
-        .unwrap_or_else(|e| panic!("parse {}: {e}", wanted_file.display()));
+    let wanted: Vec<serde_json::Value> = serde_json::from_str(
+        &std::fs::read_to_string(wanted_file).unwrap_or_else(|e| panic!("read {}: {e} (run `rail-extract places` first)", wanted_file.display())),
+    )
+    .unwrap_or_else(|e| panic!("parse {}: {e}", wanted_file.display()));
     let want: BTreeMap<&str, &str> = wanted.iter().filter_map(|w| Some((w["wikidata"].as_str()?, w["name_en"].as_str().unwrap_or("")))).collect();
     let (all, failed) = load(c, &["2", "5", "6", "7", "8", "9"]);
     let countries: Vec<&Bnd> = all.iter().filter(|b| b.level == "2").collect();
@@ -253,14 +252,15 @@ pub fn city_outlines(c: &Cache, wanted_file: &Path, out: &Path) {
     for b in all.iter().filter(|b| b.level != "2") {
         if let Some(w) = b.wikidata.as_deref().filter(|w| want.contains_key(w)) {
             let lvl = |x: &Bnd| x.level.parse::<u32>().unwrap_or(0);
-            if best.get(w).map_or(true, |o| lvl(b) > lvl(o)) {
+            if best.get(w).is_none_or(|o| lvl(b) > lvl(o)) {
                 best.insert(w, b);
             }
         }
     }
     std::fs::create_dir_all(out).expect("create outline folder");
     let idx_path = out.join("index.json");
-    let mut index: BTreeMap<String, serde_json::Value> = std::fs::read_to_string(&idx_path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+    let mut index: BTreeMap<String, serde_json::Value> =
+        std::fs::read_to_string(&idx_path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
     let (mut made, mut too_small, mut too_big, mut already, mut no_country) = (0, 0, 0, 0, 0);
     let mut bytes = 0usize;
     let mut todo: Vec<(&&str, &&Bnd)> = best.iter().collect();
@@ -292,7 +292,11 @@ pub fn city_outlines(c: &Cache, wanted_file: &Path, out: &Path) {
     }
     for (w, b, _, _) in &keep {
         let osm = format!("relation/{}", b.id);
-        let same: Vec<String> = index.iter().filter(|(_, v)| v["city"] == true && (v["osm_id"].as_str() == Some(osm.as_str()) || v["wikidata"].as_str() == Some(**w))).map(|(k, _)| k.clone()).collect();
+        let same: Vec<String> = index
+            .iter()
+            .filter(|(_, v)| v["city"] == true && (v["osm_id"].as_str() == Some(osm.as_str()) || v["wikidata"].as_str() == Some(**w)))
+            .map(|(k, _)| k.clone())
+            .collect();
         for k in same {
             index.remove(&k);
             let _ = std::fs::remove_file(out.join(format!("{k}.geojson")));
@@ -350,20 +354,16 @@ pub fn outlines(c: &Cache, level: &str, country: Option<&str>, out: &Path) {
         .par_iter()
         .filter(|b| b.level == level)
         .map(|b| (b, country_of(b)))
-        .filter(|(_, cc)| want.as_ref().map_or(true, |w| cc.as_deref().map(str::to_ascii_uppercase).as_ref() == Some(w)))
+        .filter(|(_, cc)| want.as_ref().is_none_or(|w| cc.as_deref().map(str::to_ascii_uppercase).as_ref() == Some(w)))
         .collect();
     picked.sort_by_key(|(b, _)| b.id);
 
     std::fs::create_dir_all(out).expect("create outline folder");
     let idx_path = out.join("index.json");
-    let mut index: BTreeMap<String, serde_json::Value> = std::fs::read_to_string(&idx_path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
-    let mut used: BTreeMap<String, i64> = index
-        .iter()
-        .filter_map(|(k, v)| Some((k.clone(), v["osm_id"].as_str()?.trim_start_matches("relation/").parse().ok()?)))
-        .collect();
+    let mut index: BTreeMap<String, serde_json::Value> =
+        std::fs::read_to_string(&idx_path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+    let mut used: BTreeMap<String, i64> =
+        index.iter().filter_map(|(k, v)| Some((k.clone(), v["osm_id"].as_str()?.trim_start_matches("relation/").parse().ok()?))).collect();
     let mut bytes = 0usize;
     let mut written = Vec::new();
     for (b, cc) in &picked {

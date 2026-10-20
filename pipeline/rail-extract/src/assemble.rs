@@ -147,7 +147,7 @@ fn assemble_gaps(ways: &[&[P]], strict: bool, max_gap_deg: f64) -> Result<(Vec<P
             while a <= 0.0 {
                 a += std::f64::consts::TAU;
             }
-            if best.map_or(true, |(b, _)| a < b) {
+            if best.is_none_or(|(b, _)| a < b) {
                 best = Some((a, k));
             }
         }
@@ -216,7 +216,7 @@ fn assemble_gaps(ways: &[&[P]], strict: bool, max_gap_deg: f64) -> Result<(Vec<P
     for &r in &order {
         let mut ring = rings[r].clone();
         let ccw = areas[r] > 0;
-        if depth[r] % 2 == 0 {
+        if depth[r].is_multiple_of(2) {
             if !ccw {
                 ring.reverse();
             }
@@ -238,10 +238,17 @@ fn assemble_gaps(ways: &[&[P]], strict: bool, max_gap_deg: f64) -> Result<(Vec<P
 fn intersects(segs: &[(P, P)]) -> bool {
     type V = (i64, i64);
     let v = |p: P| -> V { (p.1 as i64, p.0 as i64) };
-    let mut s: Vec<(V, V)> = segs.iter().map(|&(a, b)| {
-        let (a, b) = (v(a), v(b));
-        if a <= b { (a, b) } else { (b, a) }
-    }).collect();
+    let mut s: Vec<(V, V)> = segs
+        .iter()
+        .map(|&(a, b)| {
+            let (a, b) = (v(a), v(b));
+            if a <= b {
+                (a, b)
+            } else {
+                (b, a)
+            }
+        })
+        .collect();
     s.sort_unstable();
     let cross = |a: V, b: V| -> i128 { a.0 as i128 * b.1 as i128 - a.1 as i128 * b.0 as i128 };
     let sub = |a: V, b: V| -> V { (a.0 - b.0, a.1 - b.1) };
@@ -262,7 +269,7 @@ fn intersects(segs: &[(P, P)]) -> bool {
         if cross(pd, sub(q0, p0)) == 0 {
             // collinear: overlapping unless they only meet end to end
             let mut sl = [(p0, 0), (p1, 0), (q0, 1), (q1, 1)];
-            sl.sort_by(|a, b| a.0.cmp(&b.0));
+            sl.sort_by_key(|a| a.0);
             if sl[1].0 == sl[2].0 {
                 return false;
             }

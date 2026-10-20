@@ -34,16 +34,65 @@ pub const ROUTE_MODES: [&[u8]; 6] = [b"train", b"subway", b"light_rail", b"tram"
 
 /// feature properties, in this order, then every name:* tag (filter.cpp KEEP)
 pub const KEEP: [&str; 39] = [
-    "railway", "public_transport", "building", "landuse", "station", "service", "usage", "railway:traffic_mode",
-    "highspeed", "name", "official_name", "int_name", "ref", "wikidata", "uic_ref", "railway:ref",
-    "operator", "operator:short", "network", "gauge", "electrified", "voltage", "frequency", "tracks",
-    "maxspeed", "maxspeed:freight", "construction", "proposed", "bridge", "tunnel", "light_rail", "subway", "train", "start_date",
-    "construction:railway", "construction:public_transport", "construction:station", "operator:wikidata", "brand:wikidata",
+    "railway",
+    "public_transport",
+    "building",
+    "landuse",
+    "station",
+    "service",
+    "usage",
+    "railway:traffic_mode",
+    "highspeed",
+    "name",
+    "official_name",
+    "int_name",
+    "ref",
+    "wikidata",
+    "uic_ref",
+    "railway:ref",
+    "operator",
+    "operator:short",
+    "network",
+    "gauge",
+    "electrified",
+    "voltage",
+    "frequency",
+    "tracks",
+    "maxspeed",
+    "maxspeed:freight",
+    "construction",
+    "proposed",
+    "bridge",
+    "tunnel",
+    "light_rail",
+    "subway",
+    "train",
+    "start_date",
+    "construction:railway",
+    "construction:public_transport",
+    "construction:station",
+    "operator:wikidata",
+    "brand:wikidata",
 ];
 
 /// relation side-table tags, in this order, then every name:* tag (filter.cpp REL_TAGS)
-pub const REL_TAGS: [&str; 15] =
-    ["name", "ref", "colour", "operator", "operator:wikidata", "brand:wikidata", "network", "route", "service", "from", "to", "wikidata", "public_transport", "type", "route_master"];
+pub const REL_TAGS: [&str; 15] = [
+    "name",
+    "ref",
+    "colour",
+    "operator",
+    "operator:wikidata",
+    "brand:wikidata",
+    "network",
+    "route",
+    "service",
+    "from",
+    "to",
+    "wikidata",
+    "public_transport",
+    "type",
+    "route_master",
+];
 
 /// Tags stored in the cache: everything any rule or output reads. Anything else is dropped at cache time, so a new output tag
 /// means rebuilding the cache (one planet read).
@@ -54,14 +103,66 @@ pub fn cache_key(k: &[u8]) -> bool {
     }
     matches!(
         k,
-        b"railway" | b"public_transport" | b"building" | b"landuse" | b"station" | b"service" | b"usage" | b"railway:traffic_mode"
-            | b"highspeed" | b"name" | b"official_name" | b"int_name" | b"ref" | b"wikidata" | b"uic_ref" | b"railway:ref"
-            | b"operator" | b"operator:short" | b"operator:wikidata" | b"brand:wikidata" | b"network" | b"gauge" | b"electrified" | b"voltage" | b"frequency" | b"tracks"
-            | b"maxspeed" | b"maxspeed:freight" | b"construction" | b"proposed" | b"bridge" | b"tunnel" | b"light_rail"
-            | b"subway" | b"train" | b"tram" | b"monorail" | b"funicular" | b"start_date" | b"construction:railway"
-            | b"construction:public_transport" | b"construction:station" | b"entrance" | b"area" | b"aeroway" | b"iata"
-            | b"icao" | b"aerodrome:type" | b"military" | b"type" | b"route" | b"route_master" | b"colour" | b"from" | b"to"
-            | b"boundary" | b"admin_level" | b"ISO3166-1" | b"ISO3166-1:alpha2" | b"ISO3166-2"
+        b"railway"
+            | b"public_transport"
+            | b"building"
+            | b"landuse"
+            | b"station"
+            | b"service"
+            | b"usage"
+            | b"railway:traffic_mode"
+            | b"highspeed"
+            | b"name"
+            | b"official_name"
+            | b"int_name"
+            | b"ref"
+            | b"wikidata"
+            | b"uic_ref"
+            | b"railway:ref"
+            | b"operator"
+            | b"operator:short"
+            | b"operator:wikidata"
+            | b"brand:wikidata"
+            | b"network"
+            | b"gauge"
+            | b"electrified"
+            | b"voltage"
+            | b"frequency"
+            | b"tracks"
+            | b"maxspeed"
+            | b"maxspeed:freight"
+            | b"construction"
+            | b"proposed"
+            | b"bridge"
+            | b"tunnel"
+            | b"light_rail"
+            | b"subway"
+            | b"train"
+            | b"tram"
+            | b"monorail"
+            | b"funicular"
+            | b"start_date"
+            | b"construction:railway"
+            | b"construction:public_transport"
+            | b"construction:station"
+            | b"entrance"
+            | b"area"
+            | b"aeroway"
+            | b"iata"
+            | b"icao"
+            | b"aerodrome:type"
+            | b"military"
+            | b"type"
+            | b"route"
+            | b"route_master"
+            | b"colour"
+            | b"from"
+            | b"to"
+            | b"boundary"
+            | b"admin_level"
+            | b"ISO3166-1"
+            | b"ISO3166-1:alpha2"
+            | b"ISO3166-2"
     )
 }
 
@@ -78,7 +179,7 @@ pub const ADMIN_LEVELS: [&[u8]; 3] = [b"2", b"4", b"5"];
 pub fn admin_boundary<T: Tags + ?Sized>(t: &T) -> bool {
     matches!(t.get(b"type"), Some(b"boundary" | b"multipolygon"))
         && is(t, b"boundary", b"administrative")
-        && t.get(b"admin_level").map_or(false, |l| ADMIN_LEVELS.contains(&l))
+        && t.get(b"admin_level").is_some_and(|l| ADMIN_LEVELS.contains(&l))
 }
 
 /// a city's own boundary (admin levels 6 to 9: the county, municipality or city limits), kept only when its Wikidata id is that of a
@@ -86,8 +187,8 @@ pub fn admin_boundary<T: Tags + ?Sized>(t: &T) -> bool {
 pub fn city_boundary<T: Tags + ?Sized>(t: &T, wanted: &std::collections::HashSet<Vec<u8>>) -> bool {
     matches!(t.get(b"type"), Some(b"boundary" | b"multipolygon"))
         && is(t, b"boundary", b"administrative")
-        && t.get(b"admin_level").map_or(false, |l| matches!(l, b"6" | b"7" | b"8" | b"9"))
-        && t.get(b"wikidata").map_or(false, |w| wanted.contains(w))
+        && t.get(b"admin_level").is_some_and(|l| matches!(l, b"6" | b"7" | b"8" | b"9"))
+        && t.get(b"wikidata").is_some_and(|w| wanted.contains(w))
 }
 
 pub fn passenger_mode<T: Tags + ?Sized>(t: &T) -> bool {
@@ -128,9 +229,8 @@ pub fn node_kind<T: Tags + ?Sized>(t: &T) -> Option<NodeKind> {
     if is(t, b"public_transport", b"stop_position") || is(t, b"railway", b"stop") {
         return if passenger_mode(t) || is(t, b"railway", b"stop") { Some(NodeKind::Stop) } else { None };
     }
-    let station = is(t, b"railway", b"station")
-        || is(t, b"railway", b"halt")
-        || (is(t, b"public_transport", b"station") && (has(t, b"railway") || passenger_mode(t)));
+    let station =
+        is(t, b"railway", b"station") || is(t, b"railway", b"halt") || (is(t, b"public_transport", b"station") && (has(t, b"railway") || passenger_mode(t)));
     // a public_transport=station that is abandoned, disused or only proposed is not a station (the data spec drops them)
     if !station || matches!(t.get(b"railway"), Some(b"abandoned" | b"disused" | b"proposed")) {
         return None;
@@ -209,10 +309,10 @@ pub fn rel_kind<T: Tags + ?Sized>(t: &T) -> Option<RelKind> {
     if typ == Some(b"public_transport") && pt == Some(b"stop_area_group") {
         return Some(RelKind::StopAreaGroup);
     }
-    if typ == Some(b"route") && route.map_or(false, |r| ROUTE_MODES.contains(&r)) {
+    if typ == Some(b"route") && route.is_some_and(|r| ROUTE_MODES.contains(&r)) {
         return Some(RelKind::Route);
     }
-    if typ == Some(b"route_master") && t.get(b"route_master").map_or(false, |r| ROUTE_MODES.contains(&r)) {
+    if typ == Some(b"route_master") && t.get(b"route_master").is_some_and(|r| ROUTE_MODES.contains(&r)) {
         return Some(RelKind::RouteMaster);
     }
     if typ == Some(b"route") && route == Some(b"railway") {
@@ -234,7 +334,7 @@ pub fn rel_area_wanted<T: Tags + ?Sized>(t: &T) -> bool {
 
 /// Latin script for labels: chars U+0000-U+024F or U+1E00-U+1EFF
 pub fn latin(v: &[u8]) -> bool {
-    std::str::from_utf8(v).map_or(false, |s| s.chars().all(|c| (c as u32) <= 0x24f || (0x1e00..=0x1eff).contains(&(c as u32))))
+    std::str::from_utf8(v).is_ok_and(|s| s.chars().all(|c| (c as u32) <= 0x24f || (0x1e00..=0x1eff).contains(&(c as u32))))
 }
 
 /// a name:* key that holds an English or romanised form of the name: name:en (also name:en-Latn, name:en_GB), or a transliteration of
@@ -272,7 +372,7 @@ pub fn english_name_kv<'a>(tags: impl Iterator<Item = (&'a [u8], &'a [u8])>) -> 
             _ => {}
         }
     }
-    en.or(int).or_else(|| if name.map_or(false, latin) { None } else { roman })
+    en.or(int).or_else(|| if name.is_some_and(latin) { None } else { roman })
 }
 
 pub fn english_name<'a>(t: &'a List<'a>) -> Option<&'a [u8]> {

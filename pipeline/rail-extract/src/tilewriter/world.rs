@@ -96,7 +96,16 @@ fn rss_mb() -> u64 {
 }
 
 /// One pass: the tiles of zooms zmin..=zmax inside tile `part` (z, x, y) -> spool. Returns (features read, tiles written).
-fn world_pass(files: &[memmap2::Mmap], ents: &[Ent], layer_names: &[&str], kinds: &[BTreeMap<String, Kind>], part: TileKey, zmin: u8, zmax: u8, spool: &mut Spool) -> (usize, usize) {
+fn world_pass(
+    files: &[memmap2::Mmap],
+    ents: &[Ent],
+    layer_names: &[&str],
+    kinds: &[BTreeMap<String, Kind>],
+    part: TileKey,
+    zmin: u8,
+    zmax: u8,
+    spool: &mut Spool,
+) -> (usize, usize) {
     let (pz, px, py) = part;
     let rect = tile_rect(pz, px, py, BUFFER_TILES);
     let cand: Vec<usize> = ents
@@ -194,7 +203,10 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
         // the overview always carries a zoom range: without one the file is from before the rename
         if *file == "track_overview.geojsonl" {
             let first = all.iter().find(|a| a.0 as usize == fi).map(|a| &files[fi][a.1 as usize..(a.1 + a.2) as usize]);
-            assert!(first.map_or(true, |l| String::from_utf8_lossy(l).contains("\"zoom\":")), "{slug}: stale tile input (no \"zoom\" member); run `rail-extract build {slug}` again");
+            assert!(
+                first.is_none_or(|l| String::from_utf8_lossy(l).contains("\"zoom\":")),
+                "{slug}: stale tile input (no \"zoom\" member); run `rail-extract build {slug}` again"
+            );
         }
     }
     eprintln!("[{:6.2}s] {} files, {} features indexed by line; parsing for the index", t0.elapsed().as_secs_f64(), files.len(), all.len());
@@ -208,7 +220,12 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
                 let li = file_info[fi as usize].2;
                 let bytes = &files[fi as usize][off as usize..(off + len) as usize];
                 let mut f: Feature = serde_json::from_slice(bytes).unwrap_or_else(|e| panic!("{}: bad feature: {e}", file_info[fi as usize].0));
-                assert!(f.foreign_members.as_ref().map_or(true, |m| !m.contains_key("tippecanoe")), "{}: stale tile input (\"tippecanoe\" member); run `rail-extract build {}` again", file_info[fi as usize].0, file_info[fi as usize].0);
+                assert!(
+                    f.foreign_members.as_ref().is_none_or(|m| !m.contains_key("tippecanoe")),
+                    "{}: stale tile input (\"tippecanoe\" member); run `rail-extract build {}` again",
+                    file_info[fi as usize].0,
+                    file_info[fi as usize].0
+                );
                 let tp = f.foreign_members.take().and_then(|m| m.get("zoom").cloned()).unwrap_or(Value::Null);
                 let lo = u8::try_from(tp["minzoom"].as_u64().unwrap_or(0)).unwrap_or(u8::MAX).min(MAX_ZOOM);
                 let hi = u8::try_from(tp["maxzoom"].as_u64().unwrap_or(u64::from(MAX_ZOOM))).unwrap_or(u8::MAX).min(MAX_ZOOM);
@@ -219,7 +236,8 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
                     grow(&mut bb, &g.value);
                     if bb[0] <= bb[2] {
                         let (a, b) = (merc(&[bb[0], bb[1]]), merc(&[bb[2], bb[3]]));
-                        bb32 = [a.0 as f32, b.1 as f32, b.0 as f32, a.1 as f32]; // y grows southwards
+                        bb32 = [a.0 as f32, b.1 as f32, b.0 as f32, a.1 as f32];
+                        // y grows southwards
                     }
                 }
                 for (k, v) in f.properties.iter().flatten() {
@@ -257,7 +275,8 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
     // ---- passes
     std::fs::create_dir_all(out).expect("create out dir");
     let spool_path = data.join(format!("{name}.spool"));
-    let mut spool = Spool { w: std::io::BufWriter::with_capacity(1 << 22, std::fs::File::create(&spool_path).expect("create spool")), pos: 0, index: Vec::new() };
+    let mut spool =
+        Spool { w: std::io::BufWriter::with_capacity(1 << 22, std::fs::File::create(&spool_path).expect("create spool")), pos: 0, index: Vec::new() };
     // populated partition tiles (by bounding box with the clip buffer), biggest first
     let populated = |pz: u8, zmin: u8, zmax: u8| -> Vec<(u32, u32)> {
         let mut m: HashMap<(u32, u32), u32> = HashMap::new();
@@ -281,12 +300,24 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
         peak_cand = peak_cand.max(n);
         eprintln!(
             "[{:6.2}s] pass {}/{} z{}..{} in {:?}: {n} features, {tiles} tiles, {:.1}s, rss {} MB",
-            t0.elapsed().as_secs_f64(), i + 1, plan.len(), zmin, zmax, part, t.elapsed().as_secs_f64(), rss_mb()
+            t0.elapsed().as_secs_f64(),
+            i + 1,
+            plan.len(),
+            zmin,
+            zmax,
+            part,
+            t.elapsed().as_secs_f64(),
+            rss_mb()
         );
     }
     spool.w.flush().expect("flush spool");
     drop(spool.w);
-    eprintln!("[{:6.2}s] {} tiles spooled ({:.1} MB); biggest pass {peak_cand} features", t0.elapsed().as_secs_f64(), spool.index.len(), spool.pos as f64 / 1e6);
+    eprintln!(
+        "[{:6.2}s] {} tiles spooled ({:.1} MB); biggest pass {peak_cand} features",
+        t0.elapsed().as_secs_f64(),
+        spool.index.len(),
+        spool.pos as f64 / 1e6
+    );
 
     // ---- PMTiles in tile-id order
     spool.index.sort_unstable();

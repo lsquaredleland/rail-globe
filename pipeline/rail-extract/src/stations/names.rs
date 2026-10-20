@@ -18,7 +18,9 @@ struct NameData {
 
 static NAMES: LazyLock<NameData> = LazyLock::new(|| {
     let v: Value = serde_json::from_str(include_str!("../../../config/_station-names.json")).expect("_station-names.json");
-    let list = |k: &str| -> Vec<String> { v[k].as_array().unwrap_or_else(|| panic!("_station-names.json: {k}")).iter().map(|x| x.as_str().unwrap().to_string()).collect() };
+    let list = |k: &str| -> Vec<String> {
+        v[k].as_array().unwrap_or_else(|| panic!("_station-names.json: {k}")).iter().map(|x| x.as_str().unwrap().to_string()).collect()
+    };
     NameData {
         stopwords: list("stopwords").into_iter().collect(),
         jp_operator_prefix: Regex::new(v["jp_operator_prefix"].as_str().expect("jp_operator_prefix")).expect("jp_operator_prefix"),
@@ -52,7 +54,9 @@ pub(super) fn norm_name(name: &str) -> String {
 
 /// the English label of a property map (rules::english_name_kv: name:en, int_name, a romanised name:* for a non-Latin name; else None)
 pub fn english_name(t: &Map<String, Value>) -> Option<String> {
-    crate::rules::english_name_kv(t.iter().filter_map(|(k, v)| Some((k.as_bytes(), v.as_str()?.as_bytes())))).and_then(|v| std::str::from_utf8(v).ok()).map(String::from)
+    crate::rules::english_name_kv(t.iter().filter_map(|(k, v)| Some((k.as_bytes(), v.as_str()?.as_bytes()))))
+        .and_then(|v| std::str::from_utf8(v).ok())
+        .map(String::from)
 }
 
 /// a bracket that names a line, mode or operator ("(National Rail)", "(Green line)", "(東武東上線)", "(A,C,E)"), not a place or a
@@ -152,20 +156,23 @@ pub(super) fn place_before(name: &str, kind: &str) -> Option<String> {
     let p = re.with(|r| r.captures(name.trim()).map(|c| c[1].trim().to_string()))?;
     // the VBB form "Berlin, S Hauptbahnhof" / "Berlin, S+U Wedding" names its place before the comma
     let p = match p.split_once(", ") {
-        Some((place, line)) if matches!(line, "S" | "U" | "S+U" | "U+S") => place.trim().to_string(),
+        Some((place, "S" | "U" | "S+U" | "U+S")) => place.trim().to_string(),
         Some(_) => return None,
         None => p,
     };
     // a place is a name, not a number, a line or a qualified name ("Berlin Ost", "S+U Wedding")
-    let ok = !p.is_empty() && p.split_whitespace().count() <= 2 && !p.chars().any(|c| c.is_ascii_digit() || c == '+' || c == '(')
-        && bare_kind(&p).is_none() && !lineish(&p);
+    let ok = !p.is_empty()
+        && p.split_whitespace().count() <= 2
+        && !p.chars().any(|c| c.is_ascii_digit() || c == '+' || c == '(')
+        && bare_kind(&p).is_none()
+        && !lineish(&p);
     ok.then_some(p)
 }
 
 /// "Bremen" + "Hauptbahnhof" -> "Bremen Hauptbahnhof"; French: "Gare de Lyon", "Gare d'Orléans"
 pub(super) fn qualified(place: &str, kind: &str) -> String {
     if kind == "Gare" {
-        let v = place.chars().next().map_or(false, |c| "AEIOUHÀÉÈÎÔÂ".contains(c));
+        let v = place.chars().next().is_some_and(|c| "AEIOUHÀÉÈÎÔÂ".contains(c));
         return if v { format!("Gare d'{place}") } else { format!("Gare de {place}") };
     }
     format!("{place} {kind}")
@@ -194,7 +201,11 @@ pub(super) fn core_name(raw: &str, deco: &BTreeSet<String>) -> String {
         }
     }
     let kept: Vec<String> = t.iter().filter(|x| !DECORATION.contains(&x.as_str()) && !deco.contains(*x)).cloned().collect();
-    if kept.is_empty() { t.join(" ") } else { kept.join(" ") }
+    if kept.is_empty() {
+        t.join(" ")
+    } else {
+        kept.join(" ")
+    }
 }
 
 /// the abbreviations an operator or network name holds: its upper-case words ("AVG", "SWEG") and the initials of its words without the
@@ -205,7 +216,9 @@ pub(super) fn operator_tokens(v: &str, out: &mut BTreeSet<String>) {
     let initials: String = words
         .iter()
         .map(|w| w.to_lowercase())
-        .filter(|w| !matches!(w.as_str(), "mbh" | "gmbh" | "ag" | "e" | "v" | "kg" | "co" | "ltd" | "llc" | "plc" | "sa" | "srl" | "spa" | "the" | "of" | "and" | "und"))
+        .filter(|w| {
+            !matches!(w.as_str(), "mbh" | "gmbh" | "ag" | "e" | "v" | "kg" | "co" | "ltd" | "llc" | "plc" | "sa" | "srl" | "spa" | "the" | "of" | "and" | "und")
+        })
         .filter_map(|w| w.chars().next())
         .collect();
     if initials.chars().count() >= 2 {

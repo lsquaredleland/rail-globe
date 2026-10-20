@@ -3,8 +3,7 @@
 
 use super::names::CONSTRUCTION_SUFFIX;
 use super::{members, Member};
-use crate::geomx::{self, Index, G};
-use crate::pyjson::{f, py_round};
+use crate::geomx::{self, round, Index, G};
 use crate::site::{s, Feat, Input};
 use geo::Point;
 use regex::Regex;
@@ -31,7 +30,7 @@ impl Proj {
 
     /// a metric point back to a [lon, lat] pair, rounded as the files are written
     pub fn unproj(&self, p: &Point<f64>) -> Value {
-        json!([f(py_round(p.x() / self.kx, 5)), f(py_round(p.y() / self.ky, 5))])
+        json!([Value::from(round(p.x() / self.kx, 5)), Value::from(round(p.y() / self.ky, 5))])
     }
 }
 
@@ -89,8 +88,7 @@ pub(super) fn track_mode(t: &str) -> &'static str {
 impl<'a> Feats<'a> {
     /// sort the features into the lists, project them, build the indexes; stations under construction are left out
     pub fn sort(inp: &'a Input, proj: &Proj) -> Feats<'a> {
-        let (mut tracks, mut platforms, mut buildings, mut lands, mut station_feats): (Vec<It>, Vec<It>, Vec<It>, Vec<It>, Vec<It>) =
-            Default::default();
+        let (mut tracks, mut platforms, mut buildings, mut lands, mut station_feats): (Vec<It>, Vec<It>, Vec<It>, Vec<It>, Vec<It>) = Default::default();
         // nodes and ways that a route relation lists: a station among them is in service
         let route_members: FxHashSet<String> = inp
             .rels
@@ -125,10 +123,8 @@ impl<'a> Feats<'a> {
                 if is_building {
                     buildings.push(It { f: it.f, g: it.g.clone(), modes: BTreeSet::new() });
                 }
-                if is_station && rw != Some("construction") && !con_name(&it.f.p) {
-                    if !con_tags(&it.f.p, route_members.contains(it.id())) {
-                        station_feats.push(it);
-                    }
+                if is_station && rw != Some("construction") && !con_name(&it.f.p) && !con_tags(&it.f.p, route_members.contains(it.id())) {
+                    station_feats.push(it);
                 }
             }
         }
@@ -143,7 +139,7 @@ impl<'a> Feats<'a> {
         let mut best: Option<(usize, f64)> = None;
         for i in self.track_tree.near(g, r) {
             let d = geomx::dist(&self.tracks[i].g, g);
-            if best.map_or(true, |(_, bd)| d < bd) {
+            if best.is_none_or(|(_, bd)| d < bd) {
                 best = Some((i, d));
             }
         }
@@ -181,7 +177,7 @@ fn con_name(p: &Map<String, Value>) -> bool {
     thread_local! {
         static RE: Regex = Regex::new(CONSTRUCTION_SUFFIX).unwrap();
     }
-    s(p, "name").map_or(false, |n| RE.with(|r| r.is_match(n.trim())))
+    s(p, "name").is_some_and(|n| RE.with(|r| r.is_match(n.trim())))
 }
 
 /// A station tagged as one being built: `construction=yes|station`, `construction:railway` or `construction:public_transport`, and none
@@ -192,12 +188,12 @@ fn con_name(p: &Map<String, Value>) -> bool {
 /// station` (or `railway=site`) and `construction:railway=station` is the lifecycle form of a station being built.
 pub(super) fn con_tags(p: &Map<String, Value>, in_route: bool) -> bool {
     let strong = s(p, "construction") == Some("station")
-        || s(p, "construction:railway").map_or(false, |v| !v.is_empty())
-        || s(p, "construction:public_transport").map_or(false, |v| !v.is_empty());
+        || s(p, "construction:railway").is_some_and(|v| !v.is_empty())
+        || s(p, "construction:public_transport").is_some_and(|v| !v.is_empty());
     let weak = s(p, "construction") == Some("yes");
     let open_tag = matches!(s(p, "railway"), Some("station" | "halt" | "tram_stop"));
     // a stop area is no proof of service (planned Bangkok stations have one), but it does clear a bare construction=yes
-    let has_area = s(p, "_stop_area").map_or(false, |v| !v.is_empty());
+    let has_area = s(p, "_stop_area").is_some_and(|v| !v.is_empty());
     (strong || weak) && !open_tag && !in_route && (strong || !has_area)
 }
 

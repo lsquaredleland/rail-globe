@@ -6,8 +6,7 @@
 //! 600 m. Tier from what is being built around it: hsr if high-speed construction track runs within 200 m or the name says so;
 //! major if hsr with 4+ mainline construction pieces within 200 m, or the name matches main_station_re. Works in degrees.
 
-use crate::geomx::{self, Index};
-use crate::pyjson::{f, py_round};
+use crate::geomx::{self, round, Index, UnionFind};
 use crate::site::{s, Input};
 use crate::stations::english_name;
 use geo::{Geometry, Point};
@@ -81,14 +80,7 @@ fn cluster_nodes(inp: &Input, nodes: &[usize]) -> (Vec<Point<f64>>, Vec<String>,
     };
     let pts: Vec<Point<f64>> = nodes.iter().map(|&i| pt(i)).collect();
     let nms: Vec<String> = nodes.iter().map(|&i| norm(s(&inp.feats[i].p, "name").unwrap_or(""))).collect();
-    let mut parent: Vec<usize> = (0..nodes.len()).collect();
-    fn find(p: &mut [usize], mut i: usize) -> usize {
-        while p[i] != i {
-            p[i] = p[p[i]];
-            i = p[i];
-        }
-        i
-    }
+    let mut uf = UnionFind::new(nodes.len());
     let node_tree = Index::new(pts.iter().map(|p| geomx::bbox(&Geometry::Point(*p))));
     for i in 0..nodes.len() {
         for j in node_tree.near(&Geometry::Point(pts[i]), CLUSTER_DEG) {
@@ -98,15 +90,14 @@ fn cluster_nodes(inp: &Input, nodes: &[usize]) -> (Vec<Point<f64>>, Vec<String>,
             let (a, b) = (&nms[i], &nms[j]);
             let compat = a == b || (a.chars().count().min(b.chars().count()) >= 3 && (a.ends_with(b.as_str()) || b.ends_with(a.as_str())));
             if compat && geomx::dist_pt(&Geometry::Point(pts[i]), &pts[j]) <= CLUSTER_DEG {
-                let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
-                parent[ri] = rj;
+                uf.link(i, j);
             }
         }
     }
     let mut groups: Vec<Vec<usize>> = Vec::new();
     let mut gix: FxHashMap<usize, usize> = FxHashMap::default();
     for i in 0..nodes.len() {
-        let r = find(&mut parent, i);
+        let r = uf.find(i);
         let k = *gix.entry(r).or_insert_with(|| {
             groups.push(Vec::new());
             groups.len() - 1
@@ -121,9 +112,10 @@ pub fn run(slug: &str, inp: &Input, stations: &mut Vec<Value>, complexes: &mut V
     let main_re = inp.cfg.get("main_station_re").and_then(Value::as_str).filter(|v| !v.is_empty()).map(|p| Regex::new(p).expect("main_station_re"));
     let hs_name = Regex::new(r"(?i)高铁|高速铁路|high.speed").unwrap();
     let nodes: Vec<usize> = (0..inp.feats.len())
-        .filter(|&i| inp.feats[i].gtype == "Point" && is_con(&inp.feats[i].p) && s(&inp.feats[i].p, "name").map_or(false, |n| !n.is_empty()))
+        .filter(|&i| inp.feats[i].gtype == "Point" && is_con(&inp.feats[i].p) && s(&inp.feats[i].p, "name").is_some_and(|n| !n.is_empty()))
         .collect();
-    let con: Vec<usize> = (0..inp.feats.len()).filter(|&i| inp.feats[i].gtype == "LineString" && s(&inp.feats[i].p, "railway") == Some("construction")).collect();
+    let con: Vec<usize> =
+        (0..inp.feats.len()).filter(|&i| inp.feats[i].gtype == "LineString" && s(&inp.feats[i].p, "railway") == Some("construction")).collect();
     let con_g: Vec<geomx::G> = con.iter().filter_map(|&i| geomx::from_geojson(&inp.feats[i].g, geomx::id)).collect();
     let track_tree = Index::new(con_g.iter().map(geomx::bbox));
     let tp = |k: usize, key: &str| s(&inp.feats[con[k]].p, key);
@@ -142,7 +134,11 @@ pub fn run(slug: &str, inp: &Input, stations: &mut Vec<Value>, complexes: &mut V
     let mut tiers = [0usize; 4];
     for g in &groups {
         // the longest normalised name of the cluster (the first such)
-        let nm = g.iter().map(|&i| &nms[i]).fold(None, |a: Option<&String>, n| if a.map_or(true, |b| n.chars().count() > b.chars().count()) { Some(n) } else { a }).unwrap();
+        let nm = g
+            .iter()
+            .map(|&i| &nms[i])
+            .fold(None, |a: Option<&String>, n| if a.is_none_or(|b| n.chars().count() > b.chars().count()) { Some(n) } else { a })
+            .unwrap();
         let (cx, cy) = (g.iter().map(|&i| pts[i].x()).sum::<f64>() / g.len() as f64, g.iter().map(|&i| pts[i].y()).sum::<f64>() / g.len() as f64);
         let c = Point::new(cx, cy);
         let cg = Geometry::Point(c);
@@ -169,7 +165,7 @@ pub fn run(slug: &str, inp: &Input, stations: &mut Vec<Value>, complexes: &mut V
             let mut best: Option<(f64, usize)> = None;
             for k in track_tree.near(&cg, TRACK_DEG) {
                 let d = geomx::dist(&con_g[k], &cg);
-                if d <= TRACK_DEG && best.map_or(true, |(bd, _)| d < bd) {
+                if d <= TRACK_DEG && best.is_none_or(|(bd, _)| d < bd) {
                     best = Some((d, k));
                 }
             }
@@ -197,8 +193,14 @@ pub fn run(slug: &str, inp: &Input, stations: &mut Vec<Value>, complexes: &mut V
             }
         }
         hsr = hsr || (mainline && (hs_ways > 0 || hs_name.is_match(&label)));
-        let major = mainline && ((hsr && main_ways >= MAJOR_TRACKS) || main_re.as_ref().map_or(false, |re| re.is_match(s(&props, "name").unwrap_or(""))));
-        let tier: i64 = if major { 1 } else if mainline && hsr { 2 } else { 3 };
+        let major = mainline && ((hsr && main_ways >= MAJOR_TRACKS) || main_re.as_ref().is_some_and(|re| re.is_match(s(&props, "name").unwrap_or(""))));
+        let tier: i64 = if major {
+            1
+        } else if mainline && hsr {
+            2
+        } else {
+            3
+        };
         // rail types this station belongs to, so hiding a type hides it: nearby construction track of a matching kind, else a default
         let allowed: BTreeSet<&str> = modes.iter().flat_map(|m| mode_types(m).iter().copied()).collect();
         let mut rail_types: BTreeSet<String> = near.iter().filter_map(|&k| tp(k, "type")).filter(|t| allowed.contains(t)).map(String::from).collect();
@@ -211,8 +213,8 @@ pub fn run(slug: &str, inp: &Input, stations: &mut Vec<Value>, complexes: &mut V
         let sid = ids.iter().min().copied().unwrap_or("").to_string();
         let name = props.get("name").cloned().unwrap_or(Value::Null);
         let name_en = english_name(&props);
-        let wikidata = props.get("wikidata").filter(|v| v.as_str().map_or(false, |x| !x.is_empty())).map(|v| json!([v])).unwrap_or(Value::Null);
-        let geom = json!({"type": "Point", "coordinates": [f(py_round(cx, 5)), f(py_round(cy, 5))]});
+        let wikidata = props.get("wikidata").filter(|v| v.as_str().is_some_and(|x| !x.is_empty())).map(|v| json!([v])).unwrap_or(Value::Null);
+        let geom = json!({"type": "Point", "coordinates": [Value::from(round(cx, 5)), Value::from(round(cy, 5))]});
         let pr = json!({
             "id": sid, "complex": sid, "name": name, "name_en": name_en, "modes": modes, "tier": tier,
             "score": 0, "terminus": false, "mainline_platforms": 0, "platform_count": 0, "land_ha": 0, "building_ha": 0,
@@ -227,5 +229,11 @@ pub fn run(slug: &str, inp: &Input, stations: &mut Vec<Value>, complexes: &mut V
         tiers[tier as usize] += 1;
         added += 1;
     }
-    format!("{slug}: {} construction station nodes -> {added} stations added, skipped {{'already open': {skipped}}}, tiers {{1: {}, 2: {}, 3: {}}}", nodes.len(), tiers[1], tiers[2], tiers[3])
+    format!(
+        "{slug}: {} construction station nodes -> {added} stations added, skipped {{'already open': {skipped}}}, tiers {{1: {}, 2: {}, 3: {}}}",
+        nodes.len(),
+        tiers[1],
+        tiers[2],
+        tiers[3]
+    )
 }
