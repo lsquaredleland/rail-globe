@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadShapes, loadStats, type Shapes, type StatsArea } from './data'
-import { regionBySlug } from './regions'
 import type { SearchItem } from './search'
 import type { View } from './MapView'
 
 export interface StatsData {
   /** every loaded region's own totals (its bounds say where the region is) */
   regions: StatsArea[]
-  /** areas inside the regions that draw from their own tiles: provinces, cities, Hong Kong */
+  /** areas inside the regions: provinces, cities, Hong Kong */
   areas: StatsArea[]
   shapes: Shapes
 }
 
 type Loaded = Record<string, [StatsArea[], Shapes]>
 
-/** The statistics of the regions the view can be over. Pilot: the fixed list of regions, once. World: the countries (search.json) whose
+/** The statistics of the regions the view can be over. The countries (search.json) whose
  *  outline box holds the view centre, loaded as the map moves there and kept, so only the countries the user visits are fetched. */
 export function useStats(items: SearchItem[], view: View, picked: string): StatsData {
   const [loaded, setLoaded] = useState<Loaded>({})
@@ -34,8 +33,7 @@ export function useStats(items: SearchItem[], view: View, picked: string): Stats
   return useMemo(() => {
     const slugs = Object.keys(loaded)
     const regions = slugs.map((s) => loaded[s][0].find((x) => x.slug === s)).filter((a): a is StatsArea => !!a)
-    // regions inside a bigger region (Chengdu, Beijing, ...) are cards of the bigger region's areas already
-    const areas = slugs.flatMap((s) => (regionBySlug(s).tiles ? [] : loaded[s][0].filter((a) => a.kind !== 'region')))   // a region's own row is in `regions`
+    const areas = slugs.flatMap((s) => loaded[s][0].filter((a) => a.kind !== 'region'))   // a region's own row is in `regions`
     return { regions, areas, shapes: Object.assign({}, ...slugs.map((s) => loaded[s][1])) }
   }, [loaded])
 }

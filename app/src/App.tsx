@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapView, type Hit, type MapHandle, type View } from './MapView'
-import { SPEED_BANDS, SPEED_NONE, type ColorMode, type MapState } from './mapStyle'
+import type { ColorMode, MapState } from './mapStyle'
 import type { Theme } from './palette'
-import { regionBySlug, registerSearch, isChina, hsMinKmh, isKnownRegion, partAt, onPartsChange, DEFAULT_REGION } from './regions'
+import { useSelection, type Selected } from './useSelection'
+import { useSettings, useTypeSpeedSwitches } from './useSettings'
+import { regionBySlug, registerSearch, isKnownRegion, partAt, onPartsChange, DEFAULT_REGION } from './regions'
 import { featured, itemInView, useSearch, type SearchItem } from './search'
-import { TYPE_ORDER } from './palette'
 import { loadBoundary, loadLine, loadLineIndex, loadNamedLines, loadRailways, loadStation, railwayOf, type LineIndex, type NamedLine, type Railways } from './data'
-import { readHash, writeHash } from './urlState'
+import { ignoreError } from './dev'
+import { readHash } from './urlState'
 import { Toolbar, RegionPicker, type Controls } from './components/Toolbar'
 import { Legend } from './components/Legend'
 import { TooltipBody } from './components/Tooltip'
@@ -16,9 +18,6 @@ import { Icon, LangContext, Segmented, Toggle, type Lang } from './components/ui
 import { SpeedCard, TypeCard, WorldCard } from './components/AreaCard'
 import { areaForView, useStats } from './stats'
 import { InspectPanel, InspectTooltipBody } from './components/Inspect'
-
-type Services = { kind: 'services'; slug: string; ids: number[]; title: string; titleEn: string | null; sub: string }
-type Selected = { kind: 'station'; slug: string; id: string } | { kind: 'line'; slug: string; id: number; from?: { sel: Selected; pt: [number, number] | null } } | Services | { kind: 'lines' } | { kind: 'inspect'; hit: Hit } | null
 
 function useMedia(q: string) {
   const [m, setM] = useState(() => matchMedia(q).matches)
@@ -37,53 +36,36 @@ export default function App() {
   const init = useMemo(readHash, [])
   const compact = useMedia('(max-width: 719px)')
   const touch = useMedia('(pointer: coarse)')
-  const [region, setRegionState] = useState(init.region)
-  const [mode, setMode] = useState(init.mode)
-  const [hsrOnly, setHsrOnlyState] = useState(init.hsrOnly)
-  const [construction, setConstruction] = useState(init.construction)
-  const [proposed, setProposed] = useState(init.proposed)
-  const [freight, setFreight] = useState(init.freight)
-  const [units, setUnits] = useState(init.units)
-  const [lang, setLang] = useState(init.lang)
-  const [theme, setTheme] = useState<Theme>(init.theme)
-  const [hidden, setHidden] = useState<string[]>(init.hidden)
-  const [hiddenSpeed, setHiddenSpeed] = useState<number[]>(() => (init.hidden.includes('high_speed') ? [...new Set([...init.hiddenSpeed, 400, 350, 300, 250])] : init.hiddenSpeed))
-  const [inspect, setInspect] = useState(init.inspect)
-  const [outline, setOutline] = useState(init.outline)
+  const view = useRef<View | null>(init.view)
+  const settings = useSettings(init, view)
+  const { region, setRegionState, mode, setMode, hsrOnly, construction, setConstruction, proposed, setProposed, freight, setFreight, units, setUnits, lang, setLang, theme, setTheme, hidden, hiddenSpeed, inspect, setInspect, outline, setOutline, sync } = settings
   const [sheetOpen, setSheetOpen] = useState(false)
-  const [selected, setSelected] = useState<Selected>(null)
-  const [selPt, setSelPt] = useState<[number, number] | null>(null)
-  const [hover, setHover] = useState<{ hit: Hit; x: number; y: number } | null>(null)
-  const [peek, setPeek] = useState<Hit | null>(null)
+  const [sel, act] = useSelection()   // what is picked and what the pointer is on, reset together
+  const { selected, selPt, hover, peek, selTrackName, selTrackSlug, listHoverLine, listHoverName } = sel
   const [indexes, setIndexes] = useState<Record<string, LineIndex>>({})
   const [named, setNamed] = useState<Record<string, NamedLine[]>>({})
   const [railways, setRailways] = useState<Record<string, Railways>>({})
   const railwaysRef = useRef(railways)   // for openHit, which memoized click handlers call
   railwaysRef.current = railways
-  const [selTrackName, setSelTrackName] = useState<string | null>(null)
-  const [selTrackSlug, setSelTrackSlug] = useState<string | null>(null)   // the region part of the clicked track; null: the Lines list's region
-  const [listHoverLine, setListHoverLine] = useState<number | null>(null)
-  const [listHoverName, setListHoverName] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const view = useRef<View | null>(init.view)
   const [viewNow, setViewNow] = useState<View>(() => init.view ?? { center: init.region.center, zoom: init.region.zoom })
   const map = useRef<MapHandle>(null)
   const wrap = useRef<HTMLDivElement>(null)
 
   const { items: found, status: placesStatus, retry: retryPlaces } = useSearch()   // search.json: the countries, provinces / states and cities with rail
   const ensureIndex = useCallback((slug: string) => {
-    loadLineIndex(slug).then((ix) => setIndexes((p) => (p[slug] ? p : { ...p, [slug]: ix }))).catch(() => {})
-    loadRailways(slug).then((rw) => setRailways((p) => (p[slug] ? p : { ...p, [slug]: rw }))).catch(() => {})
+    loadLineIndex(slug).then((ix) => setIndexes((p) => (p[slug] ? p : { ...p, [slug]: ix }))).catch(ignoreError(`${slug}/lines-index.json`))
+    loadRailways(slug).then((rw) => setRailways((p) => (p[slug] ? p : { ...p, [slug]: rw }))).catch(ignoreError(`${slug}/railways.json`))
   }, [])
   // side files (lines, railways) exist per country; a province or the world placeholder has none
   const hasData = useCallback((slug: string) => found.some((i) => i.kind === 'country' && i.slug === slug), [found])
   useEffect(() => { if (hasData(region.slug)) ensureIndex(region.slug) }, [region.slug, ensureIndex, hasData])
   useEffect(() => {
     if (!hasData(region.slug)) return
-    loadNamedLines(region.slug).then((n) => setNamed((p) => (p[region.slug] ? p : { ...p, [region.slug]: n }))).catch(() => {})
+    loadNamedLines(region.slug).then((n) => setNamed((p) => (p[region.slug] ? p : { ...p, [region.slug]: n }))).catch(ignoreError(`${region.slug}/named-lines.json`))
   }, [region.slug, hasData])
 
-  // the card follows the view; so does the pilot region in the picker (no fly: the map is already where the user put it)
+  // the card follows the view; so does the region in the picker (no fly: the map is already where the user put it)
   const items = useMemo(() => {
     registerSearch(found)
     return found
@@ -110,7 +92,7 @@ export default function App() {
   const viewItem = useMemo(() => { void partsVer; return itemInView(found, viewNow, window.innerWidth, partAt(viewNow.center)) }, [found, viewNow, partsVer])
   // the card shows exactly when the outline can: the area that fills the screen, and nothing at the zoom levels where no area does
   const cardArea = viewArea
-  // the outline of the area in view: its simplified shape, else (a pilot region) its boundary file
+  // the outline of the area in view: its simplified shape, else its boundary file
   const shape = viewArea ? stats.shapes[viewArea.slug] : undefined
   const needBoundary = outline && viewArea && !shape ? viewArea.slug : null
   useEffect(() => { if (needBoundary) loadBoundary(needBoundary).then((geo) => setBoundaryGeo({ slug: needBoundary, geo })) }, [needBoundary])
@@ -123,7 +105,7 @@ export default function App() {
     const r = areaForView(overRegions, stats.shapes, viewNow, window.innerWidth)
     // depends on the view only: picking a region in the menu must not be undone by the (not yet moved) old view
     if (r) setRegionState((cur) => (cur.slug === r.slug ? cur : regionBySlug(r.slug)))
-  }, [overRegions, stats, viewNow])
+  }, [overRegions, stats, viewNow, setRegionState])
 
   // a link to a country or province (#r=de-bavaria) before search.json arrived named a placeholder: now it is known, go there (unless the link had a view)
   useEffect(() => {
@@ -134,42 +116,38 @@ export default function App() {
   }, [found])
 
   const mapState = useMemo<MapState>(() => ({ mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang, theme }), [mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang, theme])
-  const sync = useCallback(() => writeHash({ region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, outline, theme, view: view.current }), [region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, outline, theme])
-  useEffect(sync, [sync])
-
   const setRegion = (slug: string) => {
     const r = regionBySlug(slug)
     setRegionState(r)
-    setSelected(null); setSelPt(null); setPeek(null)
+    act.reset()
     map.current?.flyTo({ center: r.center, zoom: compact ? r.zoomPhone : r.zoom })
   }
 
   /** a pick from the search: a hand-tuned region as before, else fly to the outline's box (country, province, a city with an outline) or to the city */
   const pickPlace = (it: SearchItem) => {
     setPickedSlug(it.slug)
-    setSelected(null); setSelPt(null); setPeek(null)
+    act.reset()
     // a city's box can be mostly water or sprawl (Boston): its own point lies inside it, the middle of its box may not
     const center: [number, number] = it.bbox && it.kind !== 'city' ? [(it.bbox[0] + it.bbox[2]) / 2, (it.bbox[1] + it.bbox[3]) / 2] : it.center
     map.current?.flyTo({ center, zoom: compact ? Math.max(1.5, it.zoom - 1) : it.zoom })
   }
 
   const openStation = (slug: string, id: string, pt?: [number, number], fly = false) => {
-    setSelected({ kind: 'station', slug, id }); setPeek(null); setHover(null); setSelTrackName(null); ensureIndex(slug)
-    if (pt) setSelPt(pt)
+    act.openStation(slug, id, pt); ensureIndex(slug)
     if (fly || !pt) {
       loadStation(slug, id).then((s) => {
-        setSelPt(s.pt)
+        act.setSelPt(s.pt)
         const z = Math.max(map.current?.getZoom() ?? 0, 13)
         map.current?.flyTo({ center: s.pt, zoom: z })
-      }).catch(() => {})
+      }).catch(ignoreError(`station ${slug}/${id}`))
     }
   }
-  const openLine = (slug: string, id: number, from?: { sel: Selected; pt: [number, number] | null }) => { setSelected({ kind: 'line', slug, id, from }); setListHoverLine(null); setListHoverName(null); setPeek(null); setHover(null); setSelPt(null); ensureIndex(slug) }
-  const closePanel = () => { setSelected(null); setSelPt(null); setSelTrackName(null); setListHoverLine(null); setListHoverName(null) }
-  const openList = () => { setSelected({ kind: 'lines' }); setSelPt(null); setSelTrackName(null); setPeek(null); setHover(null) }
-  const openNamed = (n: NamedLine) => { setSelTrackName(n.n); setSelTrackSlug(null); map.current?.fitBounds(n.bbox) }
+  const openLine = (slug: string, id: number, from?: { sel: Selected; pt: [number, number] | null }) => { act.openLine(slug, id, from); ensureIndex(slug) }
+  const closePanel = act.close
+  const openList = act.openList
+  const openNamed = (n: NamedLine) => { act.openNamed(n.n); map.current?.fitBounds(n.bbox) }
   const openHit = (h: Hit) => {
-    if (inspect) { setSelected({ kind: 'inspect', hit: h }); setSelPt(h.kind === 'station' ? h.lngLat : null); setPeek(null); setHover(null); setSelTrackName(null); return }
+    if (inspect) { act.openInspect(h); return }
     if (h.kind === 'station') openStation(h.slug, String(h.props.id), h.lngLat)
     else if (h.kind === 'line') openLine(h.slug, Number(h.props.lid))
     else if (h.kind === 'track') {
@@ -180,26 +158,26 @@ export default function App() {
         const rw = railwayOf(railwaysRef.current[h.slug], h.props)
         const name = rw?.[0] ?? (h.props.n ? String(h.props.n) : '')
         const type = String(h.props.type ?? '')
-        setSelected({ kind: 'services', slug: h.slug, ids, title: name || railTypeLabel(type), titleEn: rw?.[1] ?? (h.props.ne ? String(h.props.ne) : null), sub: `${railTypeLabel(type, h.props.usage as string | undefined)}${h.props.prop ? ' · proposed' : h.props.con ? ' · under construction' : ''}` })
-        setSelPt(null); setPeek(null); setHover(null); setSelTrackName(null); setListHoverLine(null); setListHoverName(null); ensureIndex(h.slug)
+        act.openServices({ kind: 'services', slug: h.slug, ids, title: name || railTypeLabel(type), titleEn: rw?.[1] ?? (h.props.ne ? String(h.props.ne) : null), sub: `${railTypeLabel(type, h.props.usage as string | undefined)}${h.props.prop ? ' · proposed' : h.props.con ? ' · under construction' : ''}` })
+        ensureIndex(h.slug)
       } else {
         const name = railwayOf(railwaysRef.current[h.slug], h.props)?.[0] ?? (h.props.n ? String(h.props.n) : null)
-        if (name) { setSelected({ kind: 'lines' }); setSelPt(null); setPeek(null); setHover(null); setSelTrackName(name); setSelTrackSlug(h.slug) }
+        if (name) act.openTrackName(name, h.slug)
       }
     }
   }
 
   const onHover = useCallback((hit: Hit | null, pt: { x: number; y: number }) => {
-    if (!hit) { setHover(null); return }
+    if (!hit) { act.setHover(null); return }
     ensureIndex(hit.slug)
-    setHover({ hit, x: pt.x, y: pt.y })
-  }, [ensureIndex])
+    act.setHover({ hit, x: pt.x, y: pt.y })
+  }, [ensureIndex, act])
 
   const onClick = useCallback((hit: Hit | null) => {
     if (touch) {
-      if (!hit) { setPeek(null); return }
+      if (!hit) { act.clearPeek(); return }
       ensureIndex(hit.slug)
-      setPeek((cur) => {
+      act.setPeek((cur) => {
         if (cur && hitKey(cur) === hitKey(hit) && (inspect || hit.kind === 'station' || hit.kind === 'line' || (hit.kind === 'track' && !!(hit.props.ln || hit.props.n || hit.props.nk != null)))) { setTimeout(() => openHit(hit), 0); return cur }
         return hit
       })
@@ -210,41 +188,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [touch, ensureIndex, inspect])
 
-  // One state behind every switch: the type cards and the speed card hide the same track. High-speed is both a type and the four
-  // bands from 250 km/h up (200 outside China), so hiding it in one card hides it in the other.
   const areaSlug = cardArea?.slug ?? (partAt(viewNow.center) || region.slug)   // zoomed out: the country under the centre sets where high-speed starts
-  const HS_BANDS = SPEED_BANDS.filter((b) => b.min >= hsMinKmh(areaSlug)).map((b) => b.min)   // 250 in China, 200 elsewhere
-  const allSpeed = [...SPEED_BANDS.map((b) => b.min), SPEED_NONE]
-  const withHs = (sp: number[], off: boolean) => (off ? [...new Set([...sp, ...HS_BANDS])] : sp.filter((m) => !HS_BANDS.includes(m)))
-  // HSR only needs high-speed track to show: turning it on brings high-speed (type and speed bands) back
-  const setHsrOnly = (on: boolean) => {
-    setHsrOnlyState(on)
-    if (on) { setHidden((h) => h.filter((x) => x !== 'high_speed')); setHiddenSpeed((sp) => withHs(sp, false)) }
-  }
-  const toggleType = (t: string) => {
-    const off = !hidden.includes(t)
-    setHidden((h) => (off ? [...h, t] : h.filter((x) => x !== t)))
-    // after None every speed band is hidden too, and track must pass both cards: turning a type on from there shows all speeds
-    if (!off && allSpeed.every((m) => hiddenSpeed.includes(m))) setHiddenSpeed([])
-    else if (t === 'high_speed') setHiddenSpeed((sp) => withHs(sp, off))
-  }
-  const toggleBand = (m: number) => {
-    const sp = hiddenSpeed.includes(m) ? hiddenSpeed.filter((x) => x !== m) : [...hiddenSpeed, m]
-    // after None every type is hidden too: turning a band on from there shows all types, of that band
-    if (!sp.includes(m) && TYPE_ORDER.every((t) => hidden.includes(t))) setHidden([])
-    setHiddenSpeed(sp)
-    if (HS_BANDS.includes(m)) {
-      const allHsOff = HS_BANDS.every((b) => sp.includes(b))
-      setHidden((h) => (allHsOff ? (h.includes('high_speed') ? h : [...h, 'high_speed']) : h.filter((x) => x !== 'high_speed')))
-    }
-  }
-  const showAll = () => { setHidden([]); setHiddenSpeed([]) }
-  const hideAll = () => { setHidden([...TYPE_ORDER]); setHiddenSpeed(allSpeed) }
-  const legendProps = { hidden, onShowAll: showAll, onHideAll: hideAll, onToggleFreight: () => setFreight((v) => !v), onToggleType: toggleType }
-  const speedProps = { hiddenSpeed, hsrOnly, china: isChina(areaSlug), onShowAll: showAll, onHideAll: hideAll, onToggle: toggleBand }
+  const { setHsrOnly, legendProps, speedProps } = useTypeSpeedSwitches(settings, areaSlug)
 
   const copyLink = () => {
-    navigator.clipboard?.writeText(location.href).catch(() => {})
+    navigator.clipboard?.writeText(location.href).catch(ignoreError('clipboard'))
     setCopied(true)
     setTimeout(() => setCopied(false), 1800)
   }
@@ -262,14 +210,13 @@ export default function App() {
     if (selected?.kind !== 'station') return
     const { slug, id } = selected
     let live = true
-    loadStation(slug, id).then((s) => live && setStLines({ key: `${slug}/${id}`, ids: Object.values(s.lines).flat() })).catch(() => {})
+    loadStation(slug, id).then((s) => live && setStLines({ key: `${slug}/${id}`, ids: Object.values(s.lines).flat() })).catch(ignoreError(`station ${slug}/${id}`))
     return () => { live = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stKey])
   const groupLines = useMemo<number[] | null>(() => {
     if (selected?.kind === 'services') return selected.ids
     return stKey && stLines?.key === stKey && stLines.ids.length ? stLines.ids : null
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, stKey, stLines])
   const idx = indexes[region.slug]
   const panelIdx = selected && (selected.kind === 'station' || selected.kind === 'line' || selected.kind === 'services') ? indexes[selected.slug] : idx
@@ -362,30 +309,30 @@ export default function App() {
       )}
       {touch && peek && !selected && (
         <div className="peek" role="status">
-          <button type="button" className="close" aria-label="Dismiss" onClick={() => setPeek(null)}>{Icon.close}</button>
+          <button type="button" className="close" aria-label="Dismiss" onClick={act.clearPeek}>{Icon.close}</button>
           {inspect ? <><InspectTooltipBody hit={peek} /><button type="button" className="more" onClick={() => openHit(peek)}>More</button></> : <TooltipBody hit={peek} index={indexes[peek.slug]} railways={railways[peek.slug]} touch onMore={() => openHit(peek)} units={units} />}
         </div>
       )}
 
       {selected?.kind === 'station' && (
         <StationPanel slug={selected.slug} id={selected.id} index={panelIdx} onClose={closePanel}
-          onLine={(id) => openLine(selected.slug, id, { sel: selected, pt: selPt })} onStation={(id) => openStation(selected.slug, id, undefined, true)} onHoverLine={setListHoverLine} />
+          onLine={(id) => openLine(selected.slug, id, { sel: selected, pt: selPt })} onStation={(id) => openStation(selected.slug, id, undefined, true)} onHoverLine={act.setListHoverLine} />
       )}
       {selected?.kind === 'line' && (
         <LinePanel slug={selected.slug} id={selected.id} units={units} onClose={closePanel}
-          onBack={selected.from ? () => { setSelected(selected.from!.sel); setSelPt(selected.from!.pt); setListHoverLine(null) } : openList}
+          onBack={selected.from ? () => act.back(selected.from!) : openList}
           backLabel={selected.from ? (selected.from.sel?.kind === 'station' ? 'Station' : 'Services here') : undefined} onStation={(id) => openStation(selected.slug, id, undefined, true)} />
       )}
       {selected?.kind === 'services' && (
         <ServicesPanel ids={selected.ids} index={panelIdx} title={selected.title} titleEn={selected.titleEn} sub={selected.sub} units={units} onClose={closePanel}
-          onLine={(id) => openLine(selected.slug, id, { sel: selected, pt: null })} onHoverLine={setListHoverLine} />
+          onLine={(id) => openLine(selected.slug, id, { sel: selected, pt: null })} onHoverLine={act.setListHoverLine} />
       )}
       {selected?.kind === 'inspect' && <InspectPanel hit={selected.hit} onClose={closePanel} />}
       {inspect && (
         <div className="insp-banner" role="status"><strong>Inspect on</strong><span className="muted-w">Tooltips show raw OSM tags</span><button type="button" onClick={() => { setInspect(false); closePanel() }}>Turn off</button></div>
       )}
       {selected?.kind === 'lines' && (
-        <LinesList index={idx} named={named[region.slug]} regionName={region.name} units={units} onClose={closePanel} onLine={(id) => { setSelTrackName(null); openLine(region.slug, id) }} onNamed={openNamed} activeName={selTrackName} onHoverLine={setListHoverLine} onHoverNamed={setListHoverName} />
+        <LinesList index={idx} named={named[region.slug]} regionName={region.name} units={units} onClose={closePanel} onLine={(id) => { act.clearTrackName(); openLine(region.slug, id) }} onNamed={openNamed} activeName={selTrackName} onHoverLine={act.setListHoverLine} onHoverNamed={act.setListHoverName} />
       )}
 
       {compact && sheetOpen && (

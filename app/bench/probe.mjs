@@ -1,5 +1,5 @@
 // Dev probe, not a benchmark: tied to macOS Chrome (the executablePath below) and the Chengdu start view (104.14, 30.63).
-// node probe.mjs [latencyMs] [url] [dumpStyleGroups]: per zoom 6-14, settle time and loaded/in-view pilot tiles.
+// node probe.mjs [latencyMs] [url] [dumpStyleGroups]: per zoom 6-14, settle time and loaded/in-view world tiles.
 import puppeteer from 'puppeteer-core'
 const lat = Number(process.argv[2] || 0), url = process.argv[3] || 'http://localhost:4173'
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true, defaultViewport: { width: 1440, height: 900, deviceScaleFactor: 2 }, args: ['--enable-gpu-rasterization', '--ignore-gpu-blocklist'] })
@@ -21,7 +21,7 @@ for (const z of [6, 7, 8, 9, 10, 11, 12, 13, 14]) {
   await p.evaluate(`window.__map.jumpTo({ center: [104.14, 30.63], zoom: ${z} })`)
   await p.evaluate('window.__idle()')
   const dt = Date.now() - t0
-  const s = await p.evaluate(`(() => { const m = window.__map, o = { z: ${z} }; const st = m.style, kk = Object.keys(st).filter(k => /tileManager|sourceCache/i.test(k)); const sc = st[kk[0]] || {};     for (const [id, c] of Object.entries(sc)) { if (id !== 'pilot' && id !== 'ofm') continue; const tiles = Object.values(c._inViewTiles ? c._inViewTiles.getAllTiles?.() || c._tiles : c._tiles); o[id] = tiles.filter(t => t.state === 'loaded').length + '/' + tiles.length }
+  const s = await p.evaluate(`(() => { const m = window.__map, o = { z: ${z} }; const st = m.style, kk = Object.keys(st).filter(k => /tileManager|sourceCache/i.test(k)); const sc = st[kk[0]] || {};     for (const [id, c] of Object.entries(sc)) { if (id !== 'world' && id !== 'ofm') continue; const tiles = Object.values(c._inViewTiles ? c._inViewTiles.getAllTiles?.() || c._tiles : c._tiles); o[id] = tiles.filter(t => t.state === 'loaded').length + '/' + tiles.length }
     const L = m.getStyle().layers, rail = L.filter(l => l.source && l.source !== 'ofm' && l.type !== 'background').map(l => l.id)
     o.railRendered = m.queryRenderedFeatures({ layers: rail.filter(i => m.getLayer(i)) }).length
     o.ofmRendered = m.queryRenderedFeatures({ layers: L.filter(l => l.source === 'ofm').map(l => l.id) }).length

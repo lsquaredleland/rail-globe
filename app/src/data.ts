@@ -1,5 +1,6 @@
 import type { RailType } from './palette'
 import { DATA_BASE as base } from './config'
+import { setHsMin } from './regions'
 
 export interface LineIndexEntry { n: string | null; ne?: string | null; r: string | null; c: string | null; t: RailType; o: string | null; f: string | null; to: string | null; km: number }
 export type LineIndex = Record<string, LineIndexEntry>
@@ -84,7 +85,7 @@ export const railwayOf = (rw: Railways | undefined, props: Record<string, string
   !rw ? undefined : props.n != null ? rw.byName.get(String(props.n)) : props.nk != null ? rw.list[Number(props.nk)] : undefined
 
 /** 32-bit FNV-1a of the UTF-8 bytes: the same hash rail-extract (tiles.rs) shards the named-railway highlight files by */
-function fnv1a(s: string): number {
+export function fnv1a(s: string): number {
   let h = 0x811c9dc5
   for (const b of new TextEncoder().encode(s)) h = Math.imul(h ^ b, 0x01000193) >>> 0
   return h >>> 0
@@ -103,6 +104,8 @@ export async function loadFeatureTags(slug: string, osmId: string): Promise<Tags
 /** Rail totals for a region and the areas inside it: provinces and cities with a metro (pipeline/rail-extract/src/stats.rs).
  *  Length is route km, double track counted once (about 10% accurate). */
 export interface StatsArea {
+  /** region rows only: where high-speed starts in km/h (the config's high_speed_min_kmh) */
+  hs_min_kmh?: number
   slug: string; name: string; local: string | null; kind: 'region' | 'area' | 'province' | 'city'; bbox: [number, number, number, number]
   km: Record<string, { open: number; con: number; prop?: number }>
   /** open passenger route km by speed band: the band's lower bound in km/h, or 'none' without a usable maxspeed */
@@ -118,13 +121,17 @@ const statsCache = new Map<string, Promise<StatsArea[]>>()
 export function loadStats(slug: string): Promise<StatsArea[]> {
   let p = statsCache.get(slug)
   if (!p) {
-    p = fetch(`${base}${slug}/stats.json`).then((r) => (r.ok ? r.json() : { areas: [] })).then((j: { areas: StatsArea[] }) => j.areas).catch(() => [])
+    p = fetch(`${base}${slug}/stats.json`).then((r) => (r.ok ? r.json() : { areas: [] })).then((j: { areas: StatsArea[] }) => {
+      const hs = j.areas.find((a) => a.slug === slug && a.kind === 'region')?.hs_min_kmh
+      if (typeof hs === 'number') setHsMin(slug, hs)
+      return j.areas
+    }).catch(() => [])
     statsCache.set(slug, p)
   }
   return p
 }
 
-/** The outline of a pilot region (its boundary file), for the "outline the area in view" switch */
+/** The outline of a region (its boundary file), for the "outline the area in view" switch */
 const boundaryCache = new Map<string, Promise<GeoJSON.Geometry | null>>()
 export function loadBoundary(slug: string): Promise<GeoJSON.Geometry | null> {
   let p = boundaryCache.get(slug)

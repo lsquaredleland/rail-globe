@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Hit } from '../MapView'
 import { loadFeatureTags, loadLine, loadStation } from '../data'
+import { ignoreError } from '../dev'
 import { Icon } from './ui'
 import { PanelFrame } from './Panels'
 
@@ -91,7 +92,7 @@ export function InspectPanel({ hit, onClose }: { hit: Hit; onClose(): void }) {
   if (d === null) return <PanelFrame onClose={onClose} label="Inspect"><p className="muted">No tags found for this object.</p></PanelFrame>
   const link = osmUrl(d.osm)
   const copy = () => {
-    navigator.clipboard?.writeText(d.tags.map(([k, v]) => `${k}=${v}`).join('\n')).catch(() => {})
+    navigator.clipboard?.writeText(d.tags.map(([k, v]) => `${k}=${v}`).join('\n')).catch(ignoreError('clipboard'))
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }
