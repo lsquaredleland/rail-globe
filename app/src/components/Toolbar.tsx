@@ -8,7 +8,7 @@ import { Icon, Segmented, Toggle, type Lang } from './ui'
 import type { Theme } from '../palette'
 
 export interface Controls {
-  /** the area the card shows (what the view is over); the picker names it, falling back to the pilot region */
+  /** the area the card shows (what the view is over); the picker names it, falling back to the default region */
   area: StatsArea | null; inView: SearchItem | null; items: SearchItem[]; featured: SearchItem[]; placesStatus: SearchStatus; retryPlaces(): void; pickPlace(it: SearchItem): void; region: Region; fallback: Region; mode: ColorMode; hsrOnly: boolean; setHsrOnly(v: boolean): void; construction: boolean; proposed: boolean; outline: boolean; freight: boolean; units: 'km' | 'mi'; lang: Lang; setLang(l: Lang): void; theme: Theme; setTheme(t: Theme): void; inspect: boolean
   setRegion(slug: string): void; setMode(m: ColorMode): void; setConstruction(v: boolean): void; setProposed(v: boolean): void; setOutline(v: boolean): void; setFreight(v: boolean): void
   setUnits(u: 'km' | 'mi'): void; setInspect(v: boolean): void; openLines(): void; copyLink(): void; copied: boolean

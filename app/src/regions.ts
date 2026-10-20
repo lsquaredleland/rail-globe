@@ -9,9 +9,6 @@ export interface Region {
   center: [number, number] // lon, lat
   zoom: number
   zoomPhone: number
-  /** the region whose tiles hold this one, when it lies inside a bigger region: its own outline, Lines list and side files,
-   *  but its rail is the bigger region's, so overlapping regions are not loaded and drawn twice */
-  tiles?: string
   /** no card of its own: an area of the bigger region (a city, a province) already is this region */
   noCard?: boolean
 }
@@ -99,6 +96,10 @@ export function regionOf(f: { geometry: GeoJSON.Geometry }, fallback?: [number, 
   return pt ? partAt(pt) : parts[0].slug
 }
 
-/** China (a region or an area in it): high-speed starts at 250 km/h there, at 200 km/h everywhere else (UIC) */
+/** Fallback for `hsMinKmh` before stats.json is in: China (a region or an area in it) starts high-speed at 250 km/h, everywhere else 200 km/h (UIC) */
 export const isChina = (slug: string) => slug === 'china' || slug === 'cn' || slug === 'greater-bay-area' || slug === 'chengdu' || slug.startsWith('cn-')
-export const hsMinKmh = (slug: string) => (isChina(slug) ? 250 : 200)
+/** high-speed threshold per region, from the region row of its stats.json (`hs_min_kmh`, the config's `high_speed_min_kmh`) */
+const hsMins = new Map<string, number>()
+export const setHsMin = (slug: string, kmh: number) => { hsMins.set(slug, kmh) }
+/** where high-speed starts in a region or area: the stats.json value once loaded, else China's 250 / the UIC 200 (isChina) */
+export const hsMinKmh = (slug: string) => hsMins.get(slug) ?? (isChina(slug) ? 250 : 200)

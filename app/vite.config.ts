@@ -55,7 +55,9 @@ function maplibreWorker(): Plugin {
 export default defineConfig({
   plugins: [react(), serveData(), maplibreWorker()],
   base: './',
+  // static/ (logos) is the only thing copied into dist: public/data (the pipeline's output, GBs) is served by serveData in dev and by R2 in production
+  publicDir: 'static',
   // public/data holds the pipeline's tiles and tens of thousands of side files: served by serveData above, but not watched,
   // so a pipeline run does not keep the dev server busy reacting to every file it writes
-  server: { watch: { ignored: ['**/public/data/**'] } },
+  server: { watch: { ignored: ['**/public/data/**'] }, fs: { allow: ['..'] } },   // fs.allow: ../shared/constants.json lives outside app/
 })

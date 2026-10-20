@@ -44,7 +44,7 @@ interface Props {
 
 let protocolAdded = false
 
-/** pmtiles protocol handler that fetches each tile once, however many sources ask: `pilot` and its highlight source `pilot:hls`
+/** pmtiles protocol handler that fetches each tile once, however many sources ask: `world` and its highlight source `world:hls`
  *  read the same PMTiles URL, and pmtiles itself caches directories but not tile bytes, so every byte range went out twice.
  *  Requests in flight are shared (aborted only when every asker has given up) and finished tiles stay in a small LRU. Every
  *  caller gets its own copy: MapLibre may transfer the buffer to a worker, which would detach a shared one. */
@@ -145,7 +145,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       await warmParts([c0.lng, c0.lat])
       if (mapRef.current !== map) return
       addOutline(map)
-      addRailSource(map, TILES)   // one source: the pilot regions' tiles joined; regions inside China are drawn from China's part
+      addRailSource(map, TILES)   // one source: the countries' tiles joined (world.pmtiles)
       map.addSource('selection', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
       map.addLayer({ id: 'selection', type: 'circle', source: 'selection',
         paint: { 'circle-radius': 15, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#1E1E1C', 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.55 } })

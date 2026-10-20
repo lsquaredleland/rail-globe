@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapView, type Hit, type MapHandle, type View } from './MapView'
 import { SPEED_BANDS, SPEED_NONE, type ColorMode, type MapState } from './mapStyle'
 import type { Theme } from './palette'
-import { regionBySlug, registerSearch, isChina, hsMinKmh, isKnownRegion, partAt, onPartsChange, DEFAULT_REGION } from './regions'
+import { regionBySlug, registerSearch, hsMinKmh, isKnownRegion, partAt, onPartsChange, DEFAULT_REGION } from './regions'
 import { featured, itemInView, useSearch, type SearchItem } from './search'
 import { TYPE_ORDER } from './palette'
 import { loadBoundary, loadLine, loadLineIndex, loadNamedLines, loadRailways, loadStation, railwayOf, type LineIndex, type NamedLine, type Railways } from './data'
+import { ignoreError } from './dev'
 import { readHash, writeHash } from './urlState'
 import { Toolbar, RegionPicker, type Controls } from './components/Toolbar'
 import { Legend } from './components/Legend'
@@ -72,18 +73,18 @@ export default function App() {
 
   const { items: found, status: placesStatus, retry: retryPlaces } = useSearch()   // search.json: the countries, provinces / states and cities with rail
   const ensureIndex = useCallback((slug: string) => {
-    loadLineIndex(slug).then((ix) => setIndexes((p) => (p[slug] ? p : { ...p, [slug]: ix }))).catch(() => {})
-    loadRailways(slug).then((rw) => setRailways((p) => (p[slug] ? p : { ...p, [slug]: rw }))).catch(() => {})
+    loadLineIndex(slug).then((ix) => setIndexes((p) => (p[slug] ? p : { ...p, [slug]: ix }))).catch(ignoreError(`${slug}/lines-index.json`))
+    loadRailways(slug).then((rw) => setRailways((p) => (p[slug] ? p : { ...p, [slug]: rw }))).catch(ignoreError(`${slug}/railways.json`))
   }, [])
   // side files (lines, railways) exist per country; a province or the world placeholder has none
   const hasData = useCallback((slug: string) => found.some((i) => i.kind === 'country' && i.slug === slug), [found])
   useEffect(() => { if (hasData(region.slug)) ensureIndex(region.slug) }, [region.slug, ensureIndex, hasData])
   useEffect(() => {
     if (!hasData(region.slug)) return
-    loadNamedLines(region.slug).then((n) => setNamed((p) => (p[region.slug] ? p : { ...p, [region.slug]: n }))).catch(() => {})
+    loadNamedLines(region.slug).then((n) => setNamed((p) => (p[region.slug] ? p : { ...p, [region.slug]: n }))).catch(ignoreError(`${region.slug}/named-lines.json`))
   }, [region.slug, hasData])
 
-  // the card follows the view; so does the pilot region in the picker (no fly: the map is already where the user put it)
+  // the card follows the view; so does the region in the picker (no fly: the map is already where the user put it)
   const items = useMemo(() => {
     registerSearch(found)
     return found
@@ -110,7 +111,7 @@ export default function App() {
   const viewItem = useMemo(() => { void partsVer; return itemInView(found, viewNow, window.innerWidth, partAt(viewNow.center)) }, [found, viewNow, partsVer])
   // the card shows exactly when the outline can: the area that fills the screen, and nothing at the zoom levels where no area does
   const cardArea = viewArea
-  // the outline of the area in view: its simplified shape, else (a pilot region) its boundary file
+  // the outline of the area in view: its simplified shape, else its boundary file
   const shape = viewArea ? stats.shapes[viewArea.slug] : undefined
   const needBoundary = outline && viewArea && !shape ? viewArea.slug : null
   useEffect(() => { if (needBoundary) loadBoundary(needBoundary).then((geo) => setBoundaryGeo({ slug: needBoundary, geo })) }, [needBoundary])
@@ -161,7 +162,7 @@ export default function App() {
         setSelPt(s.pt)
         const z = Math.max(map.current?.getZoom() ?? 0, 13)
         map.current?.flyTo({ center: s.pt, zoom: z })
-      }).catch(() => {})
+      }).catch(ignoreError(`station ${slug}/${id}`))
     }
   }
   const openLine = (slug: string, id: number, from?: { sel: Selected; pt: [number, number] | null }) => { setSelected({ kind: 'line', slug, id, from }); setListHoverLine(null); setListHoverName(null); setPeek(null); setHover(null); setSelPt(null); ensureIndex(slug) }
@@ -241,10 +242,10 @@ export default function App() {
   const showAll = () => { setHidden([]); setHiddenSpeed([]) }
   const hideAll = () => { setHidden([...TYPE_ORDER]); setHiddenSpeed(allSpeed) }
   const legendProps = { hidden, onShowAll: showAll, onHideAll: hideAll, onToggleFreight: () => setFreight((v) => !v), onToggleType: toggleType }
-  const speedProps = { hiddenSpeed, hsrOnly, china: isChina(areaSlug), onShowAll: showAll, onHideAll: hideAll, onToggle: toggleBand }
+  const speedProps = { hiddenSpeed, hsrOnly, china: hsMinKmh(areaSlug) >= 250, onShowAll: showAll, onHideAll: hideAll, onToggle: toggleBand }
 
   const copyLink = () => {
-    navigator.clipboard?.writeText(location.href).catch(() => {})
+    navigator.clipboard?.writeText(location.href).catch(ignoreError('clipboard'))
     setCopied(true)
     setTimeout(() => setCopied(false), 1800)
   }
@@ -262,7 +263,7 @@ export default function App() {
     if (selected?.kind !== 'station') return
     const { slug, id } = selected
     let live = true
-    loadStation(slug, id).then((s) => live && setStLines({ key: `${slug}/${id}`, ids: Object.values(s.lines).flat() })).catch(() => {})
+    loadStation(slug, id).then((s) => live && setStLines({ key: `${slug}/${id}`, ids: Object.values(s.lines).flat() })).catch(ignoreError(`station ${slug}/${id}`))
     return () => { live = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stKey])
