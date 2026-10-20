@@ -1,7 +1,6 @@
 //! Small helpers of the tile input and side files: rail type order, colours and labels, shard files, one GeoJSON feature line.
 
-use crate::geomx;
-use crate::pyjson::{self, py_round, COMPACT};
+use crate::geomx::{self, round};
 use regex::Regex;
 use serde_json::{Map, Value};
 use std::fs;
@@ -100,7 +99,7 @@ pub(crate) fn haversine_len(c: &[(f64, f64)]) -> f64 {
 pub(super) fn area_ha(g: &Value) -> f64 {
     let Some(geo) = geomx::from_geojson(g, geomx::id) else { return 0.0 };
     let lat = geomx::centroid(&geo).map_or(0.0, |c| c.y());
-    py_round(geomx::area(&geo) * 111320.0 * lat.to_radians().cos() * 110540.0 / 10000.0, 2)
+    round(geomx::area(&geo) * 111320.0 * lat.to_radians().cos() * 110540.0 / 10000.0, 2)
 }
 
 pub(super) fn fnv1a(s: &str) -> u32 {
@@ -124,7 +123,7 @@ pub(super) fn write_shards(dir: &Path, recs: &[(String, String)]) -> u32 {
     for (k, v) in recs {
         let sh = &mut out[(fnv1a(k) % n) as usize];
         sh.push(if sh.is_empty() { '{' } else { ',' });
-        sh.push_str(&pyjson::to_string(&Value::String(k.clone()), pyjson::COMPACT));
+        sh.push_str(&Value::String(k.clone()).to_string());
         sh.push(':');
         sh.push_str(v);
     }
@@ -142,7 +141,7 @@ pub(super) fn write_shards(dir: &Path, recs: &[(String, String)]) -> u32 {
 /// one tile input line: {"type":"Feature","properties":...,"geometry":...,"zoom":{"minzoom":..,"maxzoom":..}} ("zoom" is read by tilewriter.rs)
 pub(super) fn feat(out: &mut String, props: &Map<String, Value>, geom: &str, minzoom: Option<i64>, maxzoom: Option<i64>) {
     out.push_str("{\"type\":\"Feature\",\"properties\":");
-    pyjson::write_map(out, props, COMPACT);
+    out.push_str(&serde_json::to_string(props).unwrap());
     out.push_str(",\"geometry\":");
     out.push_str(geom);
     if minzoom.is_some() || maxzoom.is_some() {
@@ -159,7 +158,7 @@ pub(super) fn feat(out: &mut String, props: &Map<String, Value>, geom: &str, min
 }
 
 pub(super) fn write_json(path: &Path, v: &Value) {
-    fs::write(path, pyjson::to_string(v, COMPACT)).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+    fs::write(path, v.to_string()).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
 
 /// a string property of a feature, when it is there and not empty

@@ -6,7 +6,6 @@ use super::names::{bare_kind, clean_name, english_name, place_before, qualified}
 use super::size::{ref_key, ref_tokens, Size};
 use super::{station_id, station_wikidata, Model, Out, Station, GROUP_RADIUS};
 use crate::geomx;
-use crate::pyjson::f;
 use geo::Geometry;
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -186,9 +185,9 @@ fn station_rows(m: &Model, proj: &Proj, sizes: &[Size], lines: &Lines, cx: &Comp
         let wd = station_wikidata(&m.feats, x);
         let props = json!({
             "id": station_id(&m.feats, x), "complex": cx.of[i], "name": nm, "name_en": m.name_en(x, tg, src.as_deref()),
-            "modes": x.modes.iter().collect::<Vec<_>>(), "tier": z.tier, "score": f(z.score), "terminus": z.terminus,
+            "modes": x.modes.iter().collect::<Vec<_>>(), "tier": z.tier, "score": Value::from(z.score), "terminus": z.terminus,
             "mainline_platforms": z.mainline_platforms, "platform_count": z.platform_count,
-            "land_ha": f(z.land_ha), "building_ha": f(z.building_ha), "mainline_track_ways": z.mainline_track_ways,
+            "land_ha": Value::from(z.land_ha), "building_ha": Value::from(z.building_ha), "mainline_track_ways": z.mainline_track_ways,
             "dead_ends": z.dead_ends, "hsr": z.hsr, "major": z.major,
             "rail_lines": rail, "platform_refs": refs(true), "platform_refs_other": refs(false),
             "line_count": lids.len(), "line_counts": Value::Object(by_type.into_iter().map(|(k, n)| (k, json!(n))).collect()), "line_ids": lids,

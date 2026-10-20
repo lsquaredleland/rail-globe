@@ -320,3 +320,19 @@ impl UnionFind {
         self.0[a] = b;
     }
 }
+
+/// `x` rounded to `n` decimals on its exact binary value (ties to even), as a float again. Keeps the short decimals in the JSON side files.
+pub fn round(x: f64, n: usize) -> f64 {
+    format!("{:.*}", n, x).parse().unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::round;
+
+    #[test]
+    fn rounds_on_the_binary_value() {
+        assert_eq!(round(2.675, 2), 2.67);
+        assert_eq!(round(0.125, 2), 0.12);
+    }
+}

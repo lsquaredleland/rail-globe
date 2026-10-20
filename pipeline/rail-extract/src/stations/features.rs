@@ -3,8 +3,7 @@
 
 use super::names::CONSTRUCTION_SUFFIX;
 use super::{members, Member};
-use crate::geomx::{self, Index, G};
-use crate::pyjson::{f, py_round};
+use crate::geomx::{self, round, Index, G};
 use crate::site::{s, Feat, Input};
 use geo::Point;
 use regex::Regex;
@@ -31,7 +30,7 @@ impl Proj {
 
     /// a metric point back to a [lon, lat] pair, rounded as the files are written
     pub fn unproj(&self, p: &Point<f64>) -> Value {
-        json!([f(py_round(p.x() / self.kx, 5)), f(py_round(p.y() / self.ky, 5))])
+        json!([Value::from(round(p.x() / self.kx, 5)), Value::from(round(p.y() / self.ky, 5))])
     }
 }
 

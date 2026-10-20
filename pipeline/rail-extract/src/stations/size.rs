@@ -3,8 +3,7 @@
 use super::features::{track_mode, It};
 use super::names::norm_name;
 use super::{Model, Station};
-use crate::geomx::{self, Index, G};
-use crate::pyjson::py_round;
+use crate::geomx::{self, round, Index, G};
 use geo::{Geometry, MultiPolygon, Point};
 use regex::Regex;
 use rayon::prelude::*;
@@ -151,9 +150,9 @@ fn footprint_ha(m: &Model, x: &Station) -> (f64, f64) {
     } else {
         let u = geomx::union_all(land_ids.iter().map(|&i| geomx::polys(&f.lands[i].g)).collect());
         let local: MultiPolygon<f64> = geomx::intersection(&u, &geomx::circle(x.pt, LAND_DISC));
-        if local.0.is_empty() { 0.0 } else { py_round(geomx::area(&Geometry::MultiPolygon(local)) / 10000.0, 2) }
+        if local.0.is_empty() { 0.0 } else { round(geomx::area(&Geometry::MultiPolygon(local)) / 10000.0, 2) }
     };
-    let building_ha = py_round(bld_ids.iter().map(|&i| geomx::area(&f.buildings[i].g) / 10000.0).sum::<f64>(), 3);
+    let building_ha = round(bld_ids.iter().map(|&i| geomx::area(&f.buildings[i].g) / 10000.0).sum::<f64>(), 3);
     (land_ha, building_ha)
 }
 
@@ -222,7 +221,7 @@ pub(super) fn score_stations(m: &Model) -> Vec<Size> {
             let near = serving_tracks(m, &ti, x, &mp);
             let dead = dead_ends_near(m, &ti, x, &mp);
             let terminus = dead >= 2;
-            let score = py_round(
+            let score = round(
                 W_PLATFORM * mainline_platforms as f64 + W_TRACK * (near.len() as f64).min(W_TRACK_CAP) + W_LAND * land_ha.sqrt()
                     + W_BUILDING * building_ha.sqrt() + if terminus { W_TERMINUS } else { 0.0 },
                 1,

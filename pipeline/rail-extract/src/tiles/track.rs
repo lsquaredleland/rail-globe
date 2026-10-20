@@ -7,7 +7,6 @@ use super::util::{area_ha, badge_of, coords, colour, feat, is_light, label_of, r
 use super::{haversine_len, Lookup, OVERVIEW_MAXZOOM, SKETCH_MINZOOM};
 use crate::classify::speed_kmh;
 use crate::geomx;
-use crate::pyjson;
 use crate::site::{s, Feat, Input};
 use crate::stations::english_name;
 use rustc_hash::FxHashMap;
@@ -253,9 +252,9 @@ impl<'a> Scan<'a> {
         // a sketch of the metro network for z4-6, with no attributes but the type, so it merges into a few long lines
         if t == "metro" && !con {
             let sk = OverviewProps::sketch_metro().to_map();
-            self.overview.push((pyjson::sorted_key(&Value::Object(sk.clone())), sk, fe.graw.as_str(), SKETCH_MINZOOM, mz - 1));
+            self.overview.push((sorted_key(&Value::Object(sk.clone())), sk, fe.graw.as_str(), SKETCH_MINZOOM, mz - 1));
         }
-        self.overview.push((pyjson::sorted_key(&Value::Object(ov.clone())), ov, fe.graw.as_str(), mz, OVERVIEW_MAXZOOM));
+        self.overview.push((sorted_key(&Value::Object(ov.clone())), ov, fe.graw.as_str(), mz, OVERVIEW_MAXZOOM));
     }
 
     /// one strand per line on the way
@@ -301,4 +300,20 @@ impl<'a> Scan<'a> {
             self.n_plats += 1;
         }
     }
+}
+
+/// the overview merge key: the value with its keys sorted at every level, as compact JSON
+fn sorted_key(v: &Value) -> String {
+    fn sort(v: &Value) -> Value {
+        match v {
+            Value::Object(m) => {
+                let mut ks: Vec<&String> = m.keys().collect();
+                ks.sort();
+                Value::Object(ks.into_iter().map(|k| (k.clone(), sort(&m[k]))).collect())
+            }
+            Value::Array(a) => Value::Array(a.iter().map(sort).collect()),
+            x => x.clone(),
+        }
+    }
+    sort(v).to_string()
 }

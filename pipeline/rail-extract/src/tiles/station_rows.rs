@@ -7,7 +7,6 @@ use super::track::{Scan, SB_NONE};
 use super::util::{feat, rank};
 use super::{Logos, Lookup};
 use crate::geomx::{self, Index};
-use crate::pyjson::{self, COMPACT};
 use geo::{Geometry, Point};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::{json, Value};
@@ -154,7 +153,7 @@ pub(super) fn rows(sc: &Scan, stations: &[Value], complexes: &[Value], airports:
         };
         airport_of.push(ap);
         let minz = match tier { 1 => 5, 2 => 7, _ => 9 };
-        feat(&mut st_rows, &sp.to_map(), &pyjson::to_string(&stv["geometry"], COMPACT), Some(minz), None);
+        feat(&mut st_rows, &sp.to_map(), &stv["geometry"].to_string(), Some(minz), None);
     }
     for c in complexes.iter() {
         let p = &c["properties"];
@@ -172,7 +171,7 @@ pub(super) fn rows(sc: &Scan, stations: &[Value], complexes: &[Value], airports:
             ty: ty.map_or(String::new(), |t| format!(",{},", t.iter().cloned().collect::<Vec<_>>().join(","))),
         };
         let minz = match tier { 1 => 5, 2 => 8, _ => 10 };
-        feat(&mut cx_rows, &cp.to_map(), &pyjson::to_string(&c["geometry"], COMPACT), Some(minz), None);
+        feat(&mut cx_rows, &cp.to_map(), &c["geometry"].to_string(), Some(minz), None);
     }
     StationRows { stations: st_rows, complexes: cx_rows, airport_of }
 }

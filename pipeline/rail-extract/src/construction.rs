@@ -6,8 +6,7 @@
 //! 600 m. Tier from what is being built around it: hsr if high-speed construction track runs within 200 m or the name says so;
 //! major if hsr with 4+ mainline construction pieces within 200 m, or the name matches main_station_re. Works in degrees.
 
-use crate::geomx::{self, Index, UnionFind};
-use crate::pyjson::{f, py_round};
+use crate::geomx::{self, round, Index, UnionFind};
 use crate::site::{s, Input};
 use crate::stations::english_name;
 use geo::{Geometry, Point};
@@ -204,7 +203,7 @@ pub fn run(slug: &str, inp: &Input, stations: &mut Vec<Value>, complexes: &mut V
         let name = props.get("name").cloned().unwrap_or(Value::Null);
         let name_en = english_name(&props);
         let wikidata = props.get("wikidata").filter(|v| v.as_str().is_some_and(|x| !x.is_empty())).map(|v| json!([v])).unwrap_or(Value::Null);
-        let geom = json!({"type": "Point", "coordinates": [f(py_round(cx, 5)), f(py_round(cy, 5))]});
+        let geom = json!({"type": "Point", "coordinates": [Value::from(round(cx, 5)), Value::from(round(cy, 5))]});
         let pr = json!({
             "id": sid, "complex": sid, "name": name, "name_en": name_en, "modes": modes, "tier": tier,
             "score": 0, "terminus": false, "mainline_platforms": 0, "platform_count": 0, "land_ha": 0, "building_ha": 0,

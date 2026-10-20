@@ -4,7 +4,6 @@ use super::props::{AirportProps, AirportPtProps};
 use super::dashes::geojson_value;
 use super::util::{area_ha, feat, nonempty};
 use crate::geomx::{self, Index};
-use crate::pyjson::{self, COMPACT};
 use crate::site::{s, Input};
 use geo::{Geometry, Point};
 use regex::Regex;
@@ -47,7 +46,7 @@ impl<'a> Airports<'a> {
                     // one icon point per commercial airport, so tile boundaries cannot repeat it
                     if let Some(rp) = g.as_ref().and_then(geomx::rep_point) {
                         let m = AirportPtProps { id: p.get("id").cloned().unwrap_or(Value::Null), lb: lb.to_string() }.to_map();
-                        feat(&mut airport_pts, &m, &pyjson::to_string(&geojson_value(&Geometry::Point(rp)), COMPACT), Some(8), None);
+                        feat(&mut airport_pts, &m, &geojson_value(&Geometry::Point(rp)).to_string(), Some(8), None);
                         n_air_pts += 1;
                     }
                 }

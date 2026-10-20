@@ -1,7 +1,6 @@
 //! `rail-extract build <slug>`: the station model, stations under construction, tile input and side files for one
 //! region, from the cut's files in data/<slug>/ (was stations.py, con_stations.py and build_tiles.py). Writes the same files.
 
-use crate::pyjson::{self, COMPACT, SPACED};
 use crate::{construction, stations, stats, tiles};
 use rayon::prelude::*;
 use serde_json::{Map, Value};
@@ -76,7 +75,7 @@ pub fn load(dir: &Path, cfg: &Path) -> Input {
 fn write_lines(path: &Path, rows: &[Value]) {
     let mut out = String::new();
     for r in rows {
-        pyjson::write(&mut out, r, COMPACT);
+        out.push_str(&r.to_string());
         out.push('\n');
     }
     fs::write(path, out).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
@@ -203,8 +202,8 @@ pub fn build(slug: &str, paths: &Paths) -> Vec<String> {
     lap(&mut log, &mut t, format!("read {} features, {} relations, {} stop positions", inp.feats.len(), inp.rels.len(), inp.stops.len()));
 
     let mut st = stations::run(slug, &inp);
-    fs::write(dir.join("route_stations.json"), pyjson::to_string(&Value::Object(st.route_order.clone()), SPACED)).expect("write route_stations.json");
-    fs::write(dir.join("stations_report.json"), pyjson::pretty_ascii(&st.report)).expect("write stations_report.json");
+    fs::write(dir.join("route_stations.json"), serde_json::to_string(&st.route_order).unwrap()).expect("write route_stations.json");
+    fs::write(dir.join("stations_report.json"), serde_json::to_string_pretty(&st.report).unwrap()).expect("write stations_report.json");
     lap(&mut log, &mut t, format!("station model: {} stations, {} complexes", st.stations.len(), st.complexes.len()));
 
     let con = construction::run(slug, &inp, &mut st.stations, &mut st.complexes);

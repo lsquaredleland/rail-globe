@@ -5,8 +5,7 @@ use super::dashes::{geojson_value, hl_record};
 use super::track::Scan;
 use super::util::{colour, rank, short, write_json, write_shards};
 use super::{Logos, Lookup, BIG_LINE_BYTES};
-use crate::geomx;
-use crate::pyjson::{self, f, py_round};
+use crate::geomx::{self, round};
 use crate::site::{s, Input};
 use geo::{Geometry, Simplify};
 use rustc_hash::FxHashMap;
@@ -64,7 +63,7 @@ impl<'a> Side<'a> {
             }
             let id = l["id"].as_str().unwrap_or("");
             idx.insert(short(id).to_string(), json!({"n": l["name"], "r": l["ref"], "c": colour(l["colour"].as_str()), "t": l["type"], "o": l["operator"],
-                "f": l["from"], "to": l["to"], "km": f(py_round(km, 1)), "ne": l.get("name_en").cloned().unwrap_or(Value::Null)}));
+                "f": l["from"], "to": l["to"], "km": Value::from(round(km, 1)), "ne": l.get("name_en").cloned().unwrap_or(Value::Null)}));
         }
         write_json(&self.dir.join("lines-index.json"), &Value::Object(idx));
     }
@@ -73,10 +72,10 @@ impl<'a> Side<'a> {
     fn named_lines_and_railways(&self) -> usize {
         let mut nl: Vec<&(String, Option<String>, String, f64, i64, [f64; 4])> = self.sc.named.iter().filter(|v| v.3 >= 1.5).collect();
         // by length rounded to 0.1 km, longest first (build_tiles.py sorted after rounding: equal lengths keep first-seen order)
-        nl.sort_by(|a, b| py_round(b.3, 1).partial_cmp(&py_round(a.3, 1)).unwrap_or(std::cmp::Ordering::Equal));
-        write_json(&self.dir.join("named-lines.json"), &Value::Array(nl.iter().map(|v| json!({"n": v.0, "ne": v.1, "t": v.2, "km": f(py_round(v.3, 1)), "ways": v.4,
-            "bbox": v.5.iter().map(|x| f(py_round(*x, 4))).collect::<Vec<_>>()})).collect()));
-        write_json(&self.dir.join("railways.json"), &Value::Array(self.sc.railways.iter().map(|r| json!([r.0, r.1, r.2, f(py_round(r.3, 1))])).collect()));
+        nl.sort_by(|a, b| round(b.3, 1).partial_cmp(&round(a.3, 1)).unwrap_or(std::cmp::Ordering::Equal));
+        write_json(&self.dir.join("named-lines.json"), &Value::Array(nl.iter().map(|v| json!({"n": v.0, "ne": v.1, "t": v.2, "km": Value::from(round(v.3, 1)), "ways": v.4,
+            "bbox": v.5.iter().map(|x| Value::from(round(*x, 4))).collect::<Vec<_>>()})).collect()));
+        write_json(&self.dir.join("railways.json"), &Value::Array(self.sc.railways.iter().map(|r| json!([r.0, r.1, r.2, Value::from(round(r.3, 1))])).collect()));
         nl.len()
     }
 
@@ -88,7 +87,7 @@ impl<'a> Side<'a> {
             let oid = s(&fe.p, "osm_id").unwrap_or("");
             props_by_id.insert(oid, &fe.p);
             let without: Map<String, Value> = fe.p.iter().filter(|(k, _)| k.as_str() != "osm_id").map(|(k, v)| (k.clone(), v.clone())).collect();
-            tag_recs.push((oid.to_string(), pyjson::to_string(&Value::Object(without), pyjson::COMPACT)));
+            tag_recs.push((oid.to_string(), Value::Object(without).to_string()));
         }
         let n = write_shards(&self.dir.join("tags"), &tag_recs);
         (props_by_id, n)
@@ -136,7 +135,7 @@ impl<'a> Side<'a> {
                 "osm": sources.first().copied(), "wikidata": p["wikidata"], "pt": stv["geometry"]["coordinates"], "logo": self.logos.for_station(p, lk),
                 "tags": tags, "model": Value::Object(model),
             });
-            station_recs.push((p["id"].as_str().unwrap_or("").to_string(), pyjson::to_string(&rec, pyjson::COMPACT)));
+            station_recs.push((p["id"].as_str().unwrap_or("").to_string(), rec.to_string()));
         }
         write_shards(&self.dir.join("stations"), &station_recs)
     }
@@ -155,7 +154,7 @@ impl<'a> Side<'a> {
                 let Some(r) = lk.rels.get(rid) else { continue };
                 let wl = route_km(sc, r);
                 let order = self.route_order.get(rid).cloned().unwrap_or(json!([]));
-                routes.push(json!({"id": rid, "name": r["tags"]["name"], "from": r["tags"]["from"], "to": r["tags"]["to"], "km": f(py_round(wl, 1)), "stations": order}));
+                routes.push(json!({"id": rid, "name": r["tags"]["name"], "from": r["tags"]["from"], "to": r["tags"]["to"], "km": Value::from(round(wl, 1)), "stations": order}));
             }
             routes.sort_by(|a, b| {
                 let k = |r: &Value| (r["stations"].as_array().map_or(0, |v| v.len()), r["km"].as_f64().unwrap_or(0.0));
@@ -173,13 +172,13 @@ impl<'a> Side<'a> {
             let rec = json!({
                 "id": short(lid), "name": l["name"], "ref": l["ref"], "type": l["type"], "colour": c,
                 "operator": l["operator"], "network": l["network"], "from": l["from"], "to": l["to"],
-                "km": km.map_or(json!(0), f), "osm": lid,
+                "km": km.map_or(json!(0), Value::from), "osm": lid,
                 "routes": routes.iter().take(8).collect::<Vec<_>>(), "station_names": names, "tags": l.get("tags").filter(|t| !t.is_null()).cloned().unwrap_or(json!({})),
                 "name_en": l.get("name_en").cloned().unwrap_or(Value::Null),
                 "route_ids": l["routes"].as_array().map(|v| v.iter().take(30).cloned().collect::<Vec<_>>()).unwrap_or_default(),
                 "hl": hl_record(sc.line_ways.get(&short(lid)).map(Vec::as_slice).unwrap_or(&[]), &sc.way_geom, extra),
             });
-            let text = pyjson::to_string(&rec, pyjson::COMPACT);
+            let text = rec.to_string();
             if text.len() > BIG_LINE_BYTES {
                 big_lines.push(short(lid));
                 let path = self.dir.join("lines-big").join(format!("{}.json", short(lid)));
@@ -202,7 +201,7 @@ impl<'a> Side<'a> {
             let mut by: Vec<(&String, &usize)> = sc.name_types[ix].iter().filter(|(k, _)| k.as_str() != "yard").collect();
             by.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
             let t = by.first().map(|e| e.0).unwrap_or(first);
-            hl_recs.push((n.clone(), pyjson::to_string(&hl_record(ids, &sc.way_geom, vec![("type", json!(t))]), pyjson::COMPACT)));
+            hl_recs.push((n.clone(), hl_record(ids, &sc.way_geom, vec![("type", json!(t))]).to_string()));
         }
         write_shards(&self.dir.join("name-hl"), &hl_recs)
     }
@@ -219,7 +218,7 @@ impl<'a> Side<'a> {
                     g => g,
                 };
                 let v = json!({"type": "Feature", "properties": {"slug": slug}, "geometry": geojson_value(&g)});
-                fs::write(self.out.join(format!("{slug}.boundary.geojson")), pyjson::to_string(&v, pyjson::Style { ascii: true, compact: true })).expect("write boundary");
+                fs::write(self.out.join(format!("{slug}.boundary.geojson")), v.to_string()).expect("write boundary");
             }
         }
     }

@@ -32,7 +32,6 @@ mod places;
 mod geomx;
 mod pbf;
 mod pminfo;
-mod pyjson;
 mod region;
 mod rules;
 mod site;
