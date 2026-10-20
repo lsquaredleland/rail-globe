@@ -1,153 +1,79 @@
 # Pipeline
 
-> Current path: `pipeline/publish.sh` and `docs/10-world-build.md` (the world build is the app's only data source). The command log below is the pilot-era history: `pilot.pmtiles`, `europe-test`, `--combined` and the tippecanoe timings no longer drive the app and are kept for the measurements. The pilot extracts (SF Bay Area, Chengdu, Paris) are still the data-check regions.
+Command reference. First-time sequence from a fresh clone: `Run it` in the root `README.md`. The world build with timings: `docs/10-world-build.md`. Raw data to live site in one command: `pipeline/publish.sh` (stages: tools, cache, outlines, build, verify, upload, deploy, prune, live; `--dry-run` runs only the read-only checks; credentials in `r2/.env`; runbook `r2/README.md`). Publishing deploys the live site and needs the user's go.
 
-Reference for the pipeline commands. For the first-time sequence from a fresh clone (in the right order, with the prerequisites) see `Run it` in the root `README.md`; run `rail-extract outlines --level 2`, `4` and `5 --country CN` before the first cut (see 'Region outlines' below).
-Needs stable Rust (extraction and MLT tiles; tested with 1.99.0). Python 3 is not needed for the pipeline: `check.py` and `top.py` use the standard library only, `measure_views.py` needs `pmtiles`, `build_regions.py` and `outline_cn.py` need shapely. No tippecanoe or tile-join.
-The commands below are written for running from `pipeline/`; `rail-extract` and `check.py` find the repository from their own location, so they also work from the repository root (`top.py` and `measure_views.py` use relative paths).
-**Raw data to live site, one command:** `pipeline/publish.sh` chains the steps below with R2 and Vercel (stages: tools, cache, outlines, build, verify, upload, deploy, prune, live). `pipeline/publish.sh --dry-run` shows what it would do and runs the read-only checks; `--planet FILE` starts from a planet download; `--push` pushes `main` between the upload and the prune so Vercel builds the app. Credentials come from `r2/.env`. See `r2/README.md`. Do not run a world build unless you mean to (`CLAUDE.md`).
+Needs stable Rust (tested with 1.99.0). The build uses no Python, tippecanoe or osmium. Python 3 (standard library only) is for the dev checks: `check.py`, `top.py`; `measure_views.py` also needs `pip install pmtiles`; `qa/` needs numpy and shapely 2.
 
-Timings below were measured on 2026-10-12 (14-core Mac, planet-260928).
+Run every command from the repository root. `RE` below is the extractor:
 
 ```
-cd rail-extract && cargo build --release && cd ..        # once, and after changing the Rust code (5 s after a change)
-rail-extract/target/release/rail-extract cache --planet ../planet-260928.osm.pbf
-#   once per planet: 54 s, 4.5 GB peak memory -> ../data/cache/planet-260928.railcache (1.2 GB; blob index cached beside it)
-#   also keeps the place=city and place=town nodes (115,309: name, name:en, int_name, population, capital, wikidata; 10 MB, +0.9%) for the places step; place=village (1.65 M nodes) is counted, not kept.
-#   A cache from before the places step (format RGRAIL02) is refused with a message: rebuild it.
-rail-extract/target/release/rail-extract cut sf-bay-area china de fr ch it paris chengdu greater-bay-area cn-beijing
-#   regions cut in parallel from the cache, by their outline regions/<slug>.geojson, and classified (rail types) with the
-#   rules in config/<slug>.json: ten regions including all of China in 2.4 s (4.8 GB peak)
-#   writes ../data/<slug>/{features.geojsonl, relations.jsonl, stop_positions.jsonl, qa.json, airports.geojsonl,
-#                          features.typed.geojsonl, lines.json, classify_report.json}
-#   rail type rules: rail-extract/src/classify.rs (ported from classify.py 2026-10-12, same output byte for byte)
-rail-extract/target/release/rail-extract build sf-bay-area china de fr ch it
-#   per region, in parallel: station model (stations, complexes, size tiers), stations under construction, tile input and side files
-#   into ../app/public/data; then the Rust MLT tile writer (tilewriter.rs) for each region in turn -> <slug>.pmtiles (it holds a whole region in memory); skipped for the pilot sources when the pilot join runs (the app reads only pilot.pmtiles)
-#   timings 2026-10-14 (earlier run, per-region files plus the pilot join): sf-bay-area, paris, china, de, fr, ch, it together 40.4 s wall, 14.1 GB peak RSS; in the orig-vs-mlt benchmark (pilot file only) the same seven slugs took 27.4 s. Tile step per region (earlier single runs): SF 0.1 s, Paris 0.3 s,
-#   China 4.3 s (133.3 MB, 5.3 GB; 4.1 s median of 3 runs in the benchmark, 4.9 s in another single run), Germany 3.8 s, France 2.4 s, Switzerland 0.6 s, Italy 1.0 s. (tippecanoe took China 28 to 37 s)
-#   construction and proposed track is written as real dashes, the tile layer `con_dash` (tiles.rs: merged end to end, parallel tracks made one line, cut for 22 half-zoom bands, no yard track): the app's dashes. Upload tiles before deploying the app: it has no fallback, so old tiles show no construction
-#   the tile input is tiles_tmp/*.geojsonl; each line's "zoom":{minzoom,maxzoom} member is the feature's zoom range (read by tilewriter.rs)
-#   whenever tiles are built and any of sf-bay-area, china, de, fr, ch, it is among the regions, one tile writer run over those six sources' tiles_tmp writes pilot.pmtiles (12.7 s; 298.8 MB now, 310.5 MB with FastPFOR and FSST on),
-#   so a partial rebuild refreshes the pilot; a source with no tile input is warned about and the join skipped. It also writes pilot.parts.json (each source's slug and its outline's bounds;
-#   bounds of neighbouring countries overlap, so they are not checked). Both are written to a temporary file and renamed.
-#   The app draws all rail from pilot.pmtiles (one set of ~46 style layers instead of 3 x 50) and learns the parts from pilot.parts.json
-rail-extract/target/release/rail-extract build ch it fr --combined europe-test
-#   combined build: per-slug work without tiles, then ONE tile writer run over every slug's tiles_tmp -> ../app/public/data/europe-test.pmtiles
-#   plus europe-test.parts.json (slug and outline bounds). Does not write per-region .pmtiles or touch pilot.pmtiles
-#   TIMING ONLY (the Americas run used per-country config files, now replaced by config/_default.json; ca, mx and us had hand-written configs that are not committed; the Americas rule work was reverted, docs/00-overview.md 2026-10-15): 27 American countries (ar bb bo br ca cl co cr cu do ec gt hn ht jm kn mx ni pa pe py sv tc tt us uy ve --combined americas): 15.3 s wall, 11.4 GB peak, 207.9 MB
-#   (tile writer 7.9 s; tippecanoe took 276 s, 222 MB)
-rail-extract/target/release/rail-extract tiles ch it --name x --out ../data/tiles
-#   the tile writer alone over existing tiles_tmp (no station model, no side files); slices one region at a time, so do not run several in parallel
-rail-extract/target/release/rail-extract build paris chengdu greater-bay-area cn-beijing --no-tiles
-#   side files only: the app draws these regions from China's tiles (0.5 s for all three)
-#   side files per region are hash shards (stations/, lines/, tags/, name-hl/ plus shards.json), a few to a few hundred files, not one per record; `build` clears and rewrites them.
-#   Output from before 2026-10-16 (one file per station and line): node repack_side_files.mjs ../app/public/data converts it in place without a rebuild (30 s for the world output; it skips folders that already have shards.json)
-#   also writes ../app/public/data/<slug>/stats.json (region card); areas inside a region: "stat_areas" (a list) or "stat_auto" (all provinces and cities of a country) in config/<slug>.json;
-#   run `outlines --level 4` and `--level 5` first; also writes shapes.json (outlines for finding the area under the view)
-#   or: rail-extract cut <slugs> --build   (cut, then build straight away; --no-tiles applies to every slug)
-rail-extract/target/release/rail-extract places --parts ../app/public/data/pilot.parts.json [--data ../data] [--out ../app/public/data] [--cache FILE]
-#   city, town and country labels -> places.json and the search index -> search.json in <out>; no network (0.3 s for the pilot, 0.6 s for the world). It replaced places.py (517 OpenFreeMap tiles, 15 min, five countries).
-#   `build` runs it by itself after the pilot join and `world` after the tiles, so run it by hand only after changing the code or the outlines; positional slugs instead of --parts also work.
-#   Reads: the stations of each region (<data>/<slug>/complexes.geojsonl: run `build` first), the place=city / town nodes of the cache, and the outlines and index.json in data/regions (`outlines --level 2` and `4`, and 5 for China, first).
-#   Rules: a city is kept when a station complex is within 12 km of its node, a town within 5 km (n_stations = how many); countries: each region's country, labelled at the centroid of its largest polygon;
-#   rank (1 is the biggest; the style's bands are 0-3, 4-7, 8+) from population (>= 10 M 1, 5 M 2, 3 M 3, 1.5 M 4, 1 M 5, 500 k 6, 250 k 7, 100 k 8, 50 k 9, 20 k 10, 10 k 11, else 12; no tag: city 10, town 12), one better for a national capital, towns never better than 8.
-#   Full list in the header of rail-extract/src/places.rs. search.json: [name, name_en, local_name, kind (country|province|city|town), lon, lat, minLon, minLat, maxLon, maxLat, zoom, slug, n_stations]:
-#   the countries of the regions and the provinces / states (level 4) that hold a station complex (outline box, fitting zoom, outline slug), and the CITIES: places.json's labels keep every city and town, but search.json has no towns and only cities with a metro or light rail system:
-#   a place=city (or a level-5 outline of China) with a station complex within 12 km and open passenger track typed `metro` or `light_rail` (not construction, not proposed; monorail alone does not count) within 12 km of its point (exact distance to the track, not a grid);
-#   one entry per metro area: candidates are sorted by rank, then population, then capital flag, then n_stations, and taken greedily, dropping any within 20 km of one already taken (Tokyo, not Shinjuku). A level-5 outline that holds candidate places becomes ONE entry with the outline's box and slug and the best place's name, rank and point (the other places inside it are no entries); level-5 outlines that are districts of a city-province (Hong Kong Island, Kowloon, New Territories) are dropped and level-5 outlines are no longer listed as provinces.
-#   City outlines for the point-only cities: `places` writes <data>/city-outlines-wanted.json; `rail-extract outlines --cities <that file>` writes data/regions/<cc>-<city>.geojson with `city: true` in index.json from the cache (the cache keeps the boundaries of admin levels 6 to 9 whose Wikidata id is a place=city node's: rebuild it once after pulling this change); then `build` and `places` again (docs/14-city-outlines-and-highlights.md).
-#   A country with under 3,000 km of open passenger rail (<out>/<slug>/stats.json) and no city entry is listed without its provinces (world: 57 countries, 1,370 provinces left).
-#   Needs <data>/<slug>/features.typed.geojsonl for the metro test. 2026-10-15 world: 146 countries, 1,674 provinces, 726 cities (63 from level-5 outlines), 255 KB (92 KB gzipped); the 1,674 provinces become 1,370 with the small-country rule; pilot: 5, 116, 194 (63), 32 KB.
-python3 check.py                                 # phase 2 "Done when": answer lists in answers/
-python3 measure_views.py                         # compressed tile bytes per view vs the 600 KB budget
-python3 top.py <slug> [n]                        # dev helper: biggest stations
+cargo build --release --manifest-path pipeline/rail-extract/Cargo.toml
+RE=pipeline/rail-extract/target/release/rail-extract
 ```
 
-Map labels need no build step: the app draws all text locally from system fonts (`docs/00-overview.md`, row 2026-10-17), so there are no glyph files.
+`data/`, `app/public/data/`, `*.osm.pbf` and `pipeline/rail-extract/target/` are git-ignored. The app reads only the world build. The three pilots (`sf-bay-area`, `chengdu`, `paris`) are for data checks and specific tests.
 
-All six regions, cut to tiles: 42 s (2026-10-13, quiet machine: cut 1.1 s, tiled builds 40.9 s, side-file builds 0.5 s).
-With the Python steps it was 106 s. Rust, without tippecanoe, per region (these exclude the tile step):
+## rail-extract
 
-| Region | Python (stations + con_stations + build_tiles) | Rust build |
-| --- | --- | --- |
-| SF Bay Area | 0.74 s | 0.15 s |
-| Paris | 3.8 s | 1.07 s |
-| Chengdu | 0.62 s | 0.14 s |
-| Greater Bay Area | 2.3 s | 0.45 s |
-| Beijing | 1.09 s | 0.24 s |
-| China | 45.5 s | 11.1 s |
+### cache
+`$RE cache --planet planet-YYMMDD.osm.pbf [--out FILE] [--threads N]`
+- Reads the planet once (about 1 min, 4.5 GB peak) and keeps the rail data, the place nodes, and admin boundaries (levels 2, 4, 5, and 6 to 9 for cities).
+- Writes `data/cache/<planet name>.railcache` (1.2 GB). Later commands use the newest `.railcache` in `data/cache/` (`--cache FILE` overrides).
+- Change which tags are kept (`src/rules.rs`, `cache_key`) and you need a new cache. A cache from an older format is refused with a message.
 
-History, tippecanoe era (everything below up to the Python timings used tippecanoe and `tile-join`, both removed 2026-10-14; the tippecanoe and `tile-join` figures are no longer reproducible with this code).
+### outlines
+`$RE outlines --level 2|4|5 [--country CC] [--cache FILE] [--out DIR]` and `$RE outlines --cities WANTED.json`
+- `--level 2` countries, `4` provinces and states, `5 --country CN` Chinese prefecture cities (needed by region cards). About 1 s each.
+- `--cities` takes `city-outlines-wanted.json` (written by `places`) and writes one outline per city (`docs/14-city-outlines-and-highlights.md`).
+- Writes `data/regions/<slug>.geojson` and `data/regions/index.json`. A hand-made outline in `pipeline/regions/<slug>.geojson` wins over a generated one with the same slug.
 
-Germany (`de`, whole country, added 2026-10-13): cut 7.4 s (335,680 features), build 47.4 s (station model 3.5 s, tile input 9.2 s, tippecanoe 32.5 s -> 92.8 MB), side files 139 MB (app/public/data/de).
-`tile-join` of all four sources: 20 to 28 s, pilot.pmtiles 163 MB -> 256 MB. Joining lifts Paris's z4 and z5 view from 13 and 60 KB to 146 and 501 KB, because Germany's low-zoom tiles share those tiles.
+### cut
+`$RE cut <slug>... [--cache FILE] [--regions DIR] [--data DIR] [--threads N] [--strict-exemptions] [--build] [--no-tiles]`
+- Cuts each region from the cache by its outline, in parallel, and classifies rail types with `pipeline/config/<slug>.json` (else `_default.json` or its group template). New region: add an outline, add a config only if it needs its own rules, run `cut <slug>`. The planet is not read again.
+- Writes `<data>/<slug>/`: `features.geojsonl`, `relations.jsonl`, `stop_positions.jsonl`, `qa.json`, `airports.geojsonl`, `features.typed.geojsonl`, `lines.json`, `classify_report.json`.
+- `--strict-exemptions` fails on an exemption that no longer matches anything (`docs/12-config-and-exemptions.md`). `--build` runs `build` straight after the cut.
+- Pilots: `$RE cut sf-bay-area paris chengdu` (2 s). World: `$RE cut --regions data/regions --data data/world $(cat data/world/slugs.txt)` (7 s, 7.2 GB).
 
-France, Switzerland, Italy (`fr`, `ch`, `it`, whole countries, added 2026-10-13; Paris now draws from France's tiles and is built with `--no-tiles`). Cut of the three together 1.3 s (cache already read). Build per country, in parallel (total 71 s with the join):
+### build
+`$RE build <slug>... [--no-tiles] [--data DIR] [--out DIR] [--threads N]`
+- Needs the cut first. Builds the station model, stations under construction, tile input, and side files, per region in parallel.
+- Writes side files to `<out>/<slug>/` (hash shards in `stations/`, `lines/`, `tags/`, `name-hl/` plus `shards.json`, `stats.json`, `shapes.json`, `<slug>.boundary.geojson`; `build` clears and rewrites them) and `<data>/<slug>/` (`stations.geojsonl`, `complexes.geojsonl`, `tiles_tmp/`).
+- Unless `--no-tiles`, also writes `<out>/<slug>.pmtiles` (MLT, one region at a time; it holds a whole region in memory). It then runs `places` for the slugs built.
+- Defaults: `--data data`, `--out app/public/data`. Pilots: `$RE build sf-bay-area paris chengdu`. World side files: `$RE build $(cat data/world/kept.txt) --no-tiles --threads 5 --data data/world --out app/public/data/world` (37 s, 12 GB).
+- Region stats use `stat_areas` or `stat_auto` from the config (run `outlines --level 4` and `5` first).
 
-| Step | France | Switzerland | Italy |
-| --- | --- | --- | --- |
-| read | 0.56 s | 0.55 s | 0.55 s |
-| station model | 1.51 s | 0.45 s | 0.69 s |
-| tile input and side files | 3.17 s | 1.08 s | 1.74 s |
-| tippecanoe | 21.3 s (60.3 MB) | 7.2 s (14.9 MB) | 9.3 s (30.4 MB) |
-| total | 27.0 s | 9.5 s | 12.6 s |
+### world
+`$RE world (--slugs-file FILE | <slug>...) [--data DIR] [--out DIR] [--name NAME] [--deep-zoom N] [--regions DIR]`
+- One memory-bounded tile writer run over every slug's `tiles_tmp`. Defaults: `--data data/world`, `--out app/public/data/world`, `--name world`, `--deep-zoom 6` (5 gives a byte-identical file).
+- Writes `<out>/world.pmtiles` and `world.parts.json`, then runs `places`: `places.json`, `search.json`, and `<data>/city-outlines-wanted.json`. About 1 min, 10.5 GB peak. Details: `docs/10-world-build.md`.
 
-`tile-join` of the six sources: 43.9 s, `pilot.pmtiles` 256 MB to 349 MB. Country bounding boxes overlap, so the join no longer checks bounds; about 8 to 40 border-crossing ways per country pair are in both files. The app tells the files apart by outline (`partAt` in `regions.ts`, from each part's boundary file). Heavy views: z5 and z6 laptop views across Europe are now 590 to 1,030 KB (France, Switzerland and Germany tiles share them).
+### world-list
+`$RE world-list (--slugs-file FILE | <slug>...) [--data DIR] [--min-km N]`
+- Sorts a world cut into countries to build and countries to drop. Kept means at least `--min-km` (default 1) of open track typed anything but freight or yard.
+- Writes `<data>/kept.txt` and `<data>/dropped.txt`.
 
-Older per-step Python timings, before classify moved into the cut:
+### places
+`$RE places (--parts FILE | <slug>...) [--data DIR] [--out DIR] [--cache FILE]`
+- City, town and country labels and the search index, from the cache's place nodes and the stations of each region. No network. Run by `build` and `world`; run by hand only after changing code or outlines.
+- Writes `<out>/places.json` and `<out>/search.json` (one file for the whole index). Rules: `src/places.rs` header and `docs/00-overview.md` (search index row, 2026-10-16).
 
-| Region | classify | stations | con_stations | build_tiles |
-| --- | --- | --- | --- | --- |
-| SF Bay Area | 0.17 s | 0.41 s | 0.14 s | 1.33 s |
-| Paris | 0.74 s | 1.90 s | 0.42 s | 5.91 s |
-| Chengdu | 0.15 s | 0.35 s | 0.13 s | 1.07 s |
-| Greater Bay Area | 0.55 s | 1.21 s | 0.36 s | 3.28 s |
+### pminfo
+`$RE pminfo FILE [--tsv FILE] [--top N]`
+- Prints the PMTiles header, tiles and bytes per zoom, and the biggest tiles. `--tsv` writes every tile's size. Writes nothing else.
 
-World build (every country with passenger rail, one file; 2026-10-15, 14-core Mac, planet-260928). Full reference, the memory-bounded writer and verification: `../docs/10-world-build.md`. Run from the repository root with `RE=pipeline/rail-extract/target/release/rail-extract`:
+## Config
 
-```
-$RE outlines --level 2 && $RE outlines --level 4            # data/regions: 216 countries, provinces and states (index.json is read by stat_auto)
-mkdir -p data/world && ls data/regions | grep -E '^[a-z]{2}\.geojson$' | sed 's/.geojson//' > data/world/slugs.txt
-$RE cut --regions data/regions --data data/world $(cat data/world/slugs.txt)     # 7 s, 7.2 GB peak; classified with config/<cc>.json, else config/_default.json
-$RE world-list --data data/world --slugs-file data/world/slugs.txt               # kept.txt / dropped.txt: >= 1 km of open track typed anything but freight or yard (--min-km N); 146 kept, 70 dropped
-$RE build $(cat data/world/kept.txt) --no-tiles --threads 5 --data data/world --out app/public/data/world   # side files: 37 s, 12 GB peak RSS
-$RE world --slugs-file data/world/kept.txt     # tiles: 55 to 59 s, 10.5 GB peak RSS, 1.15 GB -> app/public/data/world/world.pmtiles, world.parts.json
-$RE pminfo app/public/data/world/world.pmtiles [--tsv FILE] [--top N]
-VITE_TILE_SOURCE=world npm --prefix app run dev                                   # the app reads only pilot unless this is set
-```
+Per-region rules are in `pipeline/config/<slug>.json`. A region with no file uses `_default.json`, or its group template in `_groups.json`. China shares rules through `_china.json` (`cn` extends it; `china`, `chengdu`, `greater-bay-area` and `cn-beijing` extend `_china` or `cn`). A config can `extends` another and list justified `exemptions`: `docs/12-config-and-exemptions.md`. Keys most used: `high_speed_networks_re`, `type_overrides`, `high_speed_track_overrides`, `proposed_region` (an outline under `pipeline/regions/` inside which proposed track is kept; today only `cn/hk.json`), `stat_areas`, `stat_auto`.
 
-`world` writes tiles in passes (`--deep-zoom N`, default 6; 5 and 6 give a byte-identical file) so memory stays at about 10 GB; `tiles` and `build` (the pilot path) hold a whole region. `world` ends by running `places` over the kept countries: `world/places.json` (all kept countries' cities and towns with a station) and `world/search.json`. Not in the repo: `data/`, the planet, `app/public/data/`, the world outputs.
+Outlines in `pipeline/regions/` (`sf-bay-area`, `paris`, `chengdu`, `greater-bay-area`, `china`, `fr`, and `cn/hk.json`) are hand-made or came from Nominatim; the raw dumps and the scripts that built them are in `pipeline/archive/`.
 
-Default config. A region with no `config/<slug>.json` uses the committed template `config/_default.json` (generic rules, a 200 km/h high-speed floor, `stat_auto` for admin level 4); `build` fills `stat_name` (outline `name_en`), `stat_local` (`name`) and `stat_auto.country` (`country`) from the region's outline, and `cut` and `build` log that the template is in use. Add a `config/<slug>.json` only when a region needs its own rules; it wins.
+## Checks and dev tools (Python, standard library)
 
-Region outlines. Countries and provinces / states come from the planet (admin levels 2 and 4, kept in the cache, simplified
-to about 20 m):
+- `python3 pipeline/check.py [slug...] [--exemptions] [--data DIR]`: answer lists in `pipeline/answers/` (major stations and tiers, lines, rail types). Without `--data`, pilots read `data/<slug>` and world slugs `data/world/<slug>`. Reads only; exit code 1 on a failure. One failure is known: `成都` tier 3.
+- `python3 pipeline/top.py <slug> [n]`: the biggest stations of a built region by size score.
+- `python3 pipeline/measure_views.py [world.pmtiles]`: compressed tile bytes per laptop and phone view at z2 to z8 against the 600 KB budget. Default file `app/public/data/world/world.pmtiles`.
+- `pipeline/qa/`: `fetch_narn.py`, `study_ways.py`, `eval_rules.py`, the freight study against the US NARN data (`docs/13-freight-north-america.md`). `fetch_passenger_stations.py`: the 12306 station list for China (`config/cn-passenger-stations.txt`).
+- `pipeline/logos/`: one-time operator logo pull; how `app/public/logos/` is made: `pipeline/logos/README.md`.
+- `pipeline/archive/`: dead scripts and raw data, see its README.
 
-```
-rail-extract/target/release/rail-extract outlines --level 2                # 218 countries: ../data/regions/cn.geojson, us, fr ... (0.4 s)
-rail-extract/target/release/rail-extract outlines --level 4                # 3,062 provinces / states: cn-sichuan, us-california ... (0.8 s)
-rail-extract/target/release/rail-extract outlines --level 4 --country CN   # just one country's
-rail-extract/target/release/rail-extract outlines --level 5 --country CN   # 342 Chinese prefecture-level cities (cn-chengdu ...); needed by the region cards
-#   (levels 2, 4 and 5 are in the cache, and 6 to 9 for the cities; adding a level means rebuilding the cache, about 70 s)
-rail-extract/target/release/rail-extract cut us-california cn-sichuan      # then cut any of them (about 1 s)
-```
-
-`../data/regions/index.json` lists every outline (name, English name, level, country, ISO code, OSM relation). Hand-made outlines
-in `regions/` win over generated ones with the same slug: `sf-bay-area` (9 counties), `paris`, `chengdu`, `greater-bay-area`
-and `china` (mainland + Hong Kong + Macao) came from Nominatim (`build_regions.py` unions the boundary dumps in `regions/*.json`;
-`outline_cn.py` looks up the China ones, 47 s). City boundaries (levels 6 to 9, only those of place=city nodes) are in the cache since 2026-10-16: `outlines --cities` (docs/14).
-
-New region: an outline (generated, or a hand-made GeoJSON Feature in `regions/<slug>.geojson`) and, if it needs its own rules,
-`config/<slug>.json` (otherwise `config/_default.json` is used), then `cut <slug>`; the planet is not read again.
-A config can `"extends"` another (`_north-america`) and list justified `exemptions` to the generic rules: `docs/12-config-and-exemptions.md`.
-Changing which tags are kept (`rail-extract/src/rules.rs`, `cache_key`) needs a new cache; changing the rules for what is cut
-only needs a rebuild of the binary and a new cut.
-
-App (phase 3): `cd ../app && npm install && npm run dev`, then open http://127.0.0.1:5173/ . `npm run build` makes a static site in `dist/`.
-Share links keep state in the URL hash: `#r=paris&c=operator&con=0&fr=1&u=mi&v=12.6/48.8785/2.3553` (region, colour mode, toggles, units, view).
-
-Per-region rules live in `config/<slug>.json`: `high_speed_networks_re`, `type_overrides`, `high_speed_track_overrides` (Chinese 200 km/h lines that count as high-speed), `proposed_region` (a `regions/` boundary file inside which `railway=proposed` track is kept; none by default). `commuter_networks` is kept but unused while Commuter is merged into Regional.
-
-Generated files (`data/`, `app/public/data/`, `*.osm.pbf`, `rail-extract/target/`) are git-ignored; rebuild them with the commands above.
-Answer lists in `answers/` are hand-made drafts; weights and tier cut-offs are at the top of `rail-extract/src/stations.rs`.
+Timings and the pilot-era command log: `docs/reference/pipeline-timings.md`.

@@ -31,7 +31,7 @@ France is the natural step up from Paris for phase 5: dense, well mapped, with a
 
 ## Before phase 2
 
-The China high-speed vs intercity rule is decided (see `00-overview.md`). Phase 2 should confirm it on Chengdu; a second Chinese region is only needed before the China-wide build. See `06-open-questions.md`.
+The China high-speed vs intercity rule is decided (see `00-overview.md`). Phase 2 should confirm it on Chengdu; a second Chinese region is only needed before the China-wide build. See `17-action-items.md`.
 
 ## Automatic data check (Claude runs this, unasked)
 

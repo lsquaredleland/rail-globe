@@ -1,4 +1,6 @@
-# Performance to-dos and reminders (2026-10-15, updated 2026-10-17)
+# Performance to-dos and reminders (2026-10-15, updated 2026-10-17) (archive)
+
+Moved from `docs/11-performance-todos.md` on 2026-10-20, verbatim. Open items are in `docs/17-action-items.md` (section 6); this file keeps the evidence behind them and the closed items.
 
 What is left to do on speed, size and deployment, in priority order, with the numbers behind each item so the next person can re-measure. Background and method: `09-performance-playbook.md`. The world build: `10-world-build.md`. Items already tracked in `06-open-questions.md` are linked, not repeated.
 
