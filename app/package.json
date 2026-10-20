@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format:check": "prettier --check src scripts bench eslint.config.js vite.config.ts",
+    "format:check": "prettier --check \"{src,scripts,bench}/**/*.{ts,tsx,mjs,js}\" eslint.config.js vite.config.ts",
     "test": "vitest run",
     "check:data": "node scripts/check-data-contract.mjs"
   },

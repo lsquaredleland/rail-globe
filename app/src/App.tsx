@@ -298,8 +298,8 @@ export default function App() {
         return
       }
       openHit(hit)
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [touch, ensureIndex, inspect]
   )
 
