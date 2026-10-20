@@ -284,3 +284,8 @@ section { display: flex; flex-direction: column; gap: 8px; }
 .search-in:focus { outline: 2px solid var(--ink3); outline-offset: -1px; }
 .search-list { display: flex; flex-direction: column; gap: 2px; max-height: min(52vh, 420px); overflow-y: auto; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* a folded card keeps only its header (.ac-keep) */
+.ac-fold { flex: none; align-self: center; width: 24px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: var(--ink2); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; margin: -2px -4px -2px 0; }
+.ac-fold:hover { background: var(--fill); }
+.area-card.folded > :not(.ac-keep) { display: none; }
+.area-card.folded { overflow: hidden; }

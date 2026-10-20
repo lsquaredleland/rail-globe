@@ -20,6 +20,7 @@ The blanket `^TER ` override makes TER K1 (about 450 km) Regional; Intercity loo
 
 ### 1.3 Desktop operator mode and the open-sea region button
 In operator mode zoomed in over a country there is no card and no legend (the operator Legend was removed); zoomed out it shows the World card. Over open sea at z7 the region button still names the nearest country ("Portugal Country"). Keep both, or change?
+- 2026-10-20: the user noticed the missing card and wants it fixed later. Likely fix: show the region card (totals and rail-type switches) in operator mode too, with the "lines take each operator's colour" note (`App.tsx`: `mode !== 'operator' && <TypeCard>`).
 - Your call:
 
 ### 1.4 Under-construction stations: shared predicate (proposed)

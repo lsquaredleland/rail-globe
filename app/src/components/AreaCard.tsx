@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
 import type { StatsArea } from '../data'
 import { INACTIVE, SPEED_BANDS, SPEED_NONE, SPEED_UNKNOWN } from '../mapStyle'
 import { TYPE_COLOR, TYPE_LABEL, TYPE_ORDER, TYPE_WIDTH, type RailType } from '../palette'
@@ -66,11 +66,20 @@ function Dots({ parts, unit }: { parts: { color: string; v: number; ring?: boole
   return <div className="dot-grid" aria-hidden="true">{dots.map((d, i) => <i key={i} className={d.ring ? 'ring' : undefined} style={d.ring ? undefined : { background: d.color }} />)}</div>
 }
 
-function Head({ area }: { area: StatsArea }) {
+/** one fold state for the three cards (area, world / operator, speed): a card that is folded stays folded when the colour mode swaps it for another */
+let cardFolded = false
+function useFold(): [boolean, React.ReactNode] {
+  const [folded, set] = useState(cardFolded)
+  const toggle = () => { cardFolded = !folded; set(cardFolded) }
+  return [folded, <button type="button" className="ac-fold" aria-label={folded ? 'Expand card' : 'Collapse card'} aria-expanded={!folded} onClick={toggle}>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ transform: folded ? undefined : 'rotate(180deg)' }}><path d="m6 9 6 6 6-6" /></svg></button>]
+}
+
+function Head({ area, fold }: { area: StatsArea; fold?: React.ReactNode }) {
   return (
-    <div className="ac-head">
+    <div className="ac-head ac-keep">
       <strong>{area.name}</strong>{area.local && area.local !== area.name && <span lang="zh" className="ac-local">{area.local}</span>}
-      <span className="muted sm ac-kind">{AREA_KIND[area.kind]}</span>
+      <span className="muted sm ac-kind">{AREA_KIND[area.kind]}</span>{fold}
     </div>
   )
 }
@@ -89,6 +98,7 @@ export function TypeCard({ area: a, units, hidden, freight, construction, propos
   area: StatsArea | null; units: Units; hidden: string[]; freight: boolean; construction: boolean; proposed: boolean; hsrOnly: boolean
   onToggleType(t: string): void; onShowAll(): void; onHideAll(): void; onToggleFreight(): void
 }) {
+  const [folded, fold] = useFold()
   if (!a) return null
   const types = TYPE_ORDER.filter((t) => a.km[t]?.open > 0)
   const open = (t: string) => a.km[t]?.open ?? 0
@@ -109,8 +119,8 @@ export function TypeCard({ area: a, units, hidden, freight, construction, propos
   const stCon = showCon ? (st.construction ?? 0) : 0
   const sUnit = niceUnit(st.open ?? 0, 120)
   return (
-    <aside className={`area-card${showCon ? ' con-on' : ''}${showProp ? ' prop-on' : ''}`} aria-label={`Rail in ${a.name}`}>
-      <Head area={a} />
+    <aside className={`area-card${showCon ? ' con-on' : ''}${showProp ? ' prop-on' : ''}${folded ? ' folded' : ''}`} aria-label={`Rail in ${a.name}`}>
+      <Head area={a} fold={fold} />
       <div className="ac-total">
         <div><strong className="ac-big">{num(total, units)} {units}</strong><div className="muted sm">passenger route in service</div></div>
         <span className="ac-scale"><i />= {unitLabel(unit, units)}</span>
@@ -177,11 +187,12 @@ export function WorldCard({ operator, zoom, embedded, hidden, freight, hsrOnly, 
   operator: boolean; zoom: number; embedded?: boolean; hidden: string[]; freight: boolean; hsrOnly: boolean
   onToggleType(t: string): void; onShowAll(): void; onHideAll(): void; onToggleFreight(): void
 }) {
+  const [folded, fold] = useFold()
   return (
-    <aside className={`area-card${embedded ? ' embedded' : ''}`} aria-label="Rail in the world">
+    <aside className={`area-card${embedded ? ' embedded' : ''}${folded && !embedded ? ' folded' : ''}`} aria-label="Rail in the world">
       {!embedded && (zoom > 5
-        ? <div className="ac-head"><strong>No area here</strong><span className="muted sm ac-kind">Move the centre over land</span></div>
-        : <div className="ac-head"><strong>World</strong><span className="muted sm ac-kind">Zoom in to an area for its totals</span></div>)}
+        ? <div className="ac-head ac-keep"><strong>No area here</strong><span className="muted sm ac-kind">Move the centre over land</span>{fold}</div>
+        : <div className="ac-head ac-keep"><strong>World</strong><span className="muted sm ac-kind">Zoom in to an area for its totals</span>{fold}</div>)}
       {operator && <div className="muted sm">Lines take each operator&apos;s colour{hsrOnly ? '; lines that are not high-speed are greyed' : ''}. Rail types below still switch on and off.</div>}
       <div className="ac-sec"><span className="eyebrow">On the map</span>
         <Tools allOn={hidden.length === 0} allOff={TYPE_ORDER.every((t) => hidden.includes(t))} onAll={onShowAll} onNone={onHideAll} /></div>
@@ -258,11 +269,13 @@ export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, china, constru
     )
   }
   const hidN = hiddenSpeed.length
+  const [folded, fold] = useFold()
   return (
-    <aside className={`area-card sp${embedded ? ' embedded' : ''}${showCon ? ' con-on' : ''}${showProp ? ' prop-on' : ''}`} aria-label={a ? `Track speed in ${a.name}` : 'Track speed'}>
-      <div className="ac-sec top">
+    <aside className={`area-card sp${embedded ? ' embedded' : ''}${showCon ? ' con-on' : ''}${showProp ? ' prop-on' : ''}${folded && !embedded ? ' folded' : ''}`} aria-label={a ? `Track speed in ${a.name}` : 'Track speed'}>
+      <div className="ac-sec top ac-keep">
         <div><strong className="ac-title">Track speed</strong><div className="muted sm">{a ? `${a.name} · ` : 'Zoom in to an area for its totals · '}{hidN === 0 ? 'all bands on the map' : `${hidN} band${hidN > 1 ? 's' : ''} hidden`}</div></div>
         <Tools allOn={hidN === 0} allOff={hidN === all.length} onAll={onShowAll} onNone={onHideAll} />
+        {!embedded && fold}
       </div>
       <div className="sp-colhead"><span>In service</span><span className="bt">Construction</span><span className="bt pr">Proposed</span></div>
       <div className={`sp-hs${SPEED_BANDS.filter((b) => b.min >= hsMin).every((b) => hiddenSpeed.includes(b.min)) ? ' off' : ''}`}>
