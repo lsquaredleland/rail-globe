@@ -10,13 +10,15 @@ import { readHash, writeHash } from './urlState'
 import { Toolbar, RegionPicker, type Controls } from './components/Toolbar'
 import { Legend } from './components/Legend'
 import { TooltipBody } from './components/Tooltip'
-import { LinePanel, LinesList, StationPanel } from './components/Panels'
+import { LinePanel, LinesList, ServicesPanel, StationPanel } from './components/Panels'
+import { railTypeLabel } from './format'
 import { Icon, LangContext, Segmented, Toggle, type Lang } from './components/ui'
 import { SpeedCard, TypeCard, WorldCard } from './components/AreaCard'
 import { areaForView, useStats } from './stats'
 import { InspectPanel, InspectTooltipBody } from './components/Inspect'
 
-type Selected = { kind: 'station'; slug: string; id: string } | { kind: 'line'; slug: string; id: number } | { kind: 'lines' } | { kind: 'inspect'; hit: Hit } | null
+type Services = { kind: 'services'; slug: string; ids: number[]; title: string; titleEn: string | null; sub: string }
+type Selected = { kind: 'station'; slug: string; id: string } | { kind: 'line'; slug: string; id: number; from?: { sel: Selected; pt: [number, number] | null } } | Services | { kind: 'lines' } | { kind: 'inspect'; hit: Hit } | null
 
 function useMedia(q: string) {
   const [m, setM] = useState(() => matchMedia(q).matches)
@@ -162,7 +164,7 @@ export default function App() {
       }).catch(() => {})
     }
   }
-  const openLine = (slug: string, id: number) => { setSelected({ kind: 'line', slug, id }); setListHoverLine(null); setListHoverName(null); setPeek(null); setHover(null); setSelPt(null); ensureIndex(slug) }
+  const openLine = (slug: string, id: number, from?: { sel: Selected; pt: [number, number] | null }) => { setSelected({ kind: 'line', slug, id, from }); setListHoverLine(null); setListHoverName(null); setPeek(null); setHover(null); setSelPt(null); ensureIndex(slug) }
   const closePanel = () => { setSelected(null); setSelPt(null); setSelTrackName(null); setListHoverLine(null); setListHoverName(null) }
   const openList = () => { setSelected({ kind: 'lines' }); setSelPt(null); setSelTrackName(null); setPeek(null); setHover(null) }
   const openNamed = (n: NamedLine) => { setSelTrackName(n.n); setSelTrackSlug(null); map.current?.fitBounds(n.bbox) }
@@ -171,10 +173,16 @@ export default function App() {
     if (h.kind === 'station') openStation(h.slug, String(h.props.id), h.lngLat)
     else if (h.kind === 'line') openLine(h.slug, Number(h.props.lid))
     else if (h.kind === 'track') {
-      // outside inspect mode a click on track opens the first line that runs on it, else the Lines list on that named railway
-      const first = Number(String(h.props.ln ?? '').split(',')[0])
-      if (Number.isFinite(first) && first > 0) openLine(h.slug, first)
-      else {
+      // outside inspect mode a click on track opens the line that runs on it, or lets the user choose when several do; with none, the Lines list on that named railway
+      const ids = [...new Set(String(h.props.ln ?? '').split(',').map(Number).filter((n) => Number.isFinite(n) && n > 0))]
+      if (ids.length === 1) openLine(h.slug, ids[0])
+      else if (ids.length > 1) {
+        const rw = railwayOf(railwaysRef.current[h.slug], h.props)
+        const name = rw?.[0] ?? (h.props.n ? String(h.props.n) : '')
+        const type = String(h.props.type ?? '')
+        setSelected({ kind: 'services', slug: h.slug, ids, title: name || railTypeLabel(type), titleEn: rw?.[1] ?? (h.props.ne ? String(h.props.ne) : null), sub: `${railTypeLabel(type, h.props.usage as string | undefined)}${h.props.prop ? ' · proposed' : h.props.con ? ' · under construction' : ''}` })
+        setSelPt(null); setPeek(null); setHover(null); setSelTrackName(null); setListHoverLine(null); setListHoverName(null); ensureIndex(h.slug)
+      } else {
         const name = railwayOf(railwaysRef.current[h.slug], h.props)?.[0] ?? (h.props.n ? String(h.props.n) : null)
         if (name) { setSelected({ kind: 'lines' }); setSelPt(null); setPeek(null); setHover(null); setSelTrackName(name); setSelTrackSlug(h.slug) }
       }
@@ -247,8 +255,24 @@ export default function App() {
   }
 
   const selectedLine = selected?.kind === 'line' ? selected.id : null
+  // a selected station highlights every line that stops there, a selected track every service on it; the rest is veiled
+  const [stLines, setStLines] = useState<{ key: string; ids: number[] } | null>(null)
+  const stKey = selected?.kind === 'station' ? `${selected.slug}/${selected.id}` : null
+  useEffect(() => {
+    if (selected?.kind !== 'station') return
+    const { slug, id } = selected
+    let live = true
+    loadStation(slug, id).then((s) => live && setStLines({ key: `${slug}/${id}`, ids: Object.values(s.lines).flat() })).catch(() => {})
+    return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stKey])
+  const groupLines = useMemo<number[] | null>(() => {
+    if (selected?.kind === 'services') return selected.ids
+    return stKey && stLines?.key === stKey && stLines.ids.length ? stLines.ids : null
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, stKey, stLines])
   const idx = indexes[region.slug]
-  const panelIdx = selected && (selected.kind === 'station' || selected.kind === 'line') ? indexes[selected.slug] : idx
+  const panelIdx = selected && (selected.kind === 'station' || selected.kind === 'line' || selected.kind === 'services') ? indexes[selected.slug] : idx
 
   // keep the map sized when the panel opens on desktop
   useEffect(() => { map.current?.resizeSoon() }, [selected?.kind, compact])
@@ -260,9 +284,9 @@ export default function App() {
   // a track with no mapped line highlights its railway: by name zoomed in, by railway number (nk) in the zoomed-out overview
   const hoverName = hh?.kind === 'track' && hoverLine == null ? (railwayOf(railways[hh.slug], hh.props)?.[0] ?? (hh.props.n ? String(hh.props.n) : null)) : null
   // the region the highlighted line belongs to: the selected line's, else the Lines list's (current region), else the hovered one's
-  const hlLine = selectedLine ?? listHoverLine ?? hoverLine
+  const hlLine = selectedLine ?? listHoverLine ?? groupLines ?? hoverLine
   const hlName = selectedLine == null && selTrackName == null ? (listHoverName ?? (listHoverLine == null ? hoverName : null)) : selTrackName
-  const hlSlug = selected?.kind === 'line' ? selected.slug
+  const hlSlug = selected?.kind === 'line' || (groupLines && (selected?.kind === 'services' || selected?.kind === 'station')) ? selected.slug
     : selTrackName != null && selTrackSlug ? selTrackSlug   // a clicked track keeps the region part it was hit in, so its highlight is not redone
     : listHoverLine != null || listHoverName != null || selTrackName != null ? region.slug
     : hh ? hh.slug : null
@@ -284,7 +308,7 @@ export default function App() {
     <LangContext.Provider value={lang}>
     <div className={`app${compact ? ' compact' : ''}`} ref={wrap}>
       <MapView ref={map} state={mapState} units={units} initial={init.view ?? { center: region.center, zoom: compact ? region.zoomPhone : region.zoom }}
-        highlightSlug={hlLine != null || hlName != null ? hlSlug : null} selectedLine={hlLine} selectedTrackName={hlName} hoverHighlight={touch || selected || listHoverLine != null || listHoverName != null ? null : hoverHighlight} focusSlug={selected?.kind === 'line' ? selected.slug : selTrackName != null ? (selTrackSlug ?? region.slug) : null} selectedStation={selPt} outline={outlineGeo} touch={touch}
+        highlightSlug={hlLine != null || hlName != null ? hlSlug : null} selectedLine={hlLine} selectedTrackName={hlName} hoverHighlight={touch || selected || listHoverLine != null || listHoverName != null ? null : hoverHighlight} focusSlug={selected?.kind === 'line' || (groupLines && selected?.kind === 'station') || selected?.kind === 'services' ? selected.slug : selTrackName != null ? (selTrackSlug ?? region.slug) : null} selectedStation={selPt} outline={outlineGeo} touch={touch}
         onHover={onHover} onClick={onClick} onMoveEnd={(v) => { view.current = v; setViewNow(v); sync() }} />
 
       {compact && (
@@ -329,10 +353,16 @@ export default function App() {
 
       {selected?.kind === 'station' && (
         <StationPanel slug={selected.slug} id={selected.id} index={panelIdx} onClose={closePanel}
-          onLine={(id) => openLine(selected.slug, id)} onStation={(id) => openStation(selected.slug, id, undefined, true)} />
+          onLine={(id) => openLine(selected.slug, id, { sel: selected, pt: selPt })} onStation={(id) => openStation(selected.slug, id, undefined, true)} onHoverLine={setListHoverLine} />
       )}
       {selected?.kind === 'line' && (
-        <LinePanel slug={selected.slug} id={selected.id} units={units} onClose={closePanel} onBack={openList} onStation={(id) => openStation(selected.slug, id, undefined, true)} />
+        <LinePanel slug={selected.slug} id={selected.id} units={units} onClose={closePanel}
+          onBack={selected.from ? () => { setSelected(selected.from!.sel); setSelPt(selected.from!.pt); setListHoverLine(null) } : openList}
+          backLabel={selected.from ? (selected.from.sel?.kind === 'station' ? 'Station' : 'Services here') : undefined} onStation={(id) => openStation(selected.slug, id, undefined, true)} />
+      )}
+      {selected?.kind === 'services' && (
+        <ServicesPanel ids={selected.ids} index={panelIdx} title={selected.title} titleEn={selected.titleEn} sub={selected.sub} units={units} onClose={closePanel}
+          onLine={(id) => openLine(selected.slug, id, { sel: selected, pt: null })} onHoverLine={setListHoverLine} />
       )}
       {selected?.kind === 'inspect' && <InspectPanel hit={selected.hit} onClose={closePanel} />}
       {inspect && (

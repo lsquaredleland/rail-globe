@@ -28,8 +28,8 @@ export function PanelFrame({ onClose, onBack, backLabel = 'All lines', children,
 
 const osmUrl = (id: string | null | undefined) => (id ? `https://www.openstreetmap.org/${id}` : null)
 
-export function StationPanel({ slug, id, index, onClose, onLine, onStation }: {
-  slug: string; id: string; index: LineIndex | undefined; onClose(): void; onLine(id: number): void; onStation(id: string): void
+export function StationPanel({ slug, id, index, onClose, onLine, onStation, onHoverLine }: {
+  slug: string; id: string; index: LineIndex | undefined; onClose(): void; onLine(id: number): void; onStation(id: string): void; onHoverLine(id: number | null): void
 }) {
   const lang = useLang()
   const { data: s, error } = useLoaded<StationRecord>(() => loadStation(slug, id), `${slug}/${id}`)
@@ -55,12 +55,13 @@ export function StationPanel({ slug, id, index, onClose, onLine, onStation }: {
       </div>
       {s.line_count > 0 && (
         <section>
-          <h3 className="eyebrow">Lines stopping here</h3>
+          <h3 className="eyebrow">Lines stopping here <span className="muted sm">(highlighted on the map)</span></h3>
           {TYPE_ORDER.filter((t) => s.lines[t]).map((t) => (
             <div key={t} className="grp">
               <div className="grp-head"><Swatch type={t} w={t === 'high_speed' ? 4 : 3} />{TYPE_LABEL[t]}<span className="count">{s.lines[t].length}</span></div>
               {s.lines[t].slice(0, 12).map((lid) => (
-                <button key={lid} type="button" className="line-row" onClick={() => onLine(lid)}>
+                <button key={lid} type="button" className="line-row" onClick={() => onLine(lid)}
+                  onMouseEnter={() => onHoverLine(lid)} onMouseLeave={() => onHoverLine(null)} onFocus={() => onHoverLine(lid)} onBlur={() => onHoverLine(null)}>
                   <LineBadge e={index?.[String(lid)]} /><span className="grow col"><span>{shortName(index?.[String(lid)])}</span>{shortNameEn(index?.[String(lid)]) && <span className="muted sm">{shortNameEn(index?.[String(lid)])}</span>}</span>
                 </button>
               ))}
@@ -102,21 +103,21 @@ export function StationPanel({ slug, id, index, onClose, onLine, onStation }: {
   )
 }
 
-export function LinePanel({ slug, id, units, onClose, onBack, onStation }: {
-  slug: string; id: number; units: 'km' | 'mi'; onClose(): void; onBack?: () => void; onStation(id: string, lngLatHint?: undefined): void
+export function LinePanel({ slug, id, units, onClose, onBack, backLabel, onStation }: {
+  slug: string; id: number; units: 'km' | 'mi'; onClose(): void; onBack?: () => void; backLabel?: string; onStation(id: string, lngLatHint?: undefined): void
 }) {
   const lang = useLang()
   const { data: l, error } = useLoaded<LineRecord>(() => loadLine(slug, id), `${slug}/${id}`)
   const [ri, setRi] = useState(0)
   useEffect(() => setRi(0), [id])
-  if (error) return <PanelFrame onClose={onClose} onBack={onBack} label="Line"><p className="muted">Could not load this line.</p></PanelFrame>
-  if (!l) return <PanelFrame onClose={onClose} onBack={onBack} label="Line"><p className="muted">Loading…</p></PanelFrame>
+  if (error) return <PanelFrame onClose={onClose} onBack={onBack} backLabel={backLabel} label="Line"><p className="muted">Could not load this line.</p></PanelFrame>
+  if (!l) return <PanelFrame onClose={onClose} onBack={onBack} backLabel={backLabel} label="Line"><p className="muted">Loading…</p></PanelFrame>
   const route = l.routes[Math.min(ri, l.routes.length - 1)]
   const t = l.type as RailType
   const link = osmUrl(l.osm)
   const [lMain, lOther] = namePair(lang, shortName({ n: l.name, r: l.ref }), shortNameEn({ n: l.name, ne: l.name_en }))
   return (
-    <PanelFrame onClose={onClose} onBack={onBack} label="Line">
+    <PanelFrame onClose={onClose} onBack={onBack} backLabel={backLabel} label="Line">
       <div className="row gap8">
         <LineBadge e={{ n: l.name, r: l.ref, c: l.colour, t, o: l.operator, f: l.from, to: l.to, km: l.km }} size={26} />
         <h2 className="p-title">{lMain}</h2>
@@ -153,6 +154,37 @@ export function LinePanel({ slug, id, units, onClose, onBack, onStation }: {
         ) : <p className="muted">No stops are mapped for this line in OSM.</p>}
       </section>
       {link && <a className="osm-link" href={link} target="_blank" rel="noopener noreferrer">View on OpenStreetMap ↗</a>}
+    </PanelFrame>
+  )
+}
+
+/** The services that run on a clicked piece of track: pick one to see its stations; all of them are highlighted on the map meanwhile */
+export function ServicesPanel({ ids, index, title, titleEn, sub, units, onClose, onLine, onHoverLine }: {
+  ids: number[]; index: LineIndex | undefined; title: string; titleEn: string | null; sub: string; units: 'km' | 'mi'; onClose(): void; onLine(id: number): void; onHoverLine(id: number | null): void
+}) {
+  const lang = useLang()
+  const [main, other] = namePair(lang, title, titleEn)
+  const rows = ids.map((id) => [id, index?.[String(id)]] as const)
+    .sort((a, b) => TYPE_ORDER.indexOf(a[1]?.t ?? 'other') - TYPE_ORDER.indexOf(b[1]?.t ?? 'other') || (a[1]?.r ?? a[1]?.n ?? '').localeCompare(b[1]?.r ?? b[1]?.n ?? '', undefined, { numeric: true }))
+  return (
+    <PanelFrame onClose={onClose} label="Services">
+      <h2 className="p-title">{main}</h2>
+      {other && <div className="p-en">{other}</div>}
+      <div className="p-sub">{sub}</div>
+      <section>
+        <h3 className="eyebrow">{ids.length} services run here <span className="muted sm">(all highlighted on the map)</span></h3>
+        <div className="grp">{rows.map(([id, e]) => {
+          const [a, b] = namePair(lang, shortName(e), shortNameEn(e))
+          return (
+            <button key={id} type="button" className="line-row" onClick={() => onLine(id)}
+              onMouseEnter={() => onHoverLine(id)} onMouseLeave={() => onHoverLine(null)} onFocus={() => onHoverLine(id)} onBlur={() => onHoverLine(null)}>
+              <LineBadge e={e} />
+              <span className="grow col"><span>{a || `Line ${id}`}</span>{b && <span className="muted sm">{b}</span>}{e && (e.f || e.to) && <span className="muted sm ell">{e.f ?? '?'} ↔ {e.to ?? '?'}</span>}</span>
+              <span className="muted sm">{e?.km ? km(e.km, units) : ''}</span>
+            </button>
+          )
+        })}</div>
+      </section>
     </PanelFrame>
   )
 }

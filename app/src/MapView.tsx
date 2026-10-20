@@ -27,7 +27,7 @@ interface Props {
   units: 'km' | 'mi'
   initial: View
   highlightSlug: string | null   // the region selectedLine / selectedTrackName belong to
-  selectedLine: number | null
+  selectedLine: number | number[] | null   // several: all highlighted together (a station's lines, the services on a track)
   selectedTrackName: string | null
   /** What a hit highlights (its line, else its named railway), for highlighting straight from the hit test, without a React
    *  render in between. null when hovering must not highlight (a line is selected, touch screens). */
@@ -245,7 +245,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
   }, [])
 
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) applyState(m, props.state) }, [props.state])
-  useEffect(() => { const m = mapRef.current; if (m && loaded.current) highlightLine(m, props.highlightSlug, props.selectedLine, props.selectedTrackName) }, [props.highlightSlug, props.selectedLine, props.selectedTrackName])
+  useEffect(() => { const m = mapRef.current; if (m && loaded.current) highlightLine(m, props.highlightSlug, props.selectedLine, props.selectedTrackName) }, [props.highlightSlug, Array.isArray(props.selectedLine) ? props.selectedLine.join(',') : props.selectedLine, props.selectedTrackName])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) setFocus(m, props.focusSlug) }, [props.focusSlug])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) updateSelection(m, props.selectedStation) }, [props.selectedStation])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) setOutline(m, props.outline) }, [props.outline])

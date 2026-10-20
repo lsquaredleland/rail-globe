@@ -601,44 +601,63 @@ const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: 
 const HL_NONE = ['==', ['get', 'id'], ''] as Expr   // matches no track piece
 let hlKey = ''          // what was asked for last
 let hlShown = ''        // what is on the map
-let hlCurrent: Highlight | null = null
+let hlCurrent = false
 const hlLoaded = new Map<string, Highlight | null>()   // highlight data already fetched, by key: shown with no wait
 
 function clearHighlight(map: MLMap, setFilter = true) {
   if (hlCurrent && setFilter && map.getLayer(L(TILES, 'hl-fs'))) map.setFilter(L(TILES, 'hl-fs'), HL_NONE)
   if (hlCurrent) (map.getSource(L(TILES, 'hl')) as GeoJSONSource | undefined)?.setData(EMPTY)
-  hlCurrent = null
+  hlCurrent = false
 }
 
-function showHighlight(map: MLMap, h: Highlight) {
+/** Show one or several highlights at once (a station's lines, the services on a track): the union of their track pieces on the
+ *  z9+ layer, one feature per line for the simplified geometry below z9. */
+/** the colour expression of the geometry layer, with the feature properties it reads (`type`, `oc`) fixed to one line's values */
+function pinLine(e: unknown, h: Highlight): unknown {
+  if (!Array.isArray(e)) return e
+  if (e[0] === 'get' && e[1] === 'type') return h.type
+  if (e[0] === 'get' && e[1] === 'oc') return h.oc ?? ['get', '__none']
+  if (e[0] === 'literal') return e
+  return e.map((x) => pinLine(x, h))
+}
+
+function showHighlight(map: MLMap, hs: Highlight[]) {
   clearHighlight(map, false)
-  hlCurrent = h
-  map.setFilter(L(TILES, 'hl-fs'), ['in', ['get', 'id'], ['literal', h.ways]] as Expr)
+  hlCurrent = true
+  const ways = hs.length === 1 ? hs[0].ways : [...new Set(hs.flatMap((h) => h.ways))].sort()
+  map.setFilter(L(TILES, 'hl-fs'), ['in', ['get', 'id'], ['literal', ways]] as Expr)
+  // One line: draw all of it in the line's own colour (what the zoomed-out geometry layer does), not in the colour of each track piece it runs on
+  // (an S-Bahn over intercity track would change colour piece by piece). Several lines: each piece keeps its own colour.
+  const base = map.getPaintProperty(L(TILES, 'hl'), 'line-color')
+  map.setPaintProperty(L(TILES, 'hl-fs'), 'line-color', (hs.length === 1 ? pinLine(base, hs[0]) : base) as never)
   const src = map.getSource(L(TILES, 'hl')) as GeoJSONSource | undefined
-  if (src && h.geom) src.setData({ type: 'Feature', properties: { type: h.type, ...(h.oc ? { oc: h.oc } : {}) }, geometry: h.geom })
+  src?.setData({ type: 'FeatureCollection', features: hs.filter((h) => h.geom).map((h) => ({ type: 'Feature', properties: { type: h.type, ...(h.oc ? { oc: h.oc } : {}) }, geometry: h.geom! })) })
 }
 
-function apply(map: MLMap, key: string, slug: string | null, h: Highlight | null) {
-  if (h && slug) showHighlight(map, h)
+function apply(map: MLMap, key: string, slug: string | null, hs: Highlight[]) {
+  if (hs.length && slug) showHighlight(map, hs)
   else clearHighlight(map)
   hlShown = key
 }
 
-/** Highlight a line (or, with no line, a named railway) of region `slug`: filters the line's track pieces on the highlight layer
- *  and shows its simplified geometry below z9. A line whose data is already loaded is shown at once; otherwise its data is fetched once the pointer rests. */
-export function highlightLine(map: MLMap, slug: string | null, lineId: number | null, trackName: string | null = null) {
-  const key = slug && (lineId != null || trackName != null) ? `${slug}|${lineId ?? ''}|${trackName ?? ''}` : ''
+/** Highlight a line, several lines (all of one region `slug`) or, with no line, a named railway: filters the lines' track pieces on the highlight
+ *  layer and shows their simplified geometry below z9. Data already loaded is shown at once; otherwise it is fetched (the pointer may have moved on by then: hlKey). */
+export function highlightLine(map: MLMap, slug: string | null, lineIds: number | number[] | null, trackName: string | null = null) {
+  const ids = lineIds == null ? [] : Array.isArray(lineIds) ? lineIds : [lineIds]
+  const key = slug && (ids.length || trackName != null) ? `${slug}|${ids.join(',')}|${trackName ?? ''}` : ''
   if (key === hlKey) return
   hlKey = key
   if (key === hlShown) return
-  if (!key) { apply(map, '', null, null); return }
-  if (hlLoaded.has(key)) { apply(map, key, slug, hlLoaded.get(key)!); return }
-  // no delay: a hover starts loading at once (a line's file is a few KB and cached after the first time); a pointer that has
-  // moved on by the time it arrives is ignored (hlKey)
+  if (!key) { apply(map, '', null, []); return }
+  const parts = ids.length ? ids.map((id) => `${slug}|${id}`) : [`${slug}|n|${trackName}`]
+  const ready = () => parts.map((k) => hlLoaded.get(k)).filter((h): h is Highlight => !!h)
+  if (parts.every((k) => hlLoaded.has(k))) { apply(map, key, slug, ready()); return }
   void (async () => {
-    const h = await (lineId != null ? loadLineHighlight(slug!, lineId) : loadNameHighlight(slug!, trackName!)).catch(() => null)
-    hlLoaded.set(key, h)
-    if (hlKey === key) apply(map, key, slug, h)   // else something else was asked for while this loaded
+    await Promise.all(parts.filter((k) => !hlLoaded.has(k)).map(async (k) => {
+      const h = await (ids.length ? loadLineHighlight(slug!, Number(k.split('|')[1])) : loadNameHighlight(slug!, trackName!)).catch(() => null)
+      hlLoaded.set(k, h)
+    }))
+    if (hlKey === key) apply(map, key, slug, ready())   // else something else was asked for while this loaded
   })()
 }
 

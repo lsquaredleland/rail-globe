@@ -97,7 +97,7 @@ a { color: var(--ink); }
 .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; padding: 12px; background: var(--fill2); border-radius: 8px; }
 .facts > div { display: flex; flex-direction: column; gap: 2px; } .facts .v { font-size: 15px; font-weight: 500; }
 section { display: flex; flex-direction: column; gap: 8px; }
-.grp { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.grp { display: flex; flex-direction: column; gap: 0; margin-bottom: 6px; }   /* no gap between rows: the hover areas touch, so the highlight never drops out between two lines */
 .grp-head { display: flex; align-items: center; gap: 8px; font-weight: 600; padding: 4px 0; } .count { margin-left: auto; color: var(--ink3); font-weight: 400; }
 .line-row { display: flex; align-items: center; gap: 10px; min-height: 40px; width: 100%; padding: 4px 8px; border: 0; background: transparent; border-radius: 6px; text-align: left; }
 .line-row:hover { background: var(--fill); } .pad-l { padding-left: 8px; }
