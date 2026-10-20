@@ -194,7 +194,7 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
         // the overview always carries a zoom range: without one the file is from before the rename
         if *file == "track_overview.geojsonl" {
             let first = all.iter().find(|a| a.0 as usize == fi).map(|a| &files[fi][a.1 as usize..(a.1 + a.2) as usize]);
-            assert!(first.map_or(true, |l| String::from_utf8_lossy(l).contains("\"zoom\":")), "{slug}: stale tile input (no \"zoom\" member); run `rail-extract build {slug}` again");
+            assert!(first.is_none_or(|l| String::from_utf8_lossy(l).contains("\"zoom\":")), "{slug}: stale tile input (no \"zoom\" member); run `rail-extract build {slug}` again");
         }
     }
     eprintln!("[{:6.2}s] {} files, {} features indexed by line; parsing for the index", t0.elapsed().as_secs_f64(), files.len(), all.len());
@@ -208,7 +208,7 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
                 let li = file_info[fi as usize].2;
                 let bytes = &files[fi as usize][off as usize..(off + len) as usize];
                 let mut f: Feature = serde_json::from_slice(bytes).unwrap_or_else(|e| panic!("{}: bad feature: {e}", file_info[fi as usize].0));
-                assert!(f.foreign_members.as_ref().map_or(true, |m| !m.contains_key("tippecanoe")), "{}: stale tile input (\"tippecanoe\" member); run `rail-extract build {}` again", file_info[fi as usize].0, file_info[fi as usize].0);
+                assert!(f.foreign_members.as_ref().is_none_or(|m| !m.contains_key("tippecanoe")), "{}: stale tile input (\"tippecanoe\" member); run `rail-extract build {}` again", file_info[fi as usize].0, file_info[fi as usize].0);
                 let tp = f.foreign_members.take().and_then(|m| m.get("zoom").cloned()).unwrap_or(Value::Null);
                 let lo = u8::try_from(tp["minzoom"].as_u64().unwrap_or(0)).unwrap_or(u8::MAX).min(MAX_ZOOM);
                 let hi = u8::try_from(tp["maxzoom"].as_u64().unwrap_or(u64::from(MAX_ZOOM))).unwrap_or(u8::MAX).min(MAX_ZOOM);

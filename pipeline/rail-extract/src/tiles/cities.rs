@@ -77,8 +77,8 @@ pub(super) fn city_dots(samples: &[(f64, f64, f64, u8)]) -> String {
         }
     }
     let mut groups: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
-    for i in 0..samples.len() {
-        groups.entry(owner[i]).or_default().push(i);
+    for (i, &o) in owner.iter().enumerate() {
+        groups.entry(o).or_default().push(i);
     }
     let mut out = String::new();
     for members in groups.values() {

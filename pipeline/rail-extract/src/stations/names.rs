@@ -152,7 +152,7 @@ pub(super) fn place_before(name: &str, kind: &str) -> Option<String> {
     let p = re.with(|r| r.captures(name.trim()).map(|c| c[1].trim().to_string()))?;
     // the VBB form "Berlin, S Hauptbahnhof" / "Berlin, S+U Wedding" names its place before the comma
     let p = match p.split_once(", ") {
-        Some((place, line)) if matches!(line, "S" | "U" | "S+U" | "U+S") => place.trim().to_string(),
+        Some((place, "S" | "U" | "S+U" | "U+S")) => place.trim().to_string(),
         Some(_) => return None,
         None => p,
     };
@@ -165,7 +165,7 @@ pub(super) fn place_before(name: &str, kind: &str) -> Option<String> {
 /// "Bremen" + "Hauptbahnhof" -> "Bremen Hauptbahnhof"; French: "Gare de Lyon", "Gare d'Orléans"
 pub(super) fn qualified(place: &str, kind: &str) -> String {
     if kind == "Gare" {
-        let v = place.chars().next().map_or(false, |c| "AEIOUHÀÉÈÎÔÂ".contains(c));
+        let v = place.chars().next().is_some_and(|c| "AEIOUHÀÉÈÎÔÂ".contains(c));
         return if v { format!("Gare d'{place}") } else { format!("Gare de {place}") };
     }
     format!("{place} {kind}")

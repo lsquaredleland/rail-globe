@@ -10,6 +10,7 @@
 //!      member nodes are needed even when untagged (multipolygon outlines; route stops for the smart-extract membership rule).
 //!   2. ways: rail candidates by tag, plus the member ways of pass 1. Node refs are decoded only for kept ways.
 //!   3. nodes, once: coordinates of every node a kept way or relation needs, the tagged rail nodes, and the place=city / town nodes.
+//!
 //! Tag-only selection (no roads) needs only one node pass after the tags-only pass 0.
 
 use crate::cache::{self, *};
@@ -48,7 +49,7 @@ struct Kv<'a, 'b> {
 impl Tags for Kv<'_, '_> {
     #[inline]
     fn get(&self, k: &[u8]) -> Option<&[u8]> {
-        self.kv.chunks_exact(2).find(|p| self.blk.s(p[0]) == k).map(|p| self.blk.s(p[1]))
+        self.kv.as_chunks::<2>().0.iter().find(|p| self.blk.s(p[0]) == k).map(|p| self.blk.s(p[1]))
     }
 }
 
@@ -127,9 +128,9 @@ fn city_wikidata(f: &File, nodes: &[BlobRef]) -> std::collections::HashSet<Vec<u
                         if kv.is_empty() {
                             return;
                         }
-                        let city = kv.chunks_exact(2).any(|p| place.contains(&p[0]) && blk.s(p[1]) == b"city");
+                        let city = kv.as_chunks::<2>().0.iter().any(|p| place.contains(&p[0]) && blk.s(p[1]) == b"city");
                         if city {
-                            if let Some(p) = kv.chunks_exact(2).find(|p| wd.contains(&p[0])) {
+                            if let Some(p) = kv.as_chunks::<2>().0.iter().find(|p| wd.contains(&p[0])) {
                                 out.push(blk.s(p[1]).to_vec());
                             }
                         }
@@ -351,11 +352,11 @@ fn nodes_pass(f: &File, blobs: &[BlobRef], need: &[i64]) -> Vec<NodeBlk> {
                         }
                         let needed = j < need.len() && need[j] == id;
                         let tagged = !kv.is_empty()
-                            && kv.chunks_exact(2).any(|p| quick.contains(&p[0]))
+                            && kv.as_chunks::<2>().0.iter().any(|p| quick.contains(&p[0]))
                             && rules::node_kind(&Kv { blk: &blk, kv }).is_some();
                         let place = !kv.is_empty()
-                            && kv.chunks_exact(2).any(|p| place_k.contains(&p[0]) && matches!(blk.s(p[1]), b"city" | b"town"));
-                        if !place && !kv.is_empty() && kv.chunks_exact(2).any(|p| place_k.contains(&p[0]) && blk.s(p[1]) == b"village") {
+                            && kv.as_chunks::<2>().0.iter().any(|p| place_k.contains(&p[0]) && matches!(blk.s(p[1]), b"city" | b"town"));
+                        if !place && !kv.is_empty() && kv.as_chunks::<2>().0.iter().any(|p| place_k.contains(&p[0]) && blk.s(p[1]) == b"village") {
                             o.villages += 1;
                         }
                         if !needed && !tagged && !place {
@@ -364,7 +365,7 @@ fn nodes_pass(f: &File, blobs: &[BlobRef], need: &[i64]) -> Vec<NodeBlk> {
                         let (lat, lon) = (blk.lat7(la), blk.lon7(lo));
                         if place {
                             o.places.push((id, lat, lon));
-                            let pairs = kv.chunks_exact(2).map(|p| (blk.s(p[0]), blk.s(p[1]))).filter(|(k, _)| rules::place_key(k));
+                            let pairs = kv.as_chunks::<2>().0.iter().map(|p| (blk.s(p[0]), blk.s(p[1]))).filter(|(k, _)| rules::place_key(k));
                             put_var(&mut o.ptags, pairs.clone().count() as u64);
                             for (k, v) in pairs {
                                 put_bytes(&mut o.ptags, k);
@@ -377,7 +378,7 @@ fn nodes_pass(f: &File, blobs: &[BlobRef], need: &[i64]) -> Vec<NodeBlk> {
                         }
                         if tagged {
                             o.tagged.push((id, lat, lon));
-                            ser_tags(&mut o.tags, kv.chunks_exact(2).map(|p| (blk.s(p[0]), blk.s(p[1]))));
+                            ser_tags(&mut o.tags, kv.as_chunks::<2>().0.iter().map(|p| (blk.s(p[0]), blk.s(p[1]))));
                             o.tag_end.push(o.tags.len());
                         }
                     });
@@ -602,7 +603,7 @@ pub fn build(planet: &Path, out: &Path) {
 
     // ---- index the blobs (cached beside the output) and find where nodes, ways and relations start
     let (blobs, from_cache) = index(f, &out.with_extension("blobidx")).expect("PBF index");
-    let sorted = blobs.first().map_or(false, |b| !b.data && header_sorted(f, b));
+    let sorted = blobs.first().is_some_and(|b| !b.data && header_sorted(f, b));
     assert!(sorted, "the input is not marked Sort.Type_then_ID (sort it with `osmium sort` first)");
     let data: Vec<BlobRef> = blobs.into_iter().filter(|b| b.data).collect();
     let n = data.len();
@@ -730,6 +731,7 @@ fn simplify(p: &[(i32, i32)], tol_deg: f64) -> Vec<(i32, i32)> {
         let (dx, dy) = (bx - ax, by - ay);
         let len2 = dx * dx + dy * dy;
         let (mut best, mut bi) = (-1.0, a);
+        #[allow(clippy::needless_range_loop)] // `i` is also the result index
         for i in a + 1..b {
             let (px, py) = xy(p[i]);
             let d2 = if len2 == 0.0 {

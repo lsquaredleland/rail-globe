@@ -55,7 +55,7 @@ pub(super) fn demote_construction(slug: &str, sc: &Scan, stations: &mut [Value],
     let mut demoted = 0;
     for stv in stations.iter_mut() {
         let p = &stv["properties"];
-        if p["construction"].as_bool() != Some(true) && p["line_counts"].as_object().map_or(true, |o| o.is_empty()) {
+        if p["construction"].as_bool() != Some(true) && p["line_counts"].as_object().is_none_or(|o| o.is_empty()) {
             let allowed: FxHashSet<&str> = p["modes"].as_array().into_iter().flatten().filter_map(Value::as_str).flat_map(|m| mode_types(m).iter().copied()).collect();
             let pg = Geometry::Point(station_pt(stv));
             let near = |tree: &Index, rows: &[(geomx::G, String)]| -> BTreeSet<String> {

@@ -88,7 +88,7 @@ impl Logos {
         if ids.is_empty() {
             eprintln!("warning: no logos/logos.json found above {}; stations get no logo", out.display());
         }
-        let china = inp.cfg.get("china").map_or(false, |v| match v { Value::Bool(b) => *b, Value::String(s) => !s.is_empty() && s != "false", Value::Number(n) => n.as_f64() != Some(0.0), _ => false });
+        let china = inp.cfg.get("china").is_some_and(|v| match v { Value::Bool(b) => *b, Value::String(s) => !s.is_empty() && s != "false", Value::Number(n) => n.as_f64() != Some(0.0), _ => false });
         Logos { ids, china }
     }
 
@@ -110,7 +110,7 @@ impl Logos {
         if let Some(best) = n.into_iter().max_by_key(|e| e.1) {
             return Some(best.0);
         }
-        (self.china && p["modes"].as_array().map_or(false, |m| m.iter().any(|x| x.as_str() == Some("train"))) && self.ids.contains("Q1073489"))
+        (self.china && p["modes"].as_array().is_some_and(|m| m.iter().any(|x| x.as_str() == Some("train"))) && self.ids.contains("Q1073489"))
             .then(|| "Q1073489".to_string())
     }
 }

@@ -120,7 +120,7 @@ fn config_group(config_dir: &Path, slug: &str) -> Option<String> {
 
 /// True when the config file itself starts from a template (has an `extends` key).
 fn extends_template(path: &Path) -> bool {
-    fs::read_to_string(path).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).map_or(false, |v| v.get("extends").is_some())
+    fs::read_to_string(path).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).is_some_and(|v| v.get("extends").is_some())
 }
 
 /// Fill the slug-specific keys of the template from the region's outline properties: stat_name <- name_en (else name),

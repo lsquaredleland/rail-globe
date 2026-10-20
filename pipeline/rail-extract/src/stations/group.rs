@@ -93,11 +93,11 @@ fn platform_modes(feats: &Feats, k: usize) -> BTreeSet<String> {
         }
         // a surface platform with a heavy-rail track beside it is not a metro platform because a metro tunnel runs under it
         // (Changsha South: line 2 and 4 under the high-speed station): the nearest surface heavy-rail track decides
-        let below = platforms[k].p("tunnel").map_or(false, |v| v != "no") || platforms[k].p("layer").map_or(false, |v| v.starts_with('-'));
+        let below = platforms[k].p("tunnel").is_some_and(|v| v != "no") || platforms[k].p("layer").is_some_and(|v| v.starts_with('-'));
         if !below && pm.iter().all(|m| m == "subway" || m == "light_rail") {
             let g = &platforms[k].g;
-            let hv = track_tree.near(g, 25.0).into_iter().filter(|&i| matches!(track_mode(tracks[i].p("type").unwrap_or("")), "train") && tracks[i].p("tunnel").map_or(true, |v| v == "no") && geomx::dist(&tracks[i].g, g) <= 25.0).count();
-            let under = track_tree.near(g, 25.0).into_iter().filter(|&i| matches!(track_mode(tracks[i].p("type").unwrap_or("")), "subway" | "light_rail") && geomx::dist(&tracks[i].g, g) <= 25.0).all(|i| tracks[i].p("tunnel").map_or(false, |v| v != "no"));
+            let hv = track_tree.near(g, 25.0).into_iter().filter(|&i| matches!(track_mode(tracks[i].p("type").unwrap_or("")), "train") && tracks[i].p("tunnel").is_none_or(|v| v == "no") && geomx::dist(&tracks[i].g, g) <= 25.0).count();
+            let under = track_tree.near(g, 25.0).into_iter().filter(|&i| matches!(track_mode(tracks[i].p("type").unwrap_or("")), "subway" | "light_rail") && geomx::dist(&tracks[i].g, g) <= 25.0).all(|i| tracks[i].p("tunnel").is_some_and(|v| v != "no"));
             if hv > 0 && under {
                 pm = BTreeSet::from(["train".to_string()]);
             }
@@ -140,6 +140,7 @@ fn assign_platforms(feats: &mut Feats, st: &mut [Station], by_area_ix: &FxHashMa
         }
     }
     let anchor_tree = Index::new(anchors.iter().map(geomx::bbox));
+    #[allow(clippy::needless_range_loop)] // `k` is also stored in the result
     for k in 0..platforms.len() {
         if given.contains(platforms[k].id()) {
             continue;
@@ -154,7 +155,7 @@ fn assign_platforms(feats: &mut Feats, st: &mut [Station], by_area_ix: &FxHashMa
                 continue;
             }
             let d = geomx::dist(&anchors[ai], &cg);
-            if d <= max_radius(&st[i].modes) * if pm.is_empty() { 0.5 } else { 1.0 } && best.map_or(true, |(_, bd)| d < bd) {
+            if d <= max_radius(&st[i].modes) * if pm.is_empty() { 0.5 } else { 1.0 } && best.is_none_or(|(_, bd)| d < bd) {
                 best = Some((i, d));
             }
         }
@@ -169,7 +170,7 @@ fn assign_platforms(feats: &mut Feats, st: &mut [Station], by_area_ix: &FxHashMa
                         .collect();
                     if !near.is_empty() {
                         best = near.into_iter().map(|i| (i, geomx::dist_pt(&cg, &st[i].pt))).fold(None, |a: Option<(usize, f64)>, (i, d)| {
-                            if a.map_or(true, |(_, bd)| d < bd) { Some((i, d)) } else { a }
+                            if a.is_none_or(|(_, bd)| d < bd) { Some((i, d)) } else { a }
                         }).map(|x| x.0);
                         break;
                     }
@@ -192,7 +193,7 @@ fn combine(platforms: &[It], ms: &[&Station]) -> Station {
     let grouping = if all_mapped && ms.len() == 1 { "mapped" } else if ms.len() > 1 && !any_mapped { "inferred" } else { "mapped" };
     let mut seen = FxHashSet::default();
     let plats: Vec<usize> = ms.iter().flat_map(|m| m.platforms.iter().copied()).filter(|&x| seen.insert(platforms[x].id().to_string())).collect();
-    let lead = ms.iter().fold(None, |a: Option<&&Station>, m| if a.map_or(true, |b| m.platforms.len() > b.platforms.len()) { Some(m) } else { a }).unwrap();
+    let lead = ms.iter().fold(None, |a: Option<&&Station>, m| if a.is_none_or(|b| m.platforms.len() > b.platforms.len()) { Some(m) } else { a }).unwrap();
     Station {
         feats: ms.iter().flat_map(|m| m.feats.iter().copied()).collect(),
         modes: ms.iter().flat_map(|m| m.modes.iter().cloned()).collect(),
@@ -374,7 +375,7 @@ fn merge_second_dot(feats: &Feats, rels: &Rels, stn: Vec<Station>, old_to_new: V
                 if other_wd {
                     continue;
                 }
-                if d <= SECOND_DOT_NAMELESS_M && near_named.map_or(true, |(bd, _)| d < bd) {
+                if d <= SECOND_DOT_NAMELESS_M && near_named.is_none_or(|(bd, _)| d < bd) {
                     near_named = Some((d, j));
                 }
                 continue;

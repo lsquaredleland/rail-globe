@@ -133,7 +133,7 @@ fn feature(t: &List, k: u8, id: i64, geom: &[u8], label: String, ctx: &Ctx) -> F
 /// decides, by name; else tags do: `public_transport=station`, `train=yes` or a UIC code. A bare `railway=station` is often a freight yard
 /// or a siding stop, and the OSM wiki says stations that handle freight only must not carry `public_transport=station`.
 fn passenger_station(t: &List, cfg: Option<&classify::Cfg>) -> bool {
-    let tags = is(t, b"public_transport", b"station") || is(t, b"train", b"yes") || t.get(b"uic_ref").is_some() || cfg.map_or(false, |c| c.bare_stations_count());
+    let tags = is(t, b"public_transport", b"station") || is(t, b"train", b"yes") || t.get(b"uic_ref").is_some() || cfg.is_some_and(|c| c.bare_stations_count());
     match cfg {
         Some(c) => c.passenger_station(t.get(b"name").map(txt).as_deref(), tags),
         None => tags,
@@ -379,7 +379,7 @@ fn relations_in_region<'c>(c: &'c Cache, reg: &Region, way_state: &mut [u8]) -> 
         .map(|(_, r)| {
             r.mem.iter().any(|m| match m.t {
                 0 => m.lat != MISSING && reg.contains(m.lat, m.lon),
-                1 => c.find_way(m.id).map_or(false, |i| way_state[i] == 1),
+                1 => c.find_way(m.id).is_some_and(|i| way_state[i] == 1),
                 _ => false,
             })
         })
@@ -389,7 +389,7 @@ fn relations_in_region<'c>(c: &'c Cache, reg: &Region, way_state: &mut [u8]) -> 
     loop {
         let mut changed = false;
         for k in 0..rels.len() {
-            if !incl[k] && rels[k].1.mem.iter().any(|m| m.t == 2 && pos.get(&m.id).map_or(false, |&q| incl[q])) {
+            if !incl[k] && rels[k].1.mem.iter().any(|m| m.t == 2 && pos.get(&m.id).is_some_and(|&q| incl[q])) {
                 incl[k] = true;
                 changed = true;
             }
@@ -488,7 +488,7 @@ fn relation_rows(c: &Cache, rels: &[(u32, Rel)], incl: &[bool]) -> (Ctx, Vec<Row
             }
             fm = false;
             o.extend_from_slice(b"{\"type\":\"");
-            o.extend_from_slice(osm_type([b'n', b'w', b'r'][m.t.min(2) as usize]).as_bytes());
+            o.extend_from_slice(osm_type(b"nwr"[m.t.min(2) as usize]).as_bytes());
             o.extend_from_slice(b"\",\"id\":");
             int(&mut o, m.id);
             o.extend_from_slice(b",\"role\":");
@@ -519,11 +519,11 @@ fn relation_rows(c: &Cache, rels: &[(u32, Rel)], incl: &[bool]) -> (Ctx, Vec<Row
             }
             RelKind::StopArea => {
                 for m in &r.mem {
-                    ctx.member_area.insert(([b'n', b'w', b'r'][m.t.min(2) as usize], m.id), rid.clone());
+                    ctx.member_area.insert((b"nwr"[m.t.min(2) as usize], m.id), rid.clone());
                 }
             }
             RelKind::StopAreaGroup => {
-                group_members = r.mem.iter().map(|m| format!("{}/{}", osm_type([b'n', b'w', b'r'][m.t.min(2) as usize]), m.id)).collect();
+                group_members = r.mem.iter().map(|m| format!("{}/{}", osm_type(b"nwr"[m.t.min(2) as usize]), m.id)).collect();
             }
             _ => {}
         }
@@ -681,7 +681,7 @@ impl<'a> Emit<'a> {
         }
         for (k, r) in way_res.into_iter().enumerate() {
             match r {
-                WayRes::Feat(_, true) if cfg.is_some() && ctx.way_routes.get(&wi[ext[k] as usize].id).map_or(true, |s| s.is_empty()) && is_stray(&ways[k].ll, &track_ends) => {
+                WayRes::Feat(_, true) if cfg.is_some() && ctx.way_routes.get(&wi[ext[k] as usize].id).is_none_or(|s| s.is_empty()) && is_stray(&ways[k].ll, &track_ends) => {
                     self.count("dropped:stray_track".into()); // under STRAY_M long, touching no other track, on no route
                 }
                 WayRes::Feat(f, is_track) => {
@@ -845,7 +845,7 @@ fn qa_json(slug: &str, e: &Emit, k: &Kept, n_routes: i64) -> Vec<u8> {
             "orphan_station_sample",
             J::Arr(orphans.iter().take(25).map(|o| J::obj(vec![("osm_id", J::s(o.0.clone())), ("name", J::opt(o.1.clone()))])).collect()),
         ),
-        ("stations_without_name", J::Int(e.stations.iter().filter(|s| s.1.as_deref().map_or(true, str::is_empty)).count() as i64)),
+        ("stations_without_name", J::Int(e.stations.iter().filter(|s| s.1.as_deref().is_none_or(str::is_empty)).count() as i64)),
     ]);
     let mut qa_bytes = Vec::new();
     qa.write_pretty(&mut qa_bytes, 0);

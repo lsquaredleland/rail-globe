@@ -136,14 +136,14 @@ fn area_point(polys: &[Polygon<f64>]) -> Option<Point<f64>> {
         let mut pt = Point::from(shell.0[0]);
         let mut width = 0.0;
         xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        for pair in xs.chunks_exact(2) {
+        for pair in xs.as_chunks::<2>().0 {
             let w = pair[1] - pair[0];
             if w > width {
                 width = w;
                 pt = Point::new(avg(pair[0], pair[1]), y);
             }
         }
-        if best.map_or(true, |(bw, _)| width > bw) {
+        if best.is_none_or(|(bw, _)| width > bw) {
             best = Some((width, pt));
         }
     }
@@ -166,7 +166,7 @@ fn line_point(lines: &[LineString<f64>]) -> Option<Point<f64>> {
     let mut best: Option<(f64, Coord<f64>)> = None;
     let add = |c: Coord<f64>, best: &mut Option<(f64, Coord<f64>)>| {
         let d = ((c.x - cx).powi(2) + (c.y - cy).powi(2)).sqrt();
-        if best.map_or(true, |(bd, _)| d < bd) {
+        if best.is_none_or(|(bd, _)| d < bd) {
             *best = Some((d, c));
         }
     };
@@ -264,7 +264,7 @@ pub struct Index {
 }
 
 impl Index {
-    pub fn new<'a>(geoms: impl Iterator<Item = Option<Rect<f64>>>) -> Index {
+    pub fn new(geoms: impl Iterator<Item = Option<Rect<f64>>>) -> Index {
         let items = geoms
             .enumerate()
             .filter_map(|(i, r)| r.map(|r| GeomWithData::new(Rectangle::from_corners([r.min().x, r.min().y], [r.max().x, r.max().y]), i)))

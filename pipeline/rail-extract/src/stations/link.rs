@@ -56,7 +56,7 @@ pub(super) fn stop_positions(m: &Model, proj: &super::features::Proj) -> (NodeSt
                 continue;
             }
             let score = d - if !nn.is_empty() && nn == st[i].norm { 500.0 } else { 0.0 };
-            if best.map_or(true, |(_, b)| score < b) {
+            if best.is_none_or(|(_, b)| score < b) {
                 best = Some((i, score));
             }
         }
@@ -188,7 +188,7 @@ pub(super) fn complexes(m: &Model, sizes: &[Size]) -> Complexes {
     let mut rows: Vec<Complex> = Vec::new();
     for idxs in groups(&mut cuf, st.len()) {
         let biggest = idxs.iter().copied().fold(None, |a: Option<usize>, i| {
-            if a.map_or(true, |b| (sizes[i].score, sizes[i].mainline_platforms) > (sizes[b].score, sizes[b].mainline_platforms)) { Some(i) } else { a }
+            if a.is_none_or(|b| (sizes[i].score, sizes[i].mainline_platforms) > (sizes[b].score, sizes[b].mainline_platforms)) { Some(i) } else { a }
         }).unwrap();
         let gid = m.rels.group_rows.iter().find(|g| group_stations(g).iter().any(|si| idxs.contains(si))).and_then(|g| g["id"].as_str()).map(String::from);
         let id = gid.clone().unwrap_or_else(|| station_id(&m.feats, &st[biggest]));

@@ -611,14 +611,14 @@ pub fn run(data: &Path, slugs: &[String], out: &Path, name: &str) {
             };
             let lines: Vec<&str> = text.lines().filter(|l| !l.is_empty()).collect();
             // the overview (track_overview) always carries a zoom range: without one the file is from before the rename, rebuild the region
-            assert!(file != "track_overview.geojsonl" || lines.first().map_or(true, |l| l.contains("\"zoom\":")), "{slug}: stale tile input (no \"zoom\" member); run `rail-extract build {slug}` again");
+            assert!(file != "track_overview.geojsonl" || lines.first().is_none_or(|l| l.contains("\"zoom\":")), "{slug}: stale tile input (no \"zoom\" member); run `rail-extract build {slug}` again");
             let feats: Vec<Feature> = lines
                 .par_iter()
                 .enumerate()
                 .map(|(i, l)| serde_json::from_str::<Feature>(l).unwrap_or_else(|e| panic!("{slug}: {file} line {}: bad feature: {e}", i + 1)))
                 .collect();
             for mut f in feats {
-                assert!(f.foreign_members.as_ref().map_or(true, |m| !m.contains_key("tippecanoe")), "{slug}: stale tile input ({file} has a \"tippecanoe\" member); run `rail-extract build {slug}` again");
+                assert!(f.foreign_members.as_ref().is_none_or(|m| !m.contains_key("tippecanoe")), "{slug}: stale tile input ({file} has a \"tippecanoe\" member); run `rail-extract build {slug}` again");
                 let tp = f.foreign_members.as_ref().and_then(|m| m.get("zoom")).cloned().unwrap_or(Value::Null);
                 let (raw_lo, raw_hi) = (tp["minzoom"].as_u64().unwrap_or(0), tp["maxzoom"].as_u64().unwrap_or(MAX_ZOOM as u64));
                 let lo = u8::try_from(raw_lo).unwrap_or(u8::MAX).min(MAX_ZOOM);

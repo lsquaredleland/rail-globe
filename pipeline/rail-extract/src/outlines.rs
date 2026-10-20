@@ -135,7 +135,7 @@ pub fn interior_point(polys: &[Poly]) -> Option<(f64, f64)> {
         }
     }
     xs.sort_by(|a, b| a.total_cmp(b));
-    xs.chunks_exact(2).max_by(|a, b| (a[1] - a[0]).total_cmp(&(b[1] - b[0]))).map(|s| (lat, (s[0] + s[1]) / 2.0))
+    xs.as_chunks::<2>().0.iter().max_by(|a, b| (a[1] - a[0]).total_cmp(&(b[1] - b[0]))).map(|s| (lat, (s[0] + s[1]) / 2.0))
 }
 
 /// lower-case ASCII slug; common Latin accents folded ("Île-de-France" -> "ile-de-france")
@@ -184,7 +184,7 @@ fn feature_bytes(slug: &str, b: &Bnd, name_en: Option<&str>, cc: Option<&str>, i
             ("name", b.name.as_deref()),
             ("name_en", name_en),
             ("admin_level", Some(b.level.as_str())),
-            ("country", cc.as_deref()),
+            ("country", cc),
             ("iso", iso),
         ] {
             o.push(b',');
@@ -253,7 +253,7 @@ pub fn city_outlines(c: &Cache, wanted_file: &Path, out: &Path) {
     for b in all.iter().filter(|b| b.level != "2") {
         if let Some(w) = b.wikidata.as_deref().filter(|w| want.contains_key(w)) {
             let lvl = |x: &Bnd| x.level.parse::<u32>().unwrap_or(0);
-            if best.get(w).map_or(true, |o| lvl(b) > lvl(o)) {
+            if best.get(w).is_none_or(|o| lvl(b) > lvl(o)) {
                 best.insert(w, b);
             }
         }
@@ -350,7 +350,7 @@ pub fn outlines(c: &Cache, level: &str, country: Option<&str>, out: &Path) {
         .par_iter()
         .filter(|b| b.level == level)
         .map(|b| (b, country_of(b)))
-        .filter(|(_, cc)| want.as_ref().map_or(true, |w| cc.as_deref().map(str::to_ascii_uppercase).as_ref() == Some(w)))
+        .filter(|(_, cc)| want.as_ref().is_none_or(|w| cc.as_deref().map(str::to_ascii_uppercase).as_ref() == Some(w)))
         .collect();
     picked.sort_by_key(|(b, _)| b.id);
 

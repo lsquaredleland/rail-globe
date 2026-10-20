@@ -83,8 +83,8 @@ impl<'a> Scan<'a> {
         for fe in &inp.feats {
             let p = &fe.p;
             let t = s(p, "type").filter(|v| !v.is_empty());
-            if fe.gtype == "LineString" && t.is_some() {
-                sc.add_track(fe, t.unwrap(), lk);
+            if let (true, Some(t)) = (fe.gtype == "LineString", t) {
+                sc.add_track(fe, t, lk);
             } else if fe.gtype == "Polygon" || fe.gtype == "MultiPolygon" {
                 sc.add_area(fe);
             } else if fe.gtype == "LineString" && (s(p, "railway") == Some("platform") || s(p, "public_transport") == Some("platform")) {
@@ -105,7 +105,7 @@ impl<'a> Scan<'a> {
         }
         let prop = s(p, "railway") == Some("proposed");
         let con = s(p, "railway") == Some("construction") || prop;
-        if !con && s(p, "service").map_or(true, str::is_empty) {
+        if !con && s(p, "service").is_none_or(str::is_empty) {
             self.sample_city_track(p, t, &c);
         }
         let mut lids: Vec<&str> = p.get("_routes").and_then(Value::as_array).into_iter().flatten()
@@ -181,8 +181,8 @@ impl<'a> Scan<'a> {
             tr: nonempty(p, "tracks"), n: nonempty(p, "name"), fq: nonempty(p, "frequency"),
             kmh: speed_kmh(s(p, "maxspeed")).filter(|k| *k != 0.0).map(|k| k.round_ties_even() as i64),
             n_rwy: None, ne: None, sv: nonempty(p, "service"),
-            tun: s(p, "tunnel").map_or(false, |v| !v.is_empty() && v != "no"),
-            br: s(p, "bridge").map_or(false, |v| !v.is_empty() && v != "no"),
+            tun: s(p, "tunnel").is_some_and(|v| !v.is_empty() && v != "no"),
+            br: s(p, "bridge").is_some_and(|v| !v.is_empty() && v != "no"),
             con, prop, ln: None, nl: None, oc: None,
         };
         // track with no name of its own is named after its railway (the route=railway relation it belongs to: LGV Sud-Est), not after its services
@@ -270,7 +270,7 @@ impl<'a> Scan<'a> {
                 n: lids.len(),
                 lb: label_of(lk.ls(l, "name"), lk.ls(l, "ref")),
                 lbe: lk.ls(l, "name_en").filter(|v| !v.is_empty()).map(|en| label_of(Some(en), lk.ls(l, "ref"))),
-                rl: rf.is_some() && c.as_deref().map_or(false, is_light),
+                rl: rf.is_some() && c.as_deref().is_some_and(is_light),
                 rf,
                 c,
             }

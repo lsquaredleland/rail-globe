@@ -38,8 +38,8 @@ impl<'a> Airports<'a> {
                 n: nonempty(p, "name"), ne: nonempty(p, "name_en"), iata: nonempty(p, "iata"), icao: nonempty(p, "icao"), op: nonempty(p, "operator"), com: false,
             };
             if s(p, "k") == Some("aerodrome") {
-                let mil = s(p, "military").map_or(false, |v| !v.is_empty()) || s(p, "atype").unwrap_or("").contains("military");
-                let iata = s(p, "iata").map_or(false, |v| !v.is_empty());
+                let mil = s(p, "military").is_some_and(|v| !v.is_empty()) || s(p, "atype").unwrap_or("").contains("military");
+                let iata = s(p, "iata").is_some_and(|v| !v.is_empty());
                 let g = geomx::from_geojson(&a.g, geomx::id);
                 let commercial = iata && !mil && ha >= 300.0;
                 if commercial {

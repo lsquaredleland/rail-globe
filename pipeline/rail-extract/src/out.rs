@@ -149,24 +149,24 @@ impl J {
                 out.push(b'[');
                 for (i, x) in v.iter().enumerate() {
                     out.extend_from_slice(if i > 0 { b",\n" } else { b"\n" });
-                    out.extend(std::iter::repeat(b' ').take(ind + 2));
+                    out.extend(std::iter::repeat_n(b' ', ind + 2));
                     x.write_pretty(out, ind + 2);
                 }
                 out.push(b'\n');
-                out.extend(std::iter::repeat(b' ').take(ind));
+                out.extend(std::iter::repeat_n(b' ', ind));
                 out.push(b']');
             }
             J::Obj(v) => {
                 out.push(b'{');
                 for (i, (k, x)) in v.iter().enumerate() {
                     out.extend_from_slice(if i > 0 { b",\n" } else { b"\n" });
-                    out.extend(std::iter::repeat(b' ').take(ind + 2));
+                    out.extend(std::iter::repeat_n(b' ', ind + 2));
                     py_str(out, k);
                     out.extend_from_slice(b": ");
                     x.write_pretty(out, ind + 2);
                 }
                 out.push(b'\n');
-                out.extend(std::iter::repeat(b' ').take(ind));
+                out.extend(std::iter::repeat_n(b' ', ind));
                 out.push(b'}');
             }
         }

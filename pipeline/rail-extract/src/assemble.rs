@@ -147,7 +147,7 @@ fn assemble_gaps(ways: &[&[P]], strict: bool, max_gap_deg: f64) -> Result<(Vec<P
             while a <= 0.0 {
                 a += std::f64::consts::TAU;
             }
-            if best.map_or(true, |(b, _)| a < b) {
+            if best.is_none_or(|(b, _)| a < b) {
                 best = Some((a, k));
             }
         }
@@ -216,7 +216,7 @@ fn assemble_gaps(ways: &[&[P]], strict: bool, max_gap_deg: f64) -> Result<(Vec<P
     for &r in &order {
         let mut ring = rings[r].clone();
         let ccw = areas[r] > 0;
-        if depth[r] % 2 == 0 {
+        if depth[r].is_multiple_of(2) {
             if !ccw {
                 ring.reverse();
             }
@@ -262,7 +262,7 @@ fn intersects(segs: &[(P, P)]) -> bool {
         if cross(pd, sub(q0, p0)) == 0 {
             // collinear: overlapping unless they only meet end to end
             let mut sl = [(p0, 0), (p1, 0), (q0, 1), (q1, 1)];
-            sl.sort_by(|a, b| a.0.cmp(&b.0));
+            sl.sort_by_key(|a| a.0);
             if sl[1].0 == sl[2].0 {
                 return false;
             }

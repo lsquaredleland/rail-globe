@@ -112,7 +112,7 @@ pub(super) fn con_dashes(out: &mut String, ty: &str, prop: bool, band: i64, merc
         let zc = if b == nb { z + bands.step } else { z + bands.step / 2.0 };
         let px = 1.0 / (512.0 * 2f64.powf(zc));
         let p = ConDashProps { ty: ty.to_string(), prop, kmh: (band >= 0).then_some(band), b }.to_map();
-        for d in cut_dashes(&merc, CON_DASH_PX * px, CON_GAP_PX * px) {
+        for d in cut_dashes(merc, CON_DASH_PX * px, CON_GAP_PX * px) {
             let coords: Vec<Value> = d.iter().map(|&q| { let (x, y) = from_merc(q); json!([x, y]) }).collect();
             feat(out, &p, &pyjson::to_string(&json!({"type": "LineString", "coordinates": coords}), COMPACT), Some(tile_zoom), Some(tile_zoom));
         }

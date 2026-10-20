@@ -34,7 +34,7 @@ impl Model<'_> {
 
     /// is `c` an operator or network of x's features
     fn is_op(&self, x: &Station, c: &str) -> bool {
-        x.feats.iter().any(|&k| ["operator", "network", "operator:short", "brand"].iter().any(|key| self.feats.station_feats[k].p(key).map_or(false, |v| v.split(';').any(|t| t.trim() == c))))
+        x.feats.iter().any(|&k| ["operator", "network", "operator:short", "brand"].iter().any(|key| self.feats.station_feats[k].p(key).is_some_and(|v| v.split(';').any(|t| t.trim() == c))))
     }
 
     /// a name cleaned of operator and format noise (clean_name), judged against the stations around x
@@ -55,7 +55,7 @@ impl Model<'_> {
         let mut best: Option<(f64, String)> = None;
         for j in self.st_tree.near(&here, 800.0) {
             let d = geomx::dist_pt(&here, &st[j].pt);
-            if d > 800.0 || best.as_ref().map_or(false, |b| b.0 <= d) {
+            if d > 800.0 || best.as_ref().is_some_and(|b| b.0 <= d) {
                 continue;
             }
             let names = st[j].feats.iter().flat_map(|&k| [station_feats[k].p("name"), station_feats[k].p("official_name")]).flatten()
@@ -84,8 +84,8 @@ impl Model<'_> {
     fn station_name(&self, x: &Station) -> (Option<String>, Map<String, Value>, Option<String>) {
         let station_feats = &self.feats.station_feats;
         let best = x.feats.iter().copied().fold(None, |a: Option<usize>, k| {
-            let rank = |k: usize| (station_feats[k].p("name").map_or(false, |v| !v.is_empty()), matches!(station_feats[k].g, Geometry::Point(_)));
-            if a.map_or(true, |b| rank(k) > rank(b)) { Some(k) } else { a }
+            let rank = |k: usize| (station_feats[k].p("name").is_some_and(|v| !v.is_empty()), matches!(station_feats[k].g, Geometry::Point(_)));
+            if a.is_none_or(|b| rank(k) > rank(b)) { Some(k) } else { a }
         }).unwrap();
         let own = station_feats[best].p("name").filter(|v| !v.is_empty());
         let area = x.areas.iter().find_map(|sa| {
@@ -116,7 +116,7 @@ impl Model<'_> {
     /// (a stop area named "Dadar (Central)" does not give the station labelled "Dadar" its name:en); a label in another script takes all
     /// of the station's name:* tags, which is where its English comes from (北京 gets "Beijing Railway Station" from its stop area)
     fn name_tags(&self, x: &Station, src: Option<&str>) -> Map<String, Value> {
-        let strict = src.map_or(false, |n| crate::rules::latin(n.as_bytes()));
+        let strict = src.is_some_and(|n| crate::rules::latin(n.as_bytes()));
         let mut t = Map::new();
         for &k in &x.feats {
             let feat = &self.feats.station_feats[k];

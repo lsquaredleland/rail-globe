@@ -203,7 +203,7 @@ fn passenger_needs_evidence_beside_route_or_agency() {
 fn short_piece_is_smoothed_past_a_siding() {
     let line = |pts: Vec<(i32, i32)>, tags: Vec<(&'static [u8], &'static [u8])>| (pts, tags);
     let main = |u: &'static [u8]| vec![(b"usage" as &[u8], u), (b"railway:traffic_mode", b"mixed")];
-    let ways = vec![
+    let ways = [
         line(vec![(0, 0), (0, 100_000)], main(b"branch")),             // way/1 Regional, 1.1 km
         line(vec![(0, 100_000), (0, 101_000)], main(b"main")),         // way/2 Intercity, 11 m
         line(vec![(0, 101_000), (0, 200_000)], main(b"branch")),       // way/3 Regional
@@ -237,7 +237,7 @@ fn short_piece_is_smoothed_past_a_siding() {
 fn intercity_chain_between_regional_track_becomes_regional() {
     let main = |u: &'static [u8]| vec![(b"usage" as &[u8], u), (b"railway:traffic_mode", b"mixed")];
     let seg = |a: i32, b: i32| vec![(0, a), (0, b)];
-    let ways = vec![
+    let ways = [
         (seg(0, 100_000), main(b"branch")),         // way/1 Regional
         (seg(100_000, 200_000), main(b"main")),     // way/2 Intercity
         (seg(200_000, 300_000), main(b"main")),     // way/3 Intercity: a chain of two
@@ -406,10 +406,10 @@ fn route_is_high_speed_by_track_only_for_a_majority() {
     let line_type = |ways: &[(Vec<(&[u8], &[u8])>, Vec<&str>)]| classify_ways(ways, &[route("relation/1", &[])]).1[0]["type"].as_str().unwrap().to_string();
     assert_eq!(line_type(&[hs.clone(), plain.clone(), plain.clone()]), "regional"); // one third: a regional train that crosses a high-speed link
     assert_eq!(line_type(&[hs.clone(), hs.clone(), plain.clone()]), "high_speed");
-    assert_eq!(line_type(&[hs.clone()]), "high_speed");
+    assert_eq!(line_type(std::slice::from_ref(&hs)), "high_speed");
     // a long route with a little high-speed track (GWR London - Penzance) is Intercity
     let mut long = vec![hs.clone()];
-    long.extend(std::iter::repeat(plain.clone()).take(1600)); // each piece is 0.11 km: 176 km, 0.11 km of it high-speed
+    long.extend(std::iter::repeat_n(plain.clone(), 1600)); // each piece is 0.11 km: 176 km, 0.11 km of it high-speed
     assert_eq!(line_type(&long), "intercity");
     // track under construction counts for neither the total nor the high-speed share
     let building: (Vec<(&[u8], &[u8])>, Vec<&str>) = (vec![(b"railway", b"construction"), (b"construction", b"rail"), (b"highspeed", b"yes")], vec!["relation/1"]);

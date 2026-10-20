@@ -145,12 +145,12 @@ impl Rule {
         r
     }
     fn matches<T: Get + ?Sized>(&self, t: &T) -> bool {
-        (self.network.as_deref().map_or(true, |n| t.g("network") == Some(n)))
-            && self.network_re.as_ref().map_or(true, |r| r.is_match(t.g("network").unwrap_or("")))
-            && self.name_re.as_ref().map_or(true, |r| r.is_match(t.g("name").unwrap_or("")))
-            && self.operator_re.as_ref().map_or(true, |r| r.is_match(t.g("operator").unwrap_or("")))
-            && self.ref_.as_deref().map_or(true, |n| t.g("ref") == Some(n))
-            && self.osm_id.as_ref().map_or(true, |ids| t.g("osm_id").map_or(false, |o| ids.iter().any(|i| i == o)))
+        (self.network.as_deref().is_none_or(|n| t.g("network") == Some(n)))
+            && self.network_re.as_ref().is_none_or(|r| r.is_match(t.g("network").unwrap_or("")))
+            && self.name_re.as_ref().is_none_or(|r| r.is_match(t.g("name").unwrap_or("")))
+            && self.operator_re.as_ref().is_none_or(|r| r.is_match(t.g("operator").unwrap_or("")))
+            && self.ref_.as_deref().is_none_or(|n| t.g("ref") == Some(n))
+            && self.osm_id.as_ref().is_none_or(|ids| t.g("osm_id").is_some_and(|o| ids.iter().any(|i| i == o)))
     }
 }
 
@@ -180,7 +180,7 @@ impl Exemption {
         let o = x.as_object().unwrap_or_else(|| panic!("exemptions: each entry must be an object"));
         let id = o.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()).unwrap_or_else(|| panic!("exemptions: every entry needs an id")).to_string();
         let bad = |what: &str| -> ! { panic!("exemption \"{id}\": {what}") };
-        if o.get("reason").and_then(Value::as_str).map_or(true, |s| s.trim().is_empty()) {
+        if o.get("reason").and_then(Value::as_str).is_none_or(|s| s.trim().is_empty()) {
             bad("reason is required (say why the generic rules are wrong here)");
         }
         for k in o.keys() {
@@ -205,7 +205,7 @@ impl Exemption {
         }
         let rule = Rule::parse(&Value::Object(m));
         for i in rule.osm_id.iter().flatten() {
-            let ok = i.split_once('/').map_or(false, |(k, n)| matches!(k, "way" | "relation" | "node") && !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+            let ok = i.split_once('/').is_some_and(|(k, n)| matches!(k, "way" | "relation" | "node") && !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
             if !ok {
                 bad(&format!("osm id {i:?} must look like way/123 or relation/456"));
             }
@@ -263,7 +263,7 @@ impl Cfg {
 
     pub fn passenger_station(&self, name: Option<&str>, tags_say_passengers: bool) -> bool {
         match &self.passenger_names {
-            Some(names) => name.map_or(false, |n| names.contains(n.trim().trim_end_matches('站'))),
+            Some(names) => name.is_some_and(|n| names.contains(n.trim().trim_end_matches('站'))),
             None => tags_say_passengers,
         }
     }
@@ -272,7 +272,7 @@ impl Cfg {
         let v = Value::Object(crate::config::load_file(path));
         let truthy = |x: &Value| match x {
             Value::Bool(b) => *b,
-            Value::Number(n) => n.as_f64().map_or(false, |f| f != 0.0),
+            Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
             Value::String(s) => !s.is_empty(),
             Value::Array(a) => !a.is_empty(),
             Value::Object(o) => !o.is_empty(),
@@ -303,7 +303,7 @@ impl Cfg {
         Cfg {
             exemptions,
             passenger_names,
-            china: v.get("china").map_or(false, truthy),
+            china: v.get("china").is_some_and(truthy),
             type_overrides: overrides("type_overrides"),
             track_type_overrides: overrides("track_type_overrides"),
             hs_track_overrides: v.get("high_speed_track_overrides").and_then(Value::as_array).map_or(Vec::new(), |a| a.iter().map(Rule::parse).collect()),
@@ -353,7 +353,7 @@ pub fn speed_kmh(v: Option<&str>) -> Option<f64> {
 
 /// None and 0 are false
 fn at_least(ms: Option<f64>, v: f64) -> bool {
-    ms.map_or(false, |m| m != 0.0 && m >= v)
+    ms.is_some_and(|m| m != 0.0 && m >= v)
 }
 
 fn highest<'a>(types: impl Iterator<Item = &'a str>) -> Option<&'a str> {
@@ -373,7 +373,7 @@ fn route_type(t: &Owned, cfg: &Cfg, track_hs: HsTrack) -> (String, &'static str)
     let net = t.g("network").unwrap_or("");
     let svc = t.g("service");
     let hs_net = cfg.hs_networks.iter().any(|r| r.is_match(net));
-    let national = svc.map_or(false, |s| s.split(';').any(|v| matches!(v.trim(), "national" | "international")));
+    let national = svc.is_some_and(|s| s.split(';').any(|v| matches!(v.trim(), "national" | "international")));
     if let Some(s) = svc.and_then(service_type) {
         if s == "intercity" && national && hs_net {
             return ("high_speed".into(), "service+network"); // service=international;long_distance on a high-speed network
@@ -389,7 +389,7 @@ fn route_type(t: &Owned, cfg: &Cfg, track_hs: HsTrack) -> (String, &'static str)
     if cfg.china {
         let r = t.g("ref").unwrap_or("");
         let mut ch = r.chars();
-        if ch.next() == Some('C') && ch.next().map_or(false, |c| !c.is_whitespace() && speed_kmh(Some(&c.to_string())).is_some()) {
+        if ch.next() == Some('C') && ch.next().is_some_and(|c| !c.is_whitespace() && speed_kmh(Some(&c.to_string())).is_some()) {
             return ("intercity".into(), "train_number");
         }
     }
@@ -410,7 +410,7 @@ fn own_tag_type<T: Get + ?Sized>(p: &T, cfg: &Cfg) -> (String, &'static str) {
         rw = match mode {
             Some(m) => Some(m),
             None => {
-                let truthy = |k: &str| p.g(k).map_or(false, |v| !v.is_empty());
+                let truthy = |k: &str| p.g(k).is_some_and(|v| !v.is_empty());
                 if !(truthy("usage") || truthy("electrified") || truthy("gauge")) {
                     return ("other".into(), "default");
                 }
@@ -447,7 +447,7 @@ fn own_tag_type<T: Get + ?Sized>(p: &T, cfg: &Cfg) -> (String, &'static str) {
         return ("high_speed".into(), "tags");
     }
     let usage = p.g("usage");
-    if usage.map_or(false, |u| FREIGHT_USAGE.contains(&u)) || p.g("railway:traffic_mode") == Some("freight") {
+    if usage.is_some_and(|u| FREIGHT_USAGE.contains(&u)) || p.g("railway:traffic_mode") == Some("freight") {
         return ("freight".into(), "tags");
     }
     if usage == Some("main") {
@@ -605,7 +605,7 @@ fn freight_by_evidence(tracks: &[TrackIn], cand: &[bool], pax: &[(i32, i32)]) ->
     // branch that runs beside a main line does not get the main line's stations.
     let mut owner: Vec<Option<(f64, usize)>> = vec![None; stations.len()];
     for (ti, t) in tracks.iter().enumerate() {
-        if !matches!(t.props.g("railway"), Some("rail" | "narrow_gauge")) || t.props.g("service").map_or(false, |v| SERVICE_TRACK.contains(&v)) {
+        if !matches!(t.props.g("railway"), Some("rail" | "narrow_gauge")) || t.props.g("service").is_some_and(|v| SERVICE_TRACK.contains(&v)) {
             continue;
         }
         let pts: Vec<(f64, f64)> = t.ll.iter().filter(|p| p.0 != i32::MIN).map(|&p| deg(p)).collect();
@@ -624,7 +624,7 @@ fn freight_by_evidence(tracks: &[TrackIn], cand: &[bool], pax: &[(i32, i32)]) ->
                         seen.push(key);
                         for &si in grid.get(&key).into_iter().flatten() {
                             let d = seg_dist_m(stations[si], w[0], w[1]);
-                            if d <= PAX_NEAR_M && owner[si].map_or(true, |(bd, _)| d < bd) {
+                            if d <= PAX_NEAR_M && owner[si].is_none_or(|(bd, _)| d < bd) {
                                 owner[si] = Some((d, ti));
                             }
                         }
@@ -649,7 +649,7 @@ fn freight_by_evidence(tracks: &[TrackIn], cand: &[bool], pax: &[(i32, i32)]) ->
     }
     // unnamed ways without a ref are joined end to end into one railway
     let mut uf = UnionFind::new(tracks.len());
-    let anon = |t: &TrackIn| t.props.g("name").map_or(true, str::is_empty) && t.props.g("ref").map_or(true, str::is_empty);
+    let anon = |t: &TrackIn| t.props.g("name").is_none_or(str::is_empty) && t.props.g("ref").is_none_or(str::is_empty);
     let mut at: FxHashMap<(i32, i32), usize> = FxHashMap::default();
     for (i, t) in tracks.iter().enumerate() {
         if !cand[i] || !anon(t) {
@@ -745,7 +745,7 @@ pub struct Out {
 
 /// a, or b when a is missing or empty
 fn or<'a>(a: Option<&'a str>, b: Option<&'a str>) -> Option<&'a str> {
-    if a.map_or(false, |s| !s.is_empty()) {
+    if a.is_some_and(|s| !s.is_empty()) {
         a
     } else {
         b
@@ -759,7 +759,7 @@ fn english(t: &Owned) -> Option<&str> {
 /// by count, ties in first-seen order
 fn most_common(v: &[(String, i64)]) -> Vec<(String, J)> {
     let mut v = v.to_vec();
-    v.sort_by(|a, b| b.1.cmp(&a.1));
+    v.sort_by_key(|a| std::cmp::Reverse(a.1));
     v.into_iter().map(|(k, n)| (k, J::Int(n))).collect()
 }
 
@@ -780,7 +780,7 @@ fn con_by_tags<T: Get + ?Sized>(p: &T) -> Option<&str> {
     let c = p.g("construction")?;
     let kind = matches!(c, "rail" | "narrow_gauge" | "subway" | "light_rail" | "tram" | "monorail");
     if matches!(rw, "rail" | "narrow_gauge") {
-        let new_build = p.g("ref").map_or(true, str::is_empty) && (p.g("operator").map_or(false, |o| !o.is_empty()) || p.g("highspeed") == Some("yes"));
+        let new_build = p.g("ref").is_none_or(str::is_empty) && (p.g("operator").is_some_and(|o| !o.is_empty()) || p.g("highspeed") == Some("yes"));
         return (kind && new_build).then_some(rw);
     }
     (kind || matches!(c, "yes" | "railway")).then_some(rw)
@@ -796,7 +796,7 @@ pub fn route_under_construction(t: &Owned) -> bool {
     });
     matches!(t.g("state"), Some("construction" | "proposed" | "planned"))
         || matches!(t.g("railway"), Some("construction" | "proposed"))
-        || t.g("name").map_or(false, |n| re.is_match(n))
+        || t.g("name").is_some_and(|n| re.is_match(n))
 }
 
 /// A route is High-speed "by track" (no service or network rule decided) only when at least this share of its length is high-speed track.
@@ -970,7 +970,7 @@ fn build_lines<'a>(
         // exemptions beat every rule above (a later one beats an earlier one)
         for (xi, x) in cfg.exemptions.iter().enumerate() {
             if let Action::Type(ty) = &x.action {
-                if x.was_source.is_none() && x.was_type.as_deref().map_or(true, |w| w == t) && x.rule.matches(&LineTags(&merged, lid)) {
+                if x.was_source.is_none() && x.was_type.as_deref().is_none_or(|w| w == t) && x.rule.matches(&LineTags(&merged, lid)) {
                     t = ty.clone();
                     ts = "exemption";
                     ex_stats[xi].lines += 1;
@@ -1018,10 +1018,10 @@ fn evidence_candidates(tracks: &[TrackIn], cfg: &Cfg, route_lines: &RouteLines) 
             matches!(p.g("railway"), Some("rail" | "narrow_gauge"))
                 && tr.ll.len() >= 2
                 && !tr.routes.iter().any(|r| route_lines.type_of(r).is_some())
-                && p.g("service").map_or(true, |v| !SERVICE_TRACK.contains(&v))
+                && p.g("service").is_none_or(|v| !SERVICE_TRACK.contains(&v))
                 && !matches!(p.g("railway:traffic_mode"), Some("passenger" | "mixed"))
                 && p.g("usage") != Some("tourism")
-                && !p.g("name").map_or(false, |n| PASSENGER_NAME_WORDS.iter().any(|w| n.contains(w)))   // connectors and loops link passenger lines; the others say passengers
+                && !p.g("name").is_some_and(|n| PASSENGER_NAME_WORDS.iter().any(|w| n.contains(w)))   // connectors and loops link passenger lines; the others say passengers
                 && matches!(own_tag_type(p, cfg), (ref t, "tags" | "default") if t == "intercity" || t == "regional")
         })
         .collect()
@@ -1033,7 +1033,7 @@ fn decide_tracks(tracks: &[TrackIn], cfg: &Cfg, pax: &[(i32, i32)], route_lines:
     let by_name = freight_ways_by_name(tracks, cfg, route_lines);
     let cand = evidence_candidates(tracks, cfg, route_lines);
     let by_evidence = freight_by_evidence(tracks, &cand, pax);
-    let mostly_freight = |name: Option<&str>| name.and_then(|n| by_name.get(n)).map_or(false, |&(f, n)| f >= 5 && f as f64 >= 0.9 * n as f64);
+    let mostly_freight = |name: Option<&str>| name.and_then(|n| by_name.get(n)).is_some_and(|&(f, n)| f >= 5 && f as f64 >= 0.9 * n as f64);
     let mut decided: Vec<Option<Decided>> = Vec::with_capacity(tracks.len());
     for (ti, tr) in tracks.iter().enumerate() {
         let p = &tr.props;
@@ -1042,7 +1042,7 @@ fn decide_tracks(tracks: &[TrackIn], cfg: &Cfg, pax: &[(i32, i32)], route_lines:
             decided.push(None);
             continue;
         }
-        if rw == "proposed" && !cfg.proposed.as_ref().map_or(false, |a| a.contains(tr.first.0, tr.first.1)) {
+        if rw == "proposed" && !cfg.proposed.as_ref().is_some_and(|a| a.contains(tr.first.0, tr.first.1)) {
             decided.push(None);
             continue; // proposed track is only kept inside the region's `proposed_region` (Hong Kong for now)
         }
@@ -1051,7 +1051,7 @@ fn decide_tracks(tracks: &[TrackIn], cfg: &Cfg, pax: &[(i32, i32)], route_lines:
             (ty.clone(), "override")
         } else if p.g("usage") == Some("tourism") {
             ("other".into(), "tags") // tourist and heritage track is always Other, whatever routes or service tags say
-        } else if p.g("service").map_or(false, |v| SERVICE_TRACK.contains(&v)) {
+        } else if p.g("service").is_some_and(|v| SERVICE_TRACK.contains(&v)) {
             ("yard".into(), "service")
         } else {
             let (o, src) = own_tag_type(p, cfg);
@@ -1082,7 +1082,7 @@ fn decide_tracks(tracks: &[TrackIn], cfg: &Cfg, pax: &[(i32, i32)], route_lines:
 fn needs_evidence_pass(tracks: &[TrackIn], cfg: &Cfg, pax: &[(i32, i32)], mode: Evidence, decided: &mut [Option<Decided>]) {
     let passenger = |t: &str| matches!(t, "intercity" | "regional" | "high_speed");
     let routed: Vec<usize> = (0..tracks.len())
-        .filter(|&i| matches!(tracks[i].props.g("railway"), Some("rail" | "narrow_gauge")) && tracks[i].ll.len() >= 2 && decided[i].as_ref().map_or(false, |d| d.s == "route" && passenger(&d.t)))
+        .filter(|&i| matches!(tracks[i].props.g("railway"), Some("rail" | "narrow_gauge")) && tracks[i].ll.len() >= 2 && decided[i].as_ref().is_some_and(|d| d.s == "route" && passenger(&d.t)))
         .collect();
     let targets: Vec<usize> = (0..tracks.len())
         .filter(|&i| {
@@ -1090,8 +1090,8 @@ fn needs_evidence_pass(tracks: &[TrackIn], cfg: &Cfg, pax: &[(i32, i32)], mode: 
             tracks[i].ll.iter().filter(|q| q.0 != i32::MIN).count() >= 2   // a way with no usable geometry keeps its type
                 && matches!(p.g("railway"), Some("rail" | "narrow_gauge"))
                 && !matches!(p.g("railway:traffic_mode"), Some("passenger" | "mixed"))
-                && decided[i].as_ref().map_or(false, |d| matches!(d.s, "tags" | "default") && matches!(d.t.as_str(), "intercity" | "regional"))
-                && !p.g("operator").map_or(false, |o| cfg.passenger_operators.iter().any(|r| r.is_match(o)))
+                && decided[i].as_ref().is_some_and(|d| matches!(d.s, "tags" | "default") && matches!(d.t.as_str(), "intercity" | "regional"))
+                && !p.g("operator").is_some_and(|o| cfg.passenger_operators.iter().any(|r| r.is_match(o)))
         })
         .collect();
     let mut kept = beside_routed(tracks, &routed, &targets);
@@ -1155,7 +1155,7 @@ fn smooth_short_pieces(tracks: &[TrackIn], at_end: &FxHashMap<(i32, i32), Vec<us
 /// not count) is Regional, become Regional. Only this direction: a chain of Freight or Regional pieces touching passenger track is a branch.
 fn smooth_chains(tracks: &[TrackIn], at_end: &FxHashMap<(i32, i32), Vec<usize>>, decided: &mut [Option<Decided>]) {
     let elig: Vec<usize> = (0..tracks.len())
-        .filter(|&i| tracks[i].props.g("railway") == Some("rail") && tracks[i].ll.len() >= 2 && decided[i].as_ref().map_or(false, smoothable))
+        .filter(|&i| tracks[i].props.g("railway") == Some("rail") && tracks[i].ll.len() >= 2 && decided[i].as_ref().is_some_and(smoothable))
         .collect();
     let mut uf = UnionFind::new(tracks.len());
     let is_elig: FxHashSet<usize> = elig.iter().copied().collect();
@@ -1217,7 +1217,7 @@ fn apply_exemptions(tracks: &[TrackIn], cfg: &Cfg, decided: &mut [Option<Decided
     for (ti, tr) in tracks.iter().enumerate() {
         let Some(d) = decided[ti].as_mut() else { continue };
         for (xi, x) in cfg.exemptions.iter().enumerate() {
-            if x.was_type.as_deref().map_or(false, |w| w != d.t) || x.was_source.as_deref().map_or(false, |w| w != d.s) || !x.rule.matches(&tr.props) {
+            if x.was_type.as_deref().is_some_and(|w| w != d.t) || x.was_source.as_deref().is_some_and(|w| w != d.s) || !x.rule.matches(&tr.props) {
                 continue;
             }
             ex_stats[xi].tracks += 1;

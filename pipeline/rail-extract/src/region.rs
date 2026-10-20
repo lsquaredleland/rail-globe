@@ -5,6 +5,7 @@
 //!   2. a grid over the box whose cells are marked inside, outside or edge (one lookup; most points stop here);
 //!   3. for points in edge cells only, an even-odd crossing test against the polygon edges of the point's horizontal band,
 //!      in integer arithmetic (1e-7 degrees), so the answer is exact.
+//!
 //! This keeps a large outline (China: about 1.6 MB of GeoJSON) as cheap per point as a small one.
 
 use crate::cache::BBox;
@@ -94,8 +95,8 @@ impl Region {
         let mut lists: Vec<Vec<u32>> = vec![Vec::new(); nbands];
         for (i, e) in edges.iter().enumerate() {
             let (lo, hi) = (e[1].min(e[3]), e[1].max(e[3]));
-            for b in ((lo - y0) / band_h) as usize..=((hi - y0) / band_h) as usize {
-                lists[b].push(i as u32);
+            for list in &mut lists[((lo - y0) / band_h) as usize..=((hi - y0) / band_h) as usize] {
+                list.push(i as u32);
             }
         }
         let mut band_start = Vec::with_capacity(nbands + 1);

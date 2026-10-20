@@ -235,7 +235,7 @@ pub(super) fn score_stations(m: &Model) -> Vec<Size> {
             norms.insert(x.norm.clone());
             let mut major = None;
             if x.modes.contains("train") {
-                if rules.name_re.as_ref().map_or(false, |re| names.iter().any(|n| re.is_match(n))) {
+                if rules.name_re.as_ref().is_some_and(|re| names.iter().any(|n| re.is_match(n))) {
                     major = Some("name_pattern");
                 } else if norms.iter().any(|n| rules.canonical.contains(n)) {
                     major = Some("canonical_list");

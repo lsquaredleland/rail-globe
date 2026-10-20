@@ -13,6 +13,7 @@
 //!     country's label point lies inside the region's outline and the country is about as big as the region): at the
 //!     centroid of its largest polygon (its interior point when the centroid is outside it), from the outline in data/regions;
 //!   - names: `name` is the OSM name (local), `name_en` is name:en, else int_name, else name.
+//!
 //! Rank (lower is more important; the map's layers split it at 3 / 7 and sort by it): from the place's population, one step
 //! better for a national capital (capital=yes). Population >= 10 M 1, 5 M 2, 3 M 3, 1.5 M 4, 1 M 5, 500 k 6, 250 k 7,
 //! 100 k 8, 50 k 9, 20 k 10, 10 k 11, else 12; a city with no population tag is 10, a town 12; a town is never better than 8.
@@ -32,6 +33,7 @@
 //!     within MERGE_KM. So Tokyo wins over its wards. A level-5 outline that contains candidate places takes the best one's name,
 //!     rank and point and keeps its own box and slug (one entry for Chengdu, not two; the other places inside it are not entries). A level-5 outline inside a province of the
 //!     same name as a city (Hong Kong's districts) is dropped. A city entry from a place has no box and a fixed zoom by rank.
+//!
 //! `name` is name_en, else name; `name_en` and `local_name` are null when absent or the same as `name`.
 
 use crate::assemble::Poly;
@@ -74,7 +76,7 @@ fn polys_of(v: &Value) -> Vec<Poly> {
 
 /// where a country's label goes: the centroid of its largest polygon, or an interior point of it when the centroid falls outside (lat, lon)
 fn label_point(polys: &[Poly]) -> Option<(f64, f64)> {
-    let big = polys.iter().filter(|p| p.first().map_or(false, |r| r.len() > 2)).max_by(|a, b| area(a).total_cmp(&area(b)))?;
+    let big = polys.iter().filter(|p| p.first().is_some_and(|r| r.len() > 2)).max_by(|a, b| area(a).total_cmp(&area(b)))?;
     let r = &big[0];
     let (mut a2, mut cx, mut cy) = (0.0, 0.0, 0.0);
     for w in r.windows(2) {
@@ -103,7 +105,7 @@ fn area(p: &Poly) -> f64 {
 
 /// bounding box [minLon, minLat, maxLon, maxLat] of the polygons that are at least 5 % of the largest and pass `keep`, and the total area of those
 fn main_bbox(polys: &[Poly], keep: &dyn Fn(&Poly) -> bool) -> Option<([f64; 4], f64)> {
-    let polys: Vec<&Poly> = polys.iter().filter(|p| p.first().map_or(false, |r| r.len() > 2)).collect();
+    let polys: Vec<&Poly> = polys.iter().filter(|p| p.first().is_some_and(|r| r.len() > 2)).collect();
     let areas: Vec<f64> = polys.iter().map(|p| area(p)).collect();
     let big = areas.iter().cloned().fold(0.0, f64::max);
     let mut b = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
@@ -498,9 +500,7 @@ fn find_areas(outlines: &[Outline], bbox_of: &BTreeMap<i64, [i32; 4]>, outline_d
             let b = bbox_of.get(&o.osm_id).copied().or_else(|| o.city.then(|| bbox7(&load_outline(outline_dir, &o.slug)?)).flatten())?;
             let b = &b;
             let (lo, hi) = ([b[1] as f64 * 1e-7, b[0] as f64 * 1e-7], [b[3] as f64 * 1e-7, b[2] as f64 * 1e-7]);
-            if tree.locate_in_envelope(AABB::from_corners(lo, hi)).next().is_none() {
-                return None;
-            }
+            tree.locate_in_envelope(AABB::from_corners(lo, hi)).next()?;
             let v = load_outline(outline_dir, &o.slug)?;
             let reg = Region::new(&o.slug, rings_of(&v));
             let n = tree.locate_in_envelope(AABB::from_corners(lo, hi)).filter(|s| reg.contains((s[1] * 1e7).round() as i32, (s[0] * 1e7).round() as i32)).count();
@@ -540,7 +540,7 @@ fn search_cities(
     let n_place_metro = place_cands.len();
     // a level-4 province named like one of those places is a city of its own (Hong Kong): its level-5 outlines are districts
     let city_names: HashSet<&str> = place_cands.iter().flat_map(|c| [c.name.as_str(), c.en.as_str()]).collect();
-    let city_provinces: Vec<&Area> = areas.iter().filter(|a| outlines[a.o].level == "4" && [&outlines[a.o].name, &outlines[a.o].name_en].iter().any(|n| n.as_deref().map_or(false, |n| city_names.contains(n)))).collect();
+    let city_provinces: Vec<&Area> = areas.iter().filter(|a| outlines[a.o].level == "4" && [&outlines[a.o].name, &outlines[a.o].name_en].iter().any(|n| n.as_deref().is_some_and(|n| city_names.contains(n)))).collect();
     // per level-5 outline: its candidate and the place it took the name from
     let from_outlines: Vec<(Cand, Vec<usize>)> = areas
         .par_iter()
@@ -550,8 +550,8 @@ fn search_cities(
             let at = |lat: f64, lon: f64| ((lat * 1e7).round() as i32, (lon * 1e7).round() as i32);
             let (la, lo) = at(a.pt.1, a.pt.0);
             let district = city_provinces.iter().any(|q| {
-                let b = bbox_of.get(&outlines[q.o].osm_id).map_or(false, |b| b[0] <= la && la <= b[2] && b[1] <= lo && lo <= b[3]);
-                b && load_outline(outline_dir, &outlines[q.o].slug).map_or(false, |v| Region::new("", rings_of(&v)).contains(la, lo))
+                let b = bbox_of.get(&outlines[q.o].osm_id).is_some_and(|b| b[0] <= la && la <= b[2] && b[1] <= lo && lo <= b[3]);
+                b && load_outline(outline_dir, &outlines[q.o].slug).is_some_and(|v| Region::new("", rings_of(&v)).contains(la, lo))
             });
             if district && !o.city {
                 return None; // a district of a city-province (Hong Kong); a fetched city is never one (New York is also a state)
@@ -603,7 +603,7 @@ fn write_wanted_outlines(data: &Path, cities: &[Cand], outlines: &[Outline]) -> 
     let city_outline_slugs: HashSet<&str> = outlines.iter().filter(|o| o.city).map(|o| o.slug.as_str()).collect();
     let wanted_outlines: Vec<Value> = cities
         .iter()
-        .filter(|c| c.outline.as_ref().map_or(true, |(slug, _)| city_outline_slugs.contains(slug.as_str())))   // points, and cities whose outline is a fetched one
+        .filter(|c| c.outline.as_ref().is_none_or(|(slug, _)| city_outline_slugs.contains(slug.as_str())))   // points, and cities whose outline is a fetched one
         .filter_map(|c| Some(json!({ "name": c.name, "name_en": c.en, "wikidata": c.wd.as_ref()?, "lon": r3(c.lon), "lat": r3(c.lat), "stations": c.n })))
         .collect();
     write_json(&data.join("city-outlines-wanted.json"), &Value::Array(wanted_outlines.clone()));
@@ -615,12 +615,12 @@ fn write_wanted_outlines(data: &Path, cities: &[Cand], outlines: &[Outline]) -> 
 fn country_level_only(countries: &[Country], cities: &[Cand], out: &Path, outline_dir: &Path) -> Vec<String> {
     countries
         .iter()
-        .filter(|ct| ct.region == ct.slug && region_km(out, &ct.slug).map_or(false, |k| k < SMALL_COUNTRY_KM))
+        .filter(|ct| ct.region == ct.slug && region_km(out, &ct.slug).is_some_and(|k| k < SMALL_COUNTRY_KM))
         .filter(|ct| {
             let reg = load_outline(outline_dir, &ct.slug).map(|v| Region::new(&ct.slug, rings_of(&v)));
             !cities.iter().any(|c| match &c.outline {
                 Some((slug, _)) => slug.starts_with(&format!("{}-", ct.slug)),
-                None => reg.as_ref().map_or(false, |r| r.contains((c.lat * 1e7).round() as i32, (c.lon * 1e7).round() as i32)),
+                None => reg.as_ref().is_some_and(|r| r.contains((c.lat * 1e7).round() as i32, (c.lon * 1e7).round() as i32)),
             })
         })
         .map(|ct| format!("{}-", ct.slug))
@@ -801,7 +801,7 @@ mod tests {
         // a C-shaped polygon: its centroid lies in the gap, so the label falls back to an interior point
         let c = [(0, 0), (0, 30), (10, 30), (10, 10), (20, 10), (20, 30), (30, 30), (30, 0), (0, 0)];
         let poly: Poly = vec![c.iter().map(|&(lat, lon)| (lat * 10_000_000, lon * 10_000_000)).collect()];
-        let (lat, lon) = label_point(&[poly.clone()]).unwrap();
+        let (lat, lon) = label_point(std::slice::from_ref(&poly)).unwrap();
         assert!(crate::outlines::inside(&[poly], lat, lon));
     }
 }

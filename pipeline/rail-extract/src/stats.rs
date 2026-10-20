@@ -137,7 +137,7 @@ fn group_km(ways: &[&Vec<(f64, f64)>], n_areas: usize, tree: &Index, pips: &[Opt
                 }
                 km[0] += credit;
                 for i in tree.at(&Point::new(x, y)) {
-                    if pips[i].map_or(false, |p| p.contains(x, y)) {
+                    if pips[i].is_some_and(|p| p.contains(x, y)) {
                         km[i] += credit;
                     }
                 }
@@ -233,7 +233,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
             if !lids.is_empty() {
                 let m = c[c.len() / 2];
                 let mut in_areas = vec![0usize];
-                in_areas.extend(tree.at(&Point::new(m.0, m.1)).into_iter().filter(|&i| pips[i].map_or(false, |pp| pp.contains(m.0, m.1))));
+                in_areas.extend(tree.at(&Point::new(m.0, m.1)).into_iter().filter(|&i| pips[i].is_some_and(|pp| pp.contains(m.0, m.1))));
                 line_hits.push((in_areas, lids));
             }
         }
@@ -297,7 +297,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         let (x, y) = (xy[0].as_f64().unwrap_or(0.0), xy[1].as_f64().unwrap_or(0.0));
         let modes: BTreeSet<&str> = p["modes"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
         let mut here = vec![0usize];
-        here.extend(tree.at(&Point::new(x, y)).into_iter().filter(|&i| pips[i].map_or(false, |pp| pp.contains(x, y))));
+        here.extend(tree.at(&Point::new(x, y)).into_iter().filter(|&i| pips[i].is_some_and(|pp| pp.contains(x, y))));
         for i in here {
             let a = &mut areas[i];
             if p["construction"].as_bool() == Some(true) {
@@ -326,7 +326,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         let mut km = Map::new();
         for t in TYPES {
             let (open, con) = (a.km.get(&(t.to_string(), false)).copied().unwrap_or(0.0), a.km.get(&(t.to_string(), true)).copied().unwrap_or(0.0));
-            let prop = a.km_prop.get(&t.to_string()).copied().unwrap_or(0.0);
+            let prop = a.km_prop.get(t).copied().unwrap_or(0.0);
             if open > 0.0 || con > 0.0 || prop > 0.0 {
                 km.insert(t.into(), json!({ "open": r1(open), "con": r1(con), "prop": r1(prop) }));
             }

@@ -15,6 +15,10 @@
 //!
 //! A user mistake (no cut before a build, a missing outline, cache or config parent) is reported as `error: ...` with exit code 1.
 
+// The pipeline passes tuples between stages and a few stages take many inputs; type aliases or parameter structs for these
+// single-use shapes would add names without adding clarity.
+#![allow(clippy::type_complexity, clippy::too_many_arguments)]
+
 mod assemble;
 mod build;
 mod cache;
@@ -256,7 +260,7 @@ fn find_cache(root: &Path) -> Option<PathBuf> {
         .ok()?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
-        .filter(|p| p.extension().map_or(false, |x| x == "railcache"))
+        .filter(|p| p.extension().is_some_and(|x| x == "railcache"))
         .filter_map(|p| Some((p.metadata().ok()?.modified().ok()?, p)))
         .collect();
     v.sort();

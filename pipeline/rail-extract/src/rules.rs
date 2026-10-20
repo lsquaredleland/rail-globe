@@ -78,7 +78,7 @@ pub const ADMIN_LEVELS: [&[u8]; 3] = [b"2", b"4", b"5"];
 pub fn admin_boundary<T: Tags + ?Sized>(t: &T) -> bool {
     matches!(t.get(b"type"), Some(b"boundary" | b"multipolygon"))
         && is(t, b"boundary", b"administrative")
-        && t.get(b"admin_level").map_or(false, |l| ADMIN_LEVELS.contains(&l))
+        && t.get(b"admin_level").is_some_and(|l| ADMIN_LEVELS.contains(&l))
 }
 
 /// a city's own boundary (admin levels 6 to 9: the county, municipality or city limits), kept only when its Wikidata id is that of a
@@ -86,8 +86,8 @@ pub fn admin_boundary<T: Tags + ?Sized>(t: &T) -> bool {
 pub fn city_boundary<T: Tags + ?Sized>(t: &T, wanted: &std::collections::HashSet<Vec<u8>>) -> bool {
     matches!(t.get(b"type"), Some(b"boundary" | b"multipolygon"))
         && is(t, b"boundary", b"administrative")
-        && t.get(b"admin_level").map_or(false, |l| matches!(l, b"6" | b"7" | b"8" | b"9"))
-        && t.get(b"wikidata").map_or(false, |w| wanted.contains(w))
+        && t.get(b"admin_level").is_some_and(|l| matches!(l, b"6" | b"7" | b"8" | b"9"))
+        && t.get(b"wikidata").is_some_and(|w| wanted.contains(w))
 }
 
 pub fn passenger_mode<T: Tags + ?Sized>(t: &T) -> bool {
@@ -209,10 +209,10 @@ pub fn rel_kind<T: Tags + ?Sized>(t: &T) -> Option<RelKind> {
     if typ == Some(b"public_transport") && pt == Some(b"stop_area_group") {
         return Some(RelKind::StopAreaGroup);
     }
-    if typ == Some(b"route") && route.map_or(false, |r| ROUTE_MODES.contains(&r)) {
+    if typ == Some(b"route") && route.is_some_and(|r| ROUTE_MODES.contains(&r)) {
         return Some(RelKind::Route);
     }
-    if typ == Some(b"route_master") && t.get(b"route_master").map_or(false, |r| ROUTE_MODES.contains(&r)) {
+    if typ == Some(b"route_master") && t.get(b"route_master").is_some_and(|r| ROUTE_MODES.contains(&r)) {
         return Some(RelKind::RouteMaster);
     }
     if typ == Some(b"route") && route == Some(b"railway") {
@@ -234,7 +234,7 @@ pub fn rel_area_wanted<T: Tags + ?Sized>(t: &T) -> bool {
 
 /// Latin script for labels: chars U+0000-U+024F or U+1E00-U+1EFF
 pub fn latin(v: &[u8]) -> bool {
-    std::str::from_utf8(v).map_or(false, |s| s.chars().all(|c| (c as u32) <= 0x24f || (0x1e00..=0x1eff).contains(&(c as u32))))
+    std::str::from_utf8(v).is_ok_and(|s| s.chars().all(|c| (c as u32) <= 0x24f || (0x1e00..=0x1eff).contains(&(c as u32))))
 }
 
 /// a name:* key that holds an English or romanised form of the name: name:en (also name:en-Latn, name:en_GB), or a transliteration of
@@ -272,7 +272,7 @@ pub fn english_name_kv<'a>(tags: impl Iterator<Item = (&'a [u8], &'a [u8])>) -> 
             _ => {}
         }
     }
-    en.or(int).or_else(|| if name.map_or(false, latin) { None } else { roman })
+    en.or(int).or_else(|| if name.is_some_and(latin) { None } else { roman })
 }
 
 pub fn english_name<'a>(t: &'a List<'a>) -> Option<&'a [u8]> {

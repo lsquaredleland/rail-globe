@@ -4,6 +4,7 @@
 //!   - scalars (and `null`) replace;
 //!   - arrays replace, unless the key is written `"+key": [...]`, which appends to the parent's `key`;
 //!   - the `extends` key itself is consumed.
+//!
 //! Every key of a file (with a `+` prefix dropped) must be in KNOWN_KEYS; an unknown one stops the run, naming the file and the key.
 //! A region with no file of its own uses `_default.json` (see site.rs); a file only gets `_default.json` beneath it by saying
 //! `"extends": "_default"` (directly or through a parent).
