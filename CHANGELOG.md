@@ -2,12 +2,20 @@
 
 Newest first. Decisions are in `docs/00-overview.md`; open items in `docs/17-action-items.md`.
 
+## 2026-10-20 (pass 2): docs
+
+- `docs/00-overview.md`: decision anchors renamed from `d33`..`d111` to `YYYY-MM-DD-topic` ids. Detail cells cut to about 60 words; the removed measurements are verbatim in `docs/archive/decision-evidence.md`, one heading per id.
+- Two live rows added: the world build is the default (2026-10-17; before it existed only inside a superseded row) and proposed track is kept for Hong Kong only (2026-10-12). The Scope table now says the same. The highlight rule names `world:hls` (also in `docs/09-performance-playbook.md`), and the deploy row says glyphs were removed from R2 on 2026-10-17.
+- `docs/02-architecture.md`: tile layers `airport_pts` and `cities` added.
+- The open-questions file (06) folded into `docs/17-action-items.md` (provisional choices table) and deleted. Done items removed from 17 (legacy data folders, backups, old `con_draw` files, the `build` without `cut` panic).
+- `README.md` research notes moved to `docs/17-action-items.md` section 7. The one-off design prompt moved from the design folder to `docs/archive/claude-design-prompt.md`. `CLAUDE.md` "How to work" has one bullet for the work order. `.gitignore` lost the dead glyph lines.
+
 ## 2026-10-20: cleanup (docs, archive, one to-do home)
 
 - `docs/00-overview.md`: a short "Current rules" section on top, the decision log newest first below it; 14 superseded rows moved verbatim to `docs/archive/decisions-superseded.md`.
 - Stale facts fixed in the docs (glyph steps, Python and tippecanoe processing, `pilot.pmtiles`, `--combined`, the `tiles` command, search shards).
 - `pipeline/README.md` is a command reference now; the pilot-era timing log is `docs/reference/pipeline-timings.md`.
-- One to-do home, `docs/17-action-items.md`: open items of `06-open-questions.md` and `docs/archive/performance-todos-2026-10-17.md` moved there; closed material is in `docs/archive/`.
+- One to-do home, `docs/17-action-items.md`: open items of the old file 06 (open questions) and `docs/archive/performance-todos-2026-10-17.md` moved there; closed material is in `docs/archive/`.
 - Dead scripts, raw Nominatim dumps and the low-zoom scratch tools moved to `pipeline/archive/` (see its README).
 - `docs/05-pilot-plan.md` has a Status column; phase 4 (Compare) was skipped.
 - `docs/18-changelog-2026-10-17.md` became this file.

@@ -70,6 +70,8 @@ The app reads only the world build (`world/world.pmtiles`, written by `rail-extr
 | `buildings` | Station buildings | z13–14 | id |
 | `platforms` | Lines and polygons | z14 | id, ref |
 | `airports` | Polygons: aerodrome outline (z8, z10 without an IATA code) and terminals (z12) | z8–14 | id, kind, name, name_en, iata, icao, area |
+| `airport_pts` | Points: one icon point per commercial airport (IATA code, not military, 300 ha or more), so tile edges cannot repeat the icon | z8–14 | id, lb (IATA code, else name) |
+| `cities` | Points: one dot per city with metro, tram or monorail track (see `00-overview.md`, city dots) | z2–7 | m, l, r (metro, tram, monorail km), n (all km) |
 | `complexes` | Points | z5 and up | id, name, name_en, size tier, terminus, platform count, line count |
 | `stations` | Points | z10 and up, z8 for top tiers | id, name, name_en, modes, size tier, terminus, platform count, line count by type, airport (when at a commercial airport) |
 

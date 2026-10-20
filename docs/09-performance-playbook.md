@@ -21,7 +21,7 @@ Where the original still wins: CJK glyph bytes (11x on China views), tile-build 
 
 1. **(Superseded 2026-10-17, the world build made the CJK files 1.3 to 1.8 MB per dense view: the app is now glyph-free, all text is drawn locally and the hitch below is accepted.) Self-hosted subset glyphs with `localIdeographFontFamily: false`.** MapLibre draws CJK glyphs on a canvas on the main thread when it uses the local font. That was a 90 ms stall at the first zoom of every page load and about a third of the JS in bad frames. A 3,288-character subset served as PBF took the quick bench from about 25 to 2 missed frames. This helps MVT too; it is not an MLT gain.
 2. **No feature state on MLT sources.** In MapLibre 6.12 (unchanged in 6.14), any feature-state entry on a source makes `Tile.setFeatureState` call `loadVTLayers` on the main thread for every loaded tile. MVT parses lazily (about 0.07 ms per tile). MLT decodes the whole tile eagerly (about 0.66 ms per tile at z9-z11), and the CPU throttle multiplies it. MLT with feature state off matched MVT; removing it for good took the full bench from 69/72 to 41/40 missed frames.
-3. **Highlight on its own small source.** Replacing feature state with `setFilter` on a layer of the main source made hover slow: a filter change reloads every tile of the source that layer reads, which throws away decoded tiles, and the next `queryRenderedFeatures` decodes each large overview tile again. The fix is a dedicated vector source for the highlight layer (`pilot:hls`, same PMTiles URL, `minzoom: 9`). z9 Europe hover went from 4.1 ms to 0.6 ms per move (original 0.9).
+3. **Highlight on its own small source.** Replacing feature state with `setFilter` on a layer of the main source made hover slow: a filter change reloads every tile of the source that layer reads, which throws away decoded tiles, and the next `queryRenderedFeatures` decodes each large overview tile again. The fix is a dedicated vector source for the highlight layer (same PMTiles URL, `minzoom: 9`; called `pilot:hls` when measured, `world:hls` now). z9 Europe hover went from 4.1 ms to 0.6 ms per move (original 0.9).
 4. **Rust writer instead of tippecanoe.** China 31.5 s to 4.1 s. The gain comes from the writer, not the format: it would be as fast writing MVT. Cost is memory (see open problems).
 
 ## What did not matter (measured, rejected)
@@ -58,7 +58,7 @@ Where the original still wins: CJK glyph bytes (11x on China views), tile-build 
 
 ## Results after the duplicate-fetch fix (2026-10-15)
 
-`MapView.tsx` wraps the pmtiles protocol handler (`dedupedPmtiles`): tile requests are shared while in flight (aborted only when every asker aborts) and finished tiles stay in a 32 MB LRU; each caller gets its own copy, so MapLibre transferring the buffer cannot detach the cached one. pmtiles caches directories but not tile bytes, which is why `pilot` and `pilot:hls` fetched every range twice. `pilot:hls` is unchanged.
+`MapView.tsx` wraps the pmtiles protocol handler (`dedupedPmtiles`): tile requests are shared while in flight (aborted only when every asker aborts) and finished tiles stay in a 32 MB LRU; each caller gets its own copy, so MapLibre transferring the buffer cannot detach the cached one. pmtiles caches directories but not tile bytes, which is why the main source and the highlight source fetched every range twice (measured as `pilot` and `pilot:hls`; they are `world` and `world:hls` now). The highlight source is `world:hls`.
 
 | Check | Previous MLT build | Fixed |
 | --- | --- | --- |

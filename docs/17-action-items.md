@@ -54,16 +54,13 @@ Nothing below has been run.
 1. Publishing deploys the live site: `pipeline/publish.sh` (build, verify, upload, push, prune, live checks) after the checks in the changelog. Never run without a go.
 2. `r2/sync.sh` has not run since 16 Oct, so `shards.json` still has `max-age=3600` where `no-cache` was intended; one run fixes it. New: it prunes dropped slugs through `r2/dropped-slugs.sh` (guards: kept/dropped overlap, `world.parts.json`).
 3. r2.dev is HTTP/1.1, uncompressed, tiles `max-age=3600`: custom domain checklist is in `r2/README.md` (compression rules for `.json` and `.pbf`, build-dated tile file names for immutability, then disable the r2.dev URL).
-4. Legacy top-level `data/{br,ca,ch,co,de,it,mx,us,ve}` have no `classify_report` for the current configs; the plain checker now reads `data/world`, so they are unused. Delete or keep.
-5. Backups outside the repo: `/Users/leland/Downloads/osm-rail-backups/20261017c` and `20261017d` (APFS clones; delete when satisfied). The earlier two in /private/tmp disappeared.
-6. Old `tiles_tmp/con_draw.geojsonl` files are ignored by the tile writer; delete for tidiness if wanted.
 
 ## 5. Follow-ups, none blocking
 
 - Repeat the P2 measurements on an idle machine (`archive/performance-todos-2026-10-17.md`): highlight filter cost on very long lines, Chengdu settle time at 150 ms latency, zoom out to z2, hover and click sweeps, first-zoom hitch (roughly doubled by the glyph-free decision: Chengdu East max frame 75 to 125 ms, one noisy pair).
 - Not covered by QA: Iceland and the micro-states, operator and speed colour modes in the Americas and Africa views, hover and click on rebuilt tiles.
 - More independent answer-list entries; the 29 known failures are judgements from Wikipedia rankings and the size score, not confirmed OSM bugs.
-- Pipeline robustness: `build` with no prior `cut` panics (`write route_stations.json: NotFound`); the `type_source` of a route master comes from its first member, not the winning member.
+- Pipeline robustness: the `type_source` of a route master comes from its first member, not the winning member.
 
 ## 6. Performance, hosting and research (moved from the old 06 and 11, 2026-10-20)
 
@@ -80,7 +77,7 @@ Evidence and numbers for each item: `archive/performance-todos-2026-10-17.md` (o
 - The "Done when" renders (z3, Cairo z9, Tokyo z9) were not re-run as a set.
 
 ### Measurements to repeat on an idle machine (3 runs, ABAB; method in `09-performance-playbook.md`)
-- Highlight filter cost on very long lines: `setFilter` on `pilot:hl-fs` (source `pilot:hls`, minzoom 9) with a long way-id list. Not traced. Done when worker time per highlight is known and under 20 ms or reduced (a Set instead of a literal list).
+- Highlight filter cost on very long lines: `setFilter` on `world:hl-fs` (source `world:hls`, minzoom 9) with a long way-id list. Not traced. Done when worker time per highlight is known and under 20 ms or reduced (a Set instead of a literal list).
 - Chengdu settle time at 150 ms latency (6,462 ms against 6,066 ms for the original, one run each).
 - Zoom out to the world (z2): a tie with 120 to 170% spread; repeat against the world file.
 - Headed hover and click sweeps (rail at z3 to z12, count frames over 25 ms).
@@ -94,14 +91,53 @@ Evidence and numbers for each item: `archive/performance-todos-2026-10-17.md` (o
 - Highlight performance ideas not tried: fewer or merged layers, `renderWorldCopies: false`, a deck.gl path layer for the hovered line, delivery tuning.
 - China high-speed rule beyond Chengdu (check on Beijing-Tianjin or the Pearl River Delta). Parked: a flag to apply the non-China rule (`highspeed=yes` or 200 km/h and above) in China; 200 km/h lines are promoted one by one with `high_speed_track_overrides`.
 
-### Choices waiting for the user's confirmation (from `06-open-questions.md`)
+### Provisional choices (the code decided where the docs were silent; they stand until the user changes them)
+Moved here from the old file 06 (open questions) on 2026-10-20. Two still wait for the user's confirmation:
 - Major station rule for high-speed termini: "mainline station within 80 m of high-speed track and (terminus or 8+ mainline platforms)" replaces the prototype's route-relation test. Confirm.
 - Tier names against the design: the UI shows "Major HSR station", "Major station", "Minor station"; the design has no Terminus badge. Confirm.
+
+| Topic | What the code does |
+| --- | --- |
+| French service values | `national` and `international` → High-speed if the network is on the region's high-speed list (TGV, Eurostar, Ouigo), else Intercity. `night` → Intercity. `tourism` → Other |
+| (Superseded 2026-10-12: Commuter merged into Regional) Commuter list vs `service` | A network on the commuter list (RER, Transilien, Caltrain) beats `service=regional` or no service, so Transilien lines are Commuter. It does not beat `high_speed` or `long_distance` |
+| Train route with no service and no list match | Regional (`type_source=default`). Counted in the classify report |
+| Track with no route and no usage | Regional (default). `usage=main` with no route → Intercity, as the spec says, but in the SF Bay Area that colours freight-only main lines as Intercity (742 ways) |
+| Mapped stop-area groups | Trusted as written. In OSM, Magenta is inside the Gare du Nord group, so it shares that complex. Inferred grouping (same name or wikidata, different modes, within 300 m, or same building) fills the gaps |
+| Railway land in the size score | Only land within 500 m of the station counts (`landuse=railway` polygons span whole corridors, up to 224 ha). Weight 3 per sqrt(ha) |
+| Terminus flag | At least two mainline track dead ends within 120 m of the station's own mainline platforms. Adds 10 to the score |
+| Size score and tiers | 3 per mainline platform, 0.5 per mainline track way at the platforms (capped at 40), 3·√land ha, 4·√building ha, +10 terminus. Tier 1 at 60 or more, tier 2 at 25 or more, else tier 3 |
+| Tier names vs the design | The design has three station symbols (Major HSR, Major, Minor) and no Terminus badge. The data has tiers 1–3 plus a terminus flag; the UI mapping is still to decide |
+| Stations with no mapped platforms | Rank low. Chengdu's main station (成都) has no platforms in OSM and lands in tier 3 |
+| Unrouted main line in the US | A per-region setting (`unrouted_main_type` in `pipeline/config/`). The SF Bay Area sets it to Freight, so unrouted `usage=main` track is muted grey instead of Intercity. Paris and Chengdu keep Intercity |
+| Track on shared line (phase 3) | Track takes the most prominent type of any line on it, so a classic line used by a few TGVs (e.g. Paris–Strasbourg east of Noisy-le-Sec) is drawn High-speed |
+| Operator strands (phase 3) | One strand per line per piece of track from z12. Above 7 lines on one piece, strand width and spacing shrink so the bundle stays at about 7 strands wide |
+| Tile layout (phase 3) | Decided 2026-10-13 (see `00-overview.md`): the pilot was one joined tile source (since removed). The world layout is decided and deployed (2026-10-16): one `world.pmtiles` from `rail-extract world`, the only source the app reads (`10-world-build.md`). Tier 1/2/3 stations appear in tiles from z7/z9/z11 and on screen (circles) from z8/z10/z12; labels come from the complexes layer from z10/z11/z13 |
+| Design extras left out (phase 3) | Compare view (switch shown, disabled until phase 4) and the Terminus badge in tooltips (shown only in the station panel, per the design). Units (km/mi), Copy link and Inspect OSM tags are in |
+| Inspect OSM tags | Shows the tags the data spec keeps (not the full OSM tag set, which the filter drops) plus fields Rail Globe derives (rail type and how it was set, routes, stop area, station model fields). Tags load on demand from 256 id-sharded files per region (`data/<slug>/tags/`), so they are not in the tiles. Hover shows tags; click pins a panel with Open in OSM and Copy tags |
+| Airport icons | The plane icon and IATA code sit at the centre of the airport outline (commercial airports only: IATA code, not military, 300 ha or more; smaller airfields get outline and code, no icon). Stations at airports are ordinary circles; their tooltip and panel still say Airport. The track tooltip no longer shows a Tracks row (the value was unknown for most track) |
+| Yard and area tooltips | Yard track shows its name, service type, electrification and gauge. Station grounds, yards, station buildings and platforms show kind, name, area and operator. "Station grounds" areas are whole `landuse=railway` polygons, which can span a corridor (one in Paris is 224 ha), so the area figure is not a station's size |
+| Major station rules: what the prototype had | The pasted description (MAIN_RE, MAIN_BY_GROUP / MAIN_SET, hs_idx / hs_major) is not in this repo, so the rules were rebuilt from the description. Chengdu uses the name pattern only (no canonical list); the China city list in `config/chengdu.json` is short (成都, 天府, 重庆, 西安, 北京, 上海, 广州, 深圳) and needs extending for other cities |
+| Major station: high-speed termini | The prototype test (terminus of a high-speed route) reads route relations, which conflicts with "rank from physical size only". Implemented instead as: mainline station within 80 m of high-speed track and (mainline terminus or 8+ mainline platforms). This also covers China, where high-speed routes are thinly mapped. Confirm this is acceptable |
+| Construction zoom (changed 2026-10-11) | Under-construction track appears from the zoom of its rail type, so a high-speed line under construction shows at every zoom. This replaces the earlier z10 start in `02-architecture.md` |
+| Named railway lines | Where no route relation covers a piece of track (Chengdu has almost no train routes), the track's own `name` is used: as the tooltip title, as a map label from z11.5, and as an entry in the Lines list (grouped by rail type, with approximate length from the track pieces divided by `tracks`). Only names with about 1.5 km or more of track are listed |
+| Tooltip tier names | Tier 1 with a high-speed track nearby → "Major HSR station"; other tier 1 and tier 2 → "Major station"; tier 3 → "Minor station" |
 
 ### Reminders (not tasks)
 - `vite dev` is not a performance reference; bench `vite preview` on a production build. `npm run build` copies `app/public/data/` (several GB with the world files) into `app/dist/`: move the world folder away before building for deployment, or point `VITE_DATA_BASE` at the host.
 - Method: keep a baseline worktree on its own port; alternate A/B/A/B; headed Chrome on the 120 Hz display; CPU throttle 4; wheel delta 127; latency 50 and 150 ms; one warm-up; note the load average and repeat when runs differ by more than 25%.
 
-## 7. Parked (not in v1)
+## 7. Parked (not in v1) and research
 
 GTFS of any kind (frequencies, timetables, Portolan, train animation); live train positions; history timeline (`start_date` is kept in the data); comparing custom drawn areas (H3 grid or DuckDB in the browser); routing, accounts, saved views; signalling and owner themes (would need train protection and `owner` tags).
+
+### Research notes (moved from `README.md`, 2026-10-20)
+Research notes, not decisions or commitments. v1 stays GTFS-free and fully static (see `CLAUDE.md`), so the GTFS-based tools below are for ideas only.
+
+- **Line number badges** (rounded badge with the line's `ref`, repeated along the track, as on Beijing's map): no library needed. Use a MapLibre `symbol` layer with `symbol-placement: 'line'`, `icon-text-fit: 'both'` and a white stretchable SDF image tinted with `icon-color`; keep the text upright with `text-rotation-alignment: 'viewport'`. Images can be made on demand in the `styleimagemissing` event. Needs `ref` and `colour` in the `lines` tiles. [`@americana/maplibre-shield-generator`](https://cdn.jsdelivr.net/npm/@americana/maplibre-shield-generator@0.1.1/README.md) uses the same on-demand pattern for road shields but is road-specific, so skip it.
+- **Interlining and parallel lines** (several lines on shared track drawn side by side, splitting at junctions):
+  - MapLibre's built-in `line-offset` paint property works for simple cases; sharp angles can show artifacts. Fixed per-strand offsets baked in the pipeline work with stock MapLibre.
+  - [Portolan](https://github.com/alexwohlbruck/portolan) (MIT, Go, MapLibre) does this: it detects corridors where tracks run parallel, orders the routes in each corridor to avoid crossings at the next split, and fans them out at junctions. It is a CLI and workbench driven by GTFS, with no documented library API, so treat it as a design reference. Its note: even spacing at every zoom needs a custom MapLibre build, while fixed pre-baked offsets do not. Busy junction interiors still show artifacts.
+  - [LOOM](https://github.com/ad-freiburg/loom) (University of Freiburg; papers: [Efficient Generation of Geographically Accurate Transit Maps](https://ar5iv.arxiv.org/html/1710.02226)) orders lines along shared edges with an ILP to minimise crossings and separations. Its helper tools `topo` (overlap-free line graph) and `pfaedle` (fits routes to real track) match what our line layer needs. Possible to port the ordering idea to the Rust pipeline; not tried.
+  - [Turf `lineOffset`](https://atlas.co/functions/turf/turf-line-offset/) computes offset geometry if offsets are precomputed in JS instead of in the pipeline.
+  - Design caution (Remix, Esri threads): manual offsets cascade, so one change can hide a line elsewhere. Compute offsets from the line graph, not by hand.
+- **Station markers** (white circle, dark ring, name beside it): `circle` layer or a canvas icon like the airport icon in `app/src/mapStyle/icons.ts`.

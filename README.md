@@ -89,16 +89,7 @@ Steps 3 to 5 read only the `.railcache`, not the planet, and are quick (seconds 
 
 ## Ideas and tools to evaluate
 
-Research notes, not decisions or commitments. v1 stays GTFS-free and fully static (see `CLAUDE.md`), so the GTFS-based tools below are for ideas only.
-
-- **Line number badges** (rounded badge with the line's `ref`, repeated along the track, as on Beijing's map): no library needed. Use a MapLibre `symbol` layer with `symbol-placement: 'line'`, `icon-text-fit: 'both'` and a white stretchable SDF image tinted with `icon-color`; keep the text upright with `text-rotation-alignment: 'viewport'`. Images can be made on demand in the `styleimagemissing` event. Needs `ref` and `colour` in the `lines` tiles. [`@americana/maplibre-shield-generator`](https://cdn.jsdelivr.net/npm/@americana/maplibre-shield-generator@0.1.1/README.md) uses the same on-demand pattern for road shields but is road-specific, so skip it.
-- **Interlining and parallel lines** (several lines on shared track drawn side by side, splitting at junctions):
-  - MapLibre's built-in `line-offset` paint property works for simple cases; sharp angles can show artifacts. Fixed per-strand offsets baked in the pipeline work with stock MapLibre.
-  - [Portolan](https://github.com/alexwohlbruck/portolan) (MIT, Go, MapLibre) does this: it detects corridors where tracks run parallel, orders the routes in each corridor to avoid crossings at the next split, and fans them out at junctions. It is a CLI and workbench driven by GTFS, with no documented library API, so treat it as a design reference. Its note: even spacing at every zoom needs a custom MapLibre build, while fixed pre-baked offsets do not. Busy junction interiors still show artifacts.
-  - [LOOM](https://github.com/ad-freiburg/loom) (University of Freiburg; papers: [Efficient Generation of Geographically Accurate Transit Maps](https://ar5iv.arxiv.org/html/1710.02226)) orders lines along shared edges with an ILP to minimise crossings and separations. Its helper tools `topo` (overlap-free line graph) and `pfaedle` (fits routes to real track) match what our line layer needs. Possible to port the ordering idea to the Rust pipeline; not tried.
-  - [Turf `lineOffset`](https://atlas.co/functions/turf/turf-line-offset/) computes offset geometry if offsets are precomputed in JS instead of in the pipeline.
-  - Design caution (Remix, Esri threads): manual offsets cascade, so one change can hide a line elsewhere. Compute offsets from the line graph, not by hand.
-- **Station markers** (white circle, dark ring, name beside it): `circle` layer or a canvas icon like the airport icon in `app/src/mapStyle/icons.ts`.
+Research notes (line number badges, interlining, station markers) are in `docs/17-action-items.md` section 7.
 
 ## Status
 

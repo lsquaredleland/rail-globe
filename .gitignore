@@ -13,9 +13,6 @@ app/node_modules/
 app/dist/
 # generated tiles and side files (rail-extract build / world)
 app/public/data/
-# old generated label glyphs (no longer used: the app is glyph-free)
-app/public/glyphs/
-app/public/glyphs-v2/
 
 # python
 __pycache__/
