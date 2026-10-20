@@ -2,7 +2,7 @@
 //! and the lookups the later steps need (way geometry, names, passenger / freight / construction track beside stations, city samples).
 
 use super::constants::{speed_band_index, speed_band_min};
-use super::props::{AreaProps, OverviewProps, PlatformLineProps, StrandProps, TrackProps};
+use super::props::{AreaProps, OverviewProps, PlatformLineProps, StrandProps, ToMap, TrackProps};
 use super::util::{area_ha, badge_of, colour, coords, feat, is_light, label_of, nonempty, rank, short, track_minzoom};
 use super::{haversine_len, Lookup, OVERVIEW_MAXZOOM, SKETCH_MINZOOM};
 use crate::classify::speed_kmh;
@@ -109,7 +109,8 @@ impl<'a> Scan<'a> {
             } else if fe.gtype == "Polygon" || fe.gtype == "MultiPolygon" {
                 sc.add_area(fe);
             } else if fe.gtype == "LineString" && (s(p, "railway") == Some("platform") || s(p, "public_transport") == Some("platform")) {
-                let m = PlatformLineProps { id: s(p, "osm_id").unwrap_or("").to_string(), platform_ref: s(p, "ref").unwrap_or("").to_string() }.to_map();
+                let m = PlatformLineProps { id: s(p, "osm_id").unwrap_or("").to_string(), platform_ref: s(p, "ref").unwrap_or("").to_string(), k: "platform" }
+                    .to_map();
                 feat(&mut sc.plats, &m, &fe.graw, Some(13), None);
                 sc.n_plats += 1;
             }

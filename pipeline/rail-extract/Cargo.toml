@@ -10,6 +10,7 @@ libdeflater = "1.26"   # whole-buffer zlib decompression
 rustc-hash = "2.1"     # fast hash maps and sets for ids
 # reading region GeoJSON and the pipeline's JSON files: key order kept (the outputs follow it), geometry passed through as
 # raw text, floats parsed exactly
+serde = { version = "1", features = ["derive"] }   # typed tile properties and side-file records (the field order is the key order)
 serde_json = { version = "1.0", features = ["preserve_order", "raw_value", "float_roundtrip"] }
 memmap2 = "0.9"        # the cache is memory-mapped, so a cut touches only the pages it needs
 regex = { version = "1.11", default-features = false, features = ["std", "unicode", "perf"] }   # config patterns (classify, stations)

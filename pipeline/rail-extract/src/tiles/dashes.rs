@@ -1,12 +1,13 @@
 //! Construction dashes cut as geometry, line merging, and the highlight records built from merged ways.
 
 use super::constants::con_band;
-use super::props::ConDashProps;
+use super::props::{ConDashProps, ToMap};
+use super::records::{Highlight, HlGeom};
 use super::util::feat;
 use crate::geomx::round;
 use geo::{Geometry, LineString, Simplify};
 use rustc_hash::FxHashMap;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 // The track is merged end to end (per type, proposed flag and speed band), parallel tracks made one line, and cut into real dashes: MapLibre's
 // line-dasharray restarts at tile edges and stretches between whole zooms, so the dashes are geometry. One copy per band of `con_band.step` zoom
@@ -194,28 +195,20 @@ pub(super) fn linemerge(lines: Vec<Vec<(f64, f64)>>) -> Vec<Vec<(f64, f64)>> {
 }
 
 /// highlight data of a line or named railway: its track pieces' ids and a simplified geometry (build_tiles.py hl_record)
-pub(super) fn hl_record(ids: &[String], way_geom: &FxHashMap<String, Vec<(f64, f64)>>, extra: Vec<(&str, Value)>) -> Value {
+pub(super) fn hl_record<'a>(ids: &'a [String], way_geom: &FxHashMap<String, Vec<(f64, f64)>>, ty: Value, oc: Option<String>) -> Highlight<'a> {
     let lines: Vec<Vec<(f64, f64)>> = ids.iter().filter_map(|i| way_geom.get(i)).filter(|g| g.len() >= 2).cloned().collect();
-    let geom = if lines.is_empty() {
-        Value::Null
-    } else {
-        let parts: Vec<Value> = linemerge(lines)
+    let geom = (!lines.is_empty()).then(|| {
+        let coordinates = linemerge(lines)
             .into_iter()
             .map(|p| {
                 let ls: LineString<f64> = p.into_iter().map(|(x, y)| geo::Coord { x, y }).collect();
                 let ls = ls.simplify(HL_SIMPLIFY);
-                Value::Array(ls.0.iter().map(|c| json!([Value::from(round(c.x, 5)), Value::from(round(c.y, 5))])).collect())
+                ls.0.iter().map(|c| [round(c.x, 5), round(c.y, 5)]).collect()
             })
             .collect();
-        json!({"type": "MultiLineString", "coordinates": parts})
-    };
-    let mut m = Map::new();
-    m.insert("ways".into(), json!(ids));
-    m.insert("geom".into(), geom);
-    for (k, v) in extra {
-        m.insert(k.into(), v);
-    }
-    Value::Object(m)
+        HlGeom { ty: "MultiLineString", coordinates }
+    });
+    Highlight { ways: ids, geom, ty, oc }
 }
 
 pub(super) fn geojson_value(g: &Geometry<f64>) -> Value {

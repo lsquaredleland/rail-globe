@@ -1,0 +1,121 @@
+{
+  "layers": {
+    "track": [
+      "id",
+      "type",
+      "usage",
+      "el",
+      "v",
+      "ms",
+      "g",
+      "tr",
+      "n",
+      "fq",
+      "kmh",
+      "ne",
+      "sv",
+      "tun",
+      "br",
+      "con",
+      "prop",
+      "ln",
+      "nl",
+      "oc",
+      "nk"
+    ],
+    "con_dash": [
+      "type",
+      "prop",
+      "kmh",
+      "b"
+    ],
+    "lines": [
+      "lid",
+      "t",
+      "i",
+      "n",
+      "lb",
+      "lbe",
+      "rf",
+      "rl",
+      "c"
+    ],
+    "areas": [
+      "id",
+      "ha",
+      "n",
+      "op",
+      "k",
+      "ref"
+    ],
+    "buildings": [
+      "id",
+      "ha",
+      "n",
+      "op",
+      "k",
+      "ref"
+    ],
+    "platforms": [
+      "id",
+      "ha",
+      "n",
+      "op",
+      "k",
+      "ref"
+    ],
+    "stations": [
+      "id",
+      "cx",
+      "n",
+      "ne",
+      "tier",
+      "term",
+      "hsr",
+      "mp",
+      "pc",
+      "lc",
+      "lct",
+      "sb",
+      "ty",
+      "modes",
+      "lg",
+      "ap",
+      "con",
+      "fr"
+    ],
+    "complexes": [
+      "id",
+      "n",
+      "ne",
+      "tier",
+      "term",
+      "ns",
+      "con",
+      "sb",
+      "ty"
+    ],
+    "airports": [
+      "id",
+      "k",
+      "lb",
+      "ha",
+      "n",
+      "ne",
+      "iata",
+      "icao",
+      "op",
+      "com"
+    ],
+    "airport_pts": [
+      "id",
+      "lb"
+    ],
+    "cities": [
+      "m",
+      "l",
+      "r",
+      "n"
+    ]
+  }
+}

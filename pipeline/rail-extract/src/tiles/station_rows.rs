@@ -2,7 +2,7 @@
 //! its stations), stations that are really still being built, and the airport and logo of each.
 
 use super::airports::Airports;
-use super::props::{ComplexProps, StationProps};
+use super::props::{ComplexProps, StationProps, ToMap};
 use super::track::{Scan, SB_NONE};
 use super::util::{feat, rank};
 use super::{Logos, Lookup};

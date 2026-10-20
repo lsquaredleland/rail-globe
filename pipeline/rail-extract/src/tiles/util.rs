@@ -214,8 +214,8 @@ pub(super) fn feat(out: &mut String, props: &Map<String, Value>, geom: &str, min
     out.push_str("}\n");
 }
 
-pub(super) fn write_json(path: &Path, v: &Value) {
-    fs::write(path, v.to_string()).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+pub(super) fn write_json<T: serde::Serialize>(path: &Path, v: &T) {
+    fs::write(path, serde_json::to_string(v).expect("serialize side file")).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
 
 /// a string property of a feature, when it is there and not empty
