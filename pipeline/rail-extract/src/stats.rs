@@ -13,6 +13,7 @@
 use crate::classify::speed_kmh;
 use crate::geomx::{self, Index};
 use crate::site::{s, Input};
+use crate::tiles::constants::speed_band_min;
 use geo::{MultiPolygon, Point, Simplify};
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -24,7 +25,6 @@ use std::path::{Path, PathBuf};
 /// rail types counted, in the order the card lists them
 const TYPES: [&str; 9] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "other", "freight"];
 /// lower bounds of the speed colour bands of app/src/mapStyle.ts (same list as tiles.rs)
-const SPEED_BAND_MINS: [i64; 9] = [400, 350, 300, 250, 200, 160, 120, 80, 0];
 const CELL_M: f64 = 60.0;
 const M_PER_DEG: f64 = 111_320.0;
 const SHAPE_EPS: f64 = 0.02; // degrees, about 2 km: enough to tell which area the view centre is in
@@ -240,7 +240,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         if t != "freight" || prop {
             let band = speed_kmh(s(p, "maxspeed")).filter(|k| *k != 0.0).map_or(-1, |k| {
                 let k = k.round_ties_even() as i64;
-                SPEED_BAND_MINS.iter().find(|&&b| k >= b).copied().unwrap_or(0)
+                speed_band_min(k)
             });
             speed_groups.entry((band, if prop { 2 } else { con as u8 })).or_default().push(c.clone());
         }
@@ -312,6 +312,8 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         }
     }
 
+    // the speed (km/h) from which a rail type is called high-speed in this region (config `high_speed_min_kmh`, default 200); the app reads it from every row
+    let hs_min_kmh = inp.cfg.get("high_speed_min_kmh").filter(|v| v.is_number()).cloned().unwrap_or(json!(200));
     let mut rows = Vec::new();
     let mut shapes = Map::new();
     let mut log = Vec::new();
@@ -340,7 +342,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         if let Some(p) = &a.poly {
             shapes.insert(a.slug.clone(), shape(p));
         }
-        rows.push(json!({ "slug": a.slug, "name": a.name, "local": a.local, "kind": a.kind, "bbox": a.bbox, "km": km, "lines": lines, "speed": speed, "speed_con": speed_con, "speed_prop": speed_prop, "stations": st }));
+        rows.push(json!({ "slug": a.slug, "name": a.name, "local": a.local, "kind": a.kind, "bbox": a.bbox, "km": km, "lines": lines, "speed": speed, "speed_con": speed_con, "speed_prop": speed_prop, "stations": st, "hs_min_kmh": hs_min_kmh }));
     }
     let dir = out.join(slug);
     fs::create_dir_all(&dir).expect("create output folder");
