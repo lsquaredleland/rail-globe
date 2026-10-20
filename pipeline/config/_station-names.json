@@ -1,0 +1,7 @@
+{
+  "_comment": "Name data for the station model (pipeline/rail-extract/src/stations/names.rs), the same for every region, loaded once at build time (include_str!). stopwords: whole words dropped when two station names are compared (articles, 'station' in several languages, and operator or city words that stand in front of names: paris, bart, caltrain, vta, muni); an empty string is included on purpose. jp_operator_prefix: regex for a Japanese railway operator written in front of a station name (阪急西院駅 is 西院); it is tested against the whole prefix. cn_suffix: words after a Chinese station name that give its type (诏安站站房 is 诏安), compared after a trailing 站 is taken off; cn_exit_suffix: a name that ends in this is an exit of the station (科宁路地铁站3号口).",
+  "stopwords": ["gare", "du", "de", "d", "la", "le", "les", "l", "des", "station", "paris", "stazione", "railway", "rer", "metro", "subway", "bart", "caltrain", "amtrak", "light", "rail", "vta", "muni", "st", "saint", "bahnhof", "bhf", "di", ""],
+  "jp_operator_prefix": "^(?:jr|阪神|南海|京成|東武|西武|京王|京阪|東京メトロ|都営|名鉄|近鉄|西鉄|北海道|東日本|東海|西日本|四国|九州|.*(?:鉄道|電鉄|鉄|急|メトロ|交通局))$",
+  "cn_suffix": ["高铁", "动车", "火车", "地铁", "客运", "房", "厅"],
+  "cn_exit_suffix": "口"
+}
