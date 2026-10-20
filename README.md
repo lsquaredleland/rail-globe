@@ -53,7 +53,7 @@ $RE outlines --level 5 --country CN
 $RE cut sf-bay-area paris chengdu
 
 # 5. Build them: station model, side files into app/public/data/<slug>/ and one <slug>.pmtiles each.
-#    Add --no-tiles for side files only. This step also writes places.json and search.json (names and the search index).
+#    Add --no-tiles for side files only. Then `$RE places sf-bay-area paris chengdu` writes places.json and search.json (names and the search index).
 $RE build sf-bay-area paris chengdu
 
 # 6. Run the data checker on the pilots (answer lists)

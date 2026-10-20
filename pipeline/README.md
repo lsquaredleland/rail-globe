@@ -38,7 +38,7 @@ RE=pipeline/rail-extract/target/release/rail-extract
 `$RE build <slug>... [--no-tiles] [--data DIR] [--out DIR] [--threads N]`
 - Needs the cut first. Builds the station model, stations under construction, tile input, and side files, per region in parallel.
 - Writes side files to `<out>/<slug>/` (hash shards in `stations/`, `lines/`, `tags/`, `name-hl/` plus `shards.json`, `stats.json`, `shapes.json`, `<slug>.boundary.geojson`; `build` clears and rewrites them) and `<data>/<slug>/` (`stations.geojsonl`, `complexes.geojsonl`, `tiles_tmp/`).
-- Unless `--no-tiles`, also writes `<out>/<slug>.pmtiles` (MLT, one region at a time; it holds a whole region in memory). It then runs `places` for the slugs built.
+- Unless `--no-tiles`, also writes `<out>/<slug>.pmtiles` (MLT, one region at a time; it holds a whole region in memory). It does not run `places`: run `places <slug>...` after it (the `world` command runs it itself).
 - Defaults: `--data data`, `--out app/public/data`. Pilots: `$RE build sf-bay-area paris chengdu`. World side files: `$RE build $(cat data/world/kept.txt) --no-tiles --threads 5 --data data/world --out app/public/data/world` (37 s, 12 GB).
 - Region stats use `stat_areas` or `stat_auto` from the config (run `outlines --level 4` and `5` first).
 
@@ -54,7 +54,7 @@ RE=pipeline/rail-extract/target/release/rail-extract
 
 ### places
 `$RE places <slug>... [--data DIR] [--out DIR] [--cache FILE] [--threads N]` (pilots: `$RE places sf-bay-area paris chengdu`)
-- City, town and country labels and the search index, from the cache's place nodes and the stations of each region. No network. Run by `build` and `world`; run by hand only after changing code or outlines.
+- City, town and country labels and the search index, from the cache's place nodes and the stations of each region. No network. Run by `world`; for pilots run it by hand after `build`.
 - Writes `<out>/places.json` and `<out>/search.json` (one file for the whole index). Rules: `src/places.rs` header and `docs/00-overview.md` (search index row, 2026-10-16).
 
 ### pminfo
@@ -73,7 +73,7 @@ Outlines in `pipeline/regions/` (`sf-bay-area`, `paris`, `chengdu`, `greater-bay
 - `python3 pipeline/top.py <slug> [n]`: the biggest stations of a built region by size score.
 - `python3 pipeline/measure_views.py [world.pmtiles]`: compressed tile bytes per laptop and phone view at z2 to z8 against the 600 KB budget. Default file `app/public/data/world/world.pmtiles`.
 - `pipeline/qa/`: `fetch_narn.py`, `study_ways.py`, `eval_rules.py`, the freight study against the US NARN data (`docs/13-freight-north-america.md`). `fetch_passenger_stations.py`: the 12306 station list for China (`config/cn-passenger-stations.txt`).
-- `pipeline/logos/`: one-time operator logo pull; how `app/public/logos/` is made: `pipeline/logos/README.md`.
+- `pipeline/logos/`: one-time operator logo pull; how `app/static/logos/` is made: `pipeline/logos/README.md`.
 - `pipeline/archive/`: dead scripts and raw data, see its README.
 
 Timings and the pilot-era command log: `docs/reference/pipeline-timings.md`.

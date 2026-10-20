@@ -81,8 +81,8 @@ pub(crate) struct Logos {
 
 impl Logos {
     fn load(inp: &Input, out: &Path) -> Logos {
-        // logos/logos.json sits in app/public, above the data folder (app/public/data, or app/public/data/world for the world build)
-        let logos_json = out.ancestors().map(|a| a.join("logos/logos.json")).find(|p| p.exists());
+        // logos/logos.json sits in app/static, beside the data folder's parent (app/public/data, or app/public/data/world for the world build)
+        let logos_json = out.ancestors().map(|a| a.join("static/logos/logos.json")).find(|p| p.exists());
         let ids: std::collections::HashSet<String> = logos_json.as_ref().and_then(|p| std::fs::read_to_string(p).ok())
             .and_then(|t| serde_json::from_str::<Map<String, Value>>(&t).ok()).map(|m| m.into_iter().map(|(k, _)| k).collect()).unwrap_or_default();
         if ids.is_empty() {

@@ -1,11 +1,11 @@
-// Second pass over app/public/logos: a wide wordmark ("Long Island Rail Road" next to the MTA mark) shrinks to nothing on a station chip.
+// Second pass over app/static/logos: a wide wordmark ("Long Island Rail Road" next to the MTA mark) shrinks to nothing on a station chip.
 // For each logo wider than 2:1, look for a squarer one among the operator's other logo claims (P8972 small logo, P154 logo, P2910 icon,
 // P8392 logo with text variants) and, for a station operator, its parent's (P749, P361) when the parent is also in logos.json; keep the squarest if it is clearly squarer (ratio below 1.8).
-// Usage: node pipeline/logos/squarer.mjs [--dir app/public/logos]
+// Usage: node pipeline/logos/squarer.mjs [--dir app/static/logos]
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-const dir = process.argv.includes('--dir') ? process.argv[process.argv.indexOf('--dir') + 1] : 'app/public/logos'
+const dir = process.argv.includes('--dir') ? process.argv[process.argv.indexOf('--dir') + 1] : 'app/static/logos'
 const UA = 'RailGlobe/0.1 (one-time operator logo pull; lelandlee4@gmail.com)'
 const manifest = JSON.parse(readFileSync(join(dir, 'logos.json'), 'utf8'))
 const PARENTS = new Set(['Q1146109' /* MTA */, 'Q9322' /* Deutsche Bahn */, 'Q682520' /* Transport for London */])

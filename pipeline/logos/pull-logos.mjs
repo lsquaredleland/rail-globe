@@ -1,14 +1,14 @@
-// One-time pull of railway operator logos: operator Wikidata ids -> logo file on Wikimedia Commons -> small PNGs in app/public/logos/.
+// One-time pull of railway operator logos: operator Wikidata ids -> logo file on Wikimedia Commons -> small PNGs in app/static/logos/.
 // Input: operators.json, {"Q123": {"st": n, "ln": n, "name": "..."}}, from the osmium step in README.md (this folder).
-// Output: app/public/logos/<qid>.png (96 px wide at most) and app/public/logos/logos.json {qid: {name, file, st, ln}}.
+// Output: app/static/logos/<qid>.png (96 px wide at most) and app/static/logos/logos.json {qid: {name, file, st, ln}}.
 // No licence check; coverage is whatever Wikidata has (P8972 small logo, else P154 logo).
-// Usage: node pipeline/logos/pull-logos.mjs <operators.json> [--out app/public/logos]
+// Usage: node pipeline/logos/pull-logos.mjs <operators.json> [--out app/static/logos]
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 const args = process.argv.slice(2)
 const input = args.find((a) => !a.startsWith('--'))
-const out = args.includes('--out') ? args[args.indexOf('--out') + 1] : 'app/public/logos'
+const out = args.includes('--out') ? args[args.indexOf('--out') + 1] : 'app/static/logos'
 if (!input) { console.error('usage: node pull-logos.mjs <operators.json> [--out dir]'); process.exit(1) }
 const UA = 'RailGlobe/0.1 (one-time operator logo pull; lelandlee4@gmail.com)'
 const ops = JSON.parse(readFileSync(input, 'utf8'))
