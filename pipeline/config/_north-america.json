@@ -10,7 +10,6 @@
       "type": "intercity"
     }
   ],
-  "freight_name_re": "(?i)\\b(Subdivision|Sub|District|Division|Railroad|Railway|Rail Line|Rail Link|Branch|Secondary|Industrial|Lead|Spur|RR)\\b",
   "track_type_overrides": [
     {
       "match": {
@@ -25,7 +24,6 @@
       "type": "other"
     }
   ],
-  "freight_operator_exempt_re": "(?i)Metra|Metro-North|Long Island Rail|SEPTA|NJ ?Transit|New Jersey Transit|MARC|Maryland Area|Caltrain|Peninsula Corridor|Virginia Railway Express|Amtrak|Metrolink|Southern California Regional|Sound Transit|North County Transit|Brightline|MBTA|Massachusetts Bay|Tri-Rail|South Florida Regional|Northern Indiana Commuter|Trinity Railway|GO Transit|Metrolinx|VIA Rail|Capital Metro|Utah Transit|Rio Metro|SMART|Altamont|Connecticut Department of Transportation|CTrail|Shore Line East|New Mexico Rail Runner|Denton County|Scenic|Excursion|Historical|Wine Train|Heritage|Tourist",
   "passenger_needs_evidence": true,
   "passenger_operator_re": [
     "(?i)\\b(Amtrak|Metra|Metro-North|Long Island Rail Road|SEPTA|NJ ?Transit|New Jersey Transit|MARC|Maryland Area Regional|Caltrain|Peninsula Corridor|Virginia Railway Express|Metrolink|Southern California Regional Rail|Sound Transit|North County Transit|Brightline|MBTA|Massachusetts Bay Transportation|Tri-Rail|South Florida Regional|Northern Indiana Commuter|NICTD|Trinity Railway|GO Transit|Metrolinx|VIA Rail|Capital Metro|Utah Transit|Rio Metro|Altamont Corridor|CTrail|Connecticut Department of Transportation|Shore Line East|Denton County|exo|West Coast Express|Alaska Railroad|Northstar|Sounder|Coaster|FrontRunner)\\b"

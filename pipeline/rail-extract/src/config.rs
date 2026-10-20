@@ -4,11 +4,44 @@
 //!   - scalars (and `null`) replace;
 //!   - arrays replace, unless the key is written `"+key": [...]`, which appends to the parent's `key`;
 //!   - the `extends` key itself is consumed.
+//! Every key of a file (with a `+` prefix dropped) must be in KNOWN_KEYS; an unknown one stops the run, naming the file and the key.
 //! A region with no file of its own uses `_default.json` (see site.rs); a file only gets `_default.json` beneath it by saying
 //! `"extends": "_default"` (directly or through a parent).
 
 use serde_json::{Map, Value};
 use std::path::Path;
+
+/// Every top-level key a region config may use, with what reads it (details: docs/12-config-and-exemptions.md, "Config keys"). A key
+/// nothing reads must not be added here; remove it from the config instead. `extends` is consumed by `resolve_text`, never merged.
+const KNOWN_KEYS: &[&str] = &[
+    "_comment",                   // free text, read by nobody
+    "china",                      // classify.rs, tiles.rs: China rules (250 km/h high-speed floor) and the China-only app styling
+    "exemptions",                 // classify.rs: named, justified exceptions to the generic rules
+    "high_speed_min_kmh",         // stats.rs: the region's high-speed floor in km/h, written to stats.json as hs_min_kmh (default 200)
+    "high_speed_networks_re",     // classify.rs: route network/name patterns that make a route High-speed
+    "high_speed_track_overrides", // classify.rs: tracks promoted to High-speed by match rule (name_re, osm_id)
+    "main_station_re",            // stations.rs, construction.rs: station names that are always major stations
+    "main_terminals",             // stations.rs: terminal station names that count as major
+    "passenger_needs_evidence",   // classify.rs: true / "routes" / "stations": passenger rail needs evidence (docs/15)
+    "passenger_operator_re",      // classify.rs: operator patterns that count as passenger evidence
+    "passenger_stations_file",    // classify.rs: a text file (beside the config) of passenger station names, one per line
+    "proposed_region",            // classify.rs: outline file in pipeline/regions inside which proposed track is kept
+    "stat_areas",                 // stats.rs: extra areas (slug, name, local) for the region card
+    "stat_auto",                  // stats.rs, site.rs: areas picked automatically from data/regions/index.json
+    "stat_local",                 // stats.rs, site.rs: the region's name in its own language
+    "stat_name",                  // stats.rs, site.rs: the region's English name
+    "track_type_overrides",       // classify.rs: retype track (not routes) by match rule
+    "type_overrides",             // classify.rs: retype route lines by match rule
+    "unrouted_main_type",         // classify.rs: type of main track on no route (default intercity)
+];
+
+/// The first key of `own` (one config file, before merging) that is not in KNOWN_KEYS, as an error message.
+fn check_keys(name: &str, own: &Map<String, Value>) -> Result<(), String> {
+    match own.keys().find(|k| !KNOWN_KEYS.contains(&k.strip_prefix('+').unwrap_or(k))) {
+        Some(k) => Err(format!("{name}.json: unknown key \"{k}\" (a typo, or a key nothing reads any more; the known keys are in config.rs KNOWN_KEYS)")),
+        None => Ok(()),
+    }
+}
 
 /// Merge `over` onto `base` with the rules above. Errors when a `+key` is not an array.
 pub fn merge(base: &mut Map<String, Value>, over: Map<String, Value>) -> Result<(), String> {
@@ -38,7 +71,7 @@ pub fn merge(base: &mut Map<String, Value>, over: Map<String, Value>) -> Result<
     Ok(())
 }
 
-fn resolve(dir: &Path, name: &str, stack: &mut Vec<String>) -> Result<Map<String, Value>, String> {
+fn resolve(dir: &Path, name: &str, strict: bool, stack: &mut Vec<String>) -> Result<Map<String, Value>, String> {
     if stack.iter().any(|s| s == name) {
         return Err(format!("config extends cycle: {} -> {name}", stack.join(" -> ")));
     }
@@ -49,17 +82,21 @@ fn resolve(dir: &Path, name: &str, stack: &mut Vec<String>) -> Result<Map<String
             None => format!("read {}: {e}", path.display()),
         }
     })?;
-    resolve_text(dir, name, &text, stack)
+    resolve_text(dir, name, &text, strict, stack)
 }
 
-fn resolve_text(dir: &Path, name: &str, text: &str, stack: &mut Vec<String>) -> Result<Map<String, Value>, String> {
+fn resolve_text(dir: &Path, name: &str, text: &str, strict: bool, stack: &mut Vec<String>) -> Result<Map<String, Value>, String> {
     let Value::Object(mut own) = serde_json::from_str::<Value>(text).map_err(|e| format!("parse {name}.json: {e}"))? else {
         return Err(format!("{name}.json must be a JSON object"));
     };
     stack.push(name.to_string());
-    let mut base = match own.remove("extends") {
+    let extends = own.remove("extends");
+    if strict {
+        check_keys(name, &own)?;
+    }
+    let mut base = match extends {
         None => Map::new(),
-        Some(Value::String(parent)) => resolve(dir, &parent, stack)?,
+        Some(Value::String(parent)) => resolve(dir, &parent, strict, stack)?,
         Some(_) => return Err(format!("{name}.json: \"extends\" must be a file name without .json")),
     };
     stack.pop();
@@ -67,12 +104,13 @@ fn resolve_text(dir: &Path, name: &str, text: &str, stack: &mut Vec<String>) -> 
     Ok(base)
 }
 
-/// The resolved config of one file: the file merged over its `extends` chain. Panics with a clear message on a missing parent, a cycle or bad JSON
+/// The resolved config of one file: the file merged over its `extends` chain. Panics with a clear message on a missing parent, a cycle, bad JSON
+/// or an unknown key
 /// (a broken config must stop the run, like every other config error here).
 pub fn load_file(path: &Path) -> Map<String, Value> {
     let dir = path.parent().unwrap_or(Path::new("."));
     let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
-    resolve(dir, name, &mut Vec::new()).unwrap_or_else(|e| panic!("{e}"))
+    resolve(dir, name, true, &mut Vec::new()).unwrap_or_else(|e| panic!("{e}"))
 }
 
 #[cfg(test)]
@@ -92,7 +130,7 @@ mod tests {
 
     fn load(files: &[(&str, &str)], name: &str) -> Result<Map<String, Value>, String> {
         let d = tmp(files);
-        resolve(&d, name, &mut Vec::new())
+        resolve(&d, name, false, &mut Vec::new())
     }
 
     #[test]
@@ -142,8 +180,40 @@ mod tests {
             assert_eq!(c["type_overrides"].as_array().unwrap().len(), n_type, "{slug}");
             assert_eq!(c["track_type_overrides"].as_array().unwrap().len(), n_track, "{slug}");
             assert_eq!(c["high_speed_min_kmh"], 200);
-            assert!(c.get("extends").is_none() && c["freight_name_re"].is_string(), "{slug}");
+            assert!(c.get("extends").is_none() && c["passenger_operator_re"].is_array(), "{slug}");
         }
+    }
+
+    #[test]
+    fn unknown_key_names_file_and_key() {
+        let d = tmp(&[
+            ("a", r#"{"stat_name": "A", "+type_overrides": [], "commuter_networks": []}"#),
+            ("b", r#"{"extends": "a", "stat_nmae": "B"}"#),
+            ("ok", r#"{"extends": "b2", "+type_overrides": []}"#),
+            ("b2", r#"{"stat_name": "A"}"#),
+        ]);
+        let e = resolve(&d, "b", true, &mut Vec::new()).unwrap_err();
+        assert!(e.contains("b.json") && e.contains("\"stat_nmae\""), "{e}");
+        std::fs::write(d.join("b.json"), r#"{"extends": "a"}"#).unwrap();
+        let e = resolve(&d, "b", true, &mut Vec::new()).unwrap_err();
+        assert!(e.contains("a.json") && e.contains("\"commuter_networks\""), "{e}"); // the parent is checked too
+        assert!(resolve(&d, "ok", true, &mut Vec::new()).is_ok());
+    }
+
+    #[test]
+    fn every_shipped_region_config_has_only_known_keys() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../config");
+        let mut n = 0;
+        for e in std::fs::read_dir(&dir).unwrap() {
+            let p = e.unwrap().path();
+            let f = p.file_name().unwrap().to_string_lossy().into_owned();
+            // _groups.json and _station-names.json have their own formats and are not region configs
+            if f.ends_with(".json") && f != "_groups.json" && f != "_station-names.json" {
+                load_file(&p); // panics naming file and key
+                n += 1;
+            }
+        }
+        assert!(n > 50, "{n}");
     }
 
     #[test]

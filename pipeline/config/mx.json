@@ -3,7 +3,6 @@
   "stat_name": "Mexico",
   "stat_local": "México",
   "china": false,
-  "commuter_networks": [],
   "high_speed_networks_re": [],
   "type_overrides": [],
   "main_terminals": [],
@@ -14,8 +13,6 @@
     ]
   },
   "high_speed_min_kmh": 200,
-  "freight_name_re": "^(L[ií]nea ([A-JL-Y]|[A-Y][A-Z]{1,2})\\b|Ramal|Libramiento|Ferrocarril (M[eé]xico|Quer[eé]taro|del Norte))",
-  "freight_name_per_way": true,
   "exemptions": [
     {
       "id": "tren-maya-one-class",

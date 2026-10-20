@@ -1,24 +1,6 @@
 {
+  "extends": "_china",
   "stat_name": "Greater Bay Area",
-  "china": true,
   "proposed_region": "cn/hk.json",
-  "commuter_networks": [],
-  "high_speed_networks_re": [],
-  "type_overrides": [
-    {
-      "match": {
-        "name_re": "市域铁路"
-      },
-      "type": "regional"
-    },
-    {
-      "match": {
-        "name_re": "旅游|观光"
-      },
-      "type": "other"
-    }
-  ],
-  "main_station_re": "^((成都|天府|重庆|西安|北京|上海|广州|深圳|东莞|珠海|佛山|惠州|中山|江门|肇庆|香港)(东|西|南|北|朝阳)?|福田|西九龙|香港西九龙|红磡)站?$|^(香港西九龍|西九龍|紅磡|红磡)站?( .*)?$",
-  "main_terminals": [],
-  "passenger_stations_file": "cn-passenger-stations.txt"
+  "main_station_re": "^((成都|天府|重庆|西安|北京|上海|广州|深圳|东莞|珠海|佛山|惠州|中山|江门|肇庆|香港)(东|西|南|北|朝阳)?|福田|西九龙|香港西九龙|红磡)站?$|^(香港西九龍|西九龍|紅磡|红磡)站?( .*)?$"
 }

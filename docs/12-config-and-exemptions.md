@@ -14,7 +14,7 @@ A file of its own that says `extends` still gets `stat_name`, `stat_local` and `
 
 A file without `extends` gets nothing beneath it: the hand-written pilot configs (`paris`, `sf-bay-area`, `chengdu`) are unchanged. (An implicit `_default` under every file would have added `stat_auto` to them and changed their statistics.)
 
-Missing parent, a cycle (`a -> b -> a`) and a bad `+key` stop the run with a message naming the file.
+Missing parent, a cycle (`a -> b -> a`), a bad `+key` and an unknown key (see "Config keys") stop the run with a message naming the file.
 
 ### Merge rules
 
@@ -35,6 +35,36 @@ Missing parent, a cycle (`a -> b -> a`) and a bad `+key` stop the run with a mes
 ```
 
 `stat_auto` merges with the parent's `{"levels": ["4"]}`, so Canada keeps `levels` and adds `country`.
+
+## Config keys
+
+Top-level keys a region config may use (after merging; a `+key` counts as `key`). Every file of an `extends` chain is checked against the list `KNOWN_KEYS` in `config.rs` (one comment per key); an unknown key, a typo or a key nothing reads any more, stops the run with the file and the key (`cn.json: unknown key "stat_nmae"`). `extends` is consumed. `_groups.json` and `_station-names.json` are not region configs and have their own formats. Never keep a key "for later": remove it when its code goes (`commuter_networks`, `freight_name_re`, `freight_name_per_way` and `freight_operator_exempt_re` were removed 2026-10-20; nothing had read them since 2026-10-12 and 2026-10-15).
+
+| Key | Type | Read by | Example |
+| --- | --- | --- | --- |
+| `_comment` | string | nothing (notes for people) | `"All of Mexico ..."` |
+| `china` | bool | `classify.rs` (250 km/h high-speed floor), `tiles.rs` (China-only styling) | `true` |
+| `exemptions` | list of objects | `classify.rs` (see Exemptions below) | `[{"id": "tren-maya-one-class", ...}]` |
+| `high_speed_min_kmh` | number | `stats.rs` writes it to `stats.json` as `hs_min_kmh`; default 200 | `200` |
+| `high_speed_networks_re` | list of regex | `classify.rs`: route network or name makes the route High-speed | `["^TGV", "^Eurostar"]` |
+| `high_speed_track_overrides` | list of match rules | `classify.rs`: promote tracks to High-speed (match rules as in `type_overrides`, without `type`) | `[{"osm_id": "way/123"}]` |
+| `main_station_re` | regex | `stations.rs`, `construction.rs`: names that are always major stations | `"^北京(东\|西\|南\|北)?站?$"` |
+| `main_terminals` | list of names | `stations.rs`: terminals that count as major | `["Gare de Bercy"]` |
+| `passenger_needs_evidence` | `true`, `"routes"` or `"stations"` | `classify.rs` (docs/15) | `"routes"` |
+| `passenger_operator_re` | list of regex | `classify.rs`: operators that count as passenger evidence | `["(?i)Amtrak\|Metra"]` |
+| `passenger_stations_file` | file name | `classify.rs`: text file beside the config, one passenger station name per line; with it the list decides what is a passenger station | `"cn-passenger-stations.txt"` |
+| `proposed_region` | file name | `classify.rs`: outline in `pipeline/regions` inside which proposed track is kept | `"cn/hk.json"` |
+| `stat_areas` | list of `{slug, name, local}` | `stats.rs`: extra areas for the region card (each needs an outline) | `[{"slug": "guangzhou", "name": "Guangzhou"}]` |
+| `stat_auto` | object (`country`, `levels`, `min_metro`, `exclude`) | `stats.rs`, `site.rs` (fills `country`): areas picked from `data/regions/index.json` | `{"country": "CN", "levels": ["4", "5"]}` |
+| `stat_local` | string | `stats.rs`, `site.rs`: region name in its own language | `"中国"` |
+| `stat_name` | string | `stats.rs`, `site.rs`: region name | `"China"` |
+| `track_type_overrides` | list of match rules + `type` | `classify.rs`: retype track | `[{"match": {"name_re": "^朔黄线$"}, "type": "freight"}]` |
+| `type_overrides` | list of match rules + `type` | `classify.rs`: retype route lines | `[{"match": {"name_re": "市域铁路"}, "type": "regional"}]` |
+| `unrouted_main_type` | type name | `classify.rs`: type of main track on no route, default `intercity` | `"regional"` |
+
+### China configs
+
+`_china.json` holds the China rules (`china`, 市域铁路 as Regional, 旅游|观光 as Other, the passenger-station list). It does not extend `_default` (that would add `stat_auto` to the pilots). `cn.json` (world build) extends it and adds the long `main_station_re`, the freight `track_type_overrides`, `proposed_region` and the statistics keys; `china.json` (the pilot on the hand-made outline) is just `"extends": "cn"`, so the two cannot drift apart again. `chengdu`, `greater-bay-area` and `cn-beijing` extend `_china` and keep only their own `stat_name`, `main_station_re` and (Greater Bay Area) `proposed_region`.
 
 ## Exemptions
 

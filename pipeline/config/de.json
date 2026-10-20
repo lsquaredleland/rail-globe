@@ -3,9 +3,6 @@
   "stat_name": "Germany",
   "stat_local": "Deutschland",
   "china": false,
-  "commuter_networks": [
-    "S-Bahn"
-  ],
   "high_speed_networks_re": [
     "^ICE",
     "^TGV",

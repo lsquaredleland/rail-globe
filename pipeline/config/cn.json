@@ -1,25 +1,8 @@
 {
-  "_comment": "All of China (data/regions/cn.geojson, admin level 2) for the world build. Same rules as china.json (the pilot's China, a hand-made outline).",
-  "china": true,
+  "_comment": "All of China (data/regions/cn.geojson, admin level 2) for the world build. china.json (the pilot's China, a hand-made outline) extends this file; the shared China rules are in _china.json.",
+  "extends": "_china",
   "proposed_region": "cn/hk.json",
-  "commuter_networks": [],
-  "high_speed_networks_re": [],
-  "type_overrides": [
-    {
-      "match": {
-        "name_re": "市域铁路"
-      },
-      "type": "regional"
-    },
-    {
-      "match": {
-        "name_re": "旅游|观光"
-      },
-      "type": "other"
-    }
-  ],
   "main_station_re": "^((成都|天府|重庆|西安|北京|上海|广州|深圳|东莞|珠海|佛山|惠州|中山|江门|肇庆|香港)(东|西|南|北|朝阳|丰台)?|福田|西九龙|香港西九龙|红磡|天津|天津西|天津南|杭州|杭州东|南京|南京南|武汉|汉口|武昌|郑州|郑州东|长沙|长沙南|合肥|合肥南|南昌|南昌西|福州|福州南|厦门|厦门北|济南|济南西|青岛|青岛北|沈阳|沈阳北|哈尔滨|哈尔滨西|长春|长春西|大连|大连北|太原|太原南|石家庄|兰州|兰州西|银川|西宁|乌鲁木齐|呼和浩特|呼和浩特东|南宁|南宁东|昆明|昆明南|贵阳|贵阳北|海口|海口东|拉萨|苏州|无锡|宁波|温州|温州南)站?$|^上海虹桥( ?[（(].*[）)])?站?$|^(香港西九龍|西九龍|紅磡|红磡)站?( .*)?$",
-  "main_terminals": [],
   "stat_name": "China",
   "stat_local": "中国",
   "stat_auto": {
@@ -42,6 +25,5 @@
       },
       "type": "freight"
     }
-  ],
-  "passenger_stations_file": "cn-passenger-stations.txt"
+  ]
 }

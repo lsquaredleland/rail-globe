@@ -1,12 +1,6 @@
 {
   "stat_name": "SF Bay Area",
   "china": false,
-  "commuter_networks": [
-    "Caltrain",
-    "ACE",
-    "SMART",
-    "Altamont Corridor Express"
-  ],
   "high_speed_networks_re": [],
   "track_type_overrides": [
     {
