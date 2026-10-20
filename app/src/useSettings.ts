@@ -64,6 +64,6 @@ export function useTypeSpeedSwitches(s: Settings, areaSlug: string) {
   const showAll = () => { setHidden([]); setHiddenSpeed([]) }
   const hideAll = () => { setHidden([...TYPE_ORDER]); setHiddenSpeed(allSpeed) }
   const legendProps = { hidden, onShowAll: showAll, onHideAll: hideAll, onToggleFreight: () => setFreight((v) => !v), onToggleType: toggleType }
-  const speedProps = { hiddenSpeed, hsrOnly: s.hsrOnly, china: hsMinKmh(areaSlug) >= 250, onShowAll: showAll, onHideAll: hideAll, onToggle: toggleBand }
+  const speedProps = { hiddenSpeed, hsrOnly: s.hsrOnly, hsMin: hsMinKmh(areaSlug), onShowAll: showAll, onHideAll: hideAll, onToggle: toggleBand }
   return { setHsrOnly, legendProps, speedProps }
 }

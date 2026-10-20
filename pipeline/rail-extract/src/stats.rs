@@ -397,7 +397,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
 
     // the speed (km/h) from which a rail type is called high-speed in this region (config `high_speed_min_kmh`, default 200); the app reads it from every row
     // China's floor is 250 (classify.rs, `"china": true`), whatever high_speed_min_kmh says
-    let china = inp.cfg.get("china").and_then(Value::as_bool).unwrap_or(false);
+    let china = inp.cfg.get("china").is_some_and(crate::config::truthy);
     let hs_min_kmh = if china { json!(250) } else { inp.cfg.get("high_speed_min_kmh").filter(|v| v.is_number()).cloned().unwrap_or(json!(200)) };
     let mut rows = Vec::new();
     let mut shapes = Map::new();

@@ -138,7 +138,7 @@ fi
 if want deploy; then
   say "deploy: push to main (Vercel builds on every push)"
   [ "$(git rev-parse --abbrev-ref HEAD)" = main ] || fail "not on main"
-  [ -z "$(git status --porcelain --untracked-files=no -- app pipeline r2 docs)" ] || fail "uncommitted changes in app/, pipeline/, r2/ or docs/: commit them first"
+  [ -z "$(git status --porcelain --untracked-files=no -- app pipeline r2 docs shared)" ] || fail "uncommitted changes in app/, pipeline/, r2/, docs/ or shared/: commit them first"
   run git push origin main
 fi
 

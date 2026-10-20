@@ -337,7 +337,10 @@ fn main() {
         std::panic::set_hook(Box::new(|info| {
             let p = info.payload();
             let msg = p.downcast_ref::<String>().map(String::as_str).or_else(|| p.downcast_ref::<&str>().copied()).unwrap_or("internal error");
-            fail(msg)
+            match info.location() {
+                Some(l) => fail(format_args!("{msg} ({}:{})", l.file(), l.line())),
+                None => fail(msg),
+            }
         }));
     }
     let cli = Cli::parse();

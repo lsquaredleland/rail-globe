@@ -37,3 +37,6 @@ r2/.env
 # local agent state (Claude Code settings, worktrees, oh-my-claudecode)
 .claude/
 .omc/
+
+# generated prototype
+/station_viewer.html

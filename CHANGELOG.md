@@ -11,6 +11,7 @@ Newest first. Decisions are in `docs/00-overview.md`; open items in `docs/17-act
 - Dead scripts, raw Nominatim dumps and the low-zoom scratch tools moved to `pipeline/archive/` (see its README).
 - `docs/05-pilot-plan.md` has a Status column; phase 4 (Compare) was skipped.
 - `docs/18-changelog-2026-10-17.md` became this file.
+- Data changes (rebuild needed): the `china` pilot now uses the `cn` rules (longer `main_station_re`, so more tier-1 stations; freight overrides 朔黄线, 昆河线, 河口中越铁路桥). `chengdu`, `cn-beijing` and `greater-bay-area` get `stat_local` / `stat_auto.country` filled from the outline (they extend a template). `stats.json` region rows gain `hs_min_kmh` (250 for China configs). Side-file numbers are formatted differently (`3e-05` became `0.00003`), the values are equal.
 
 ## 2026-10-16 to 2026-10-17: QA, fixes and tile weight
 

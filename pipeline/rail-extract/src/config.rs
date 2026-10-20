@@ -44,6 +44,18 @@ fn check_keys(name: &str, own: &Map<String, Value>) -> Result<(), String> {
     }
 }
 
+/// how a config flag such as `"china"` is read: false, 0, "", "false", null and empty lists or objects are off
+pub fn truthy(x: &Value) -> bool {
+    match x {
+        Value::Bool(b) => *b,
+        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
+        Value::String(s) => !s.is_empty() && s != "false",
+        Value::Array(a) => !a.is_empty(),
+        Value::Object(o) => !o.is_empty(),
+        Value::Null => false,
+    }
+}
+
 /// Merge `over` onto `base` with the rules above. Errors when a `+key` is not an array.
 pub fn merge(base: &mut Map<String, Value>, over: Map<String, Value>) -> Result<(), String> {
     for (k, v) in over {

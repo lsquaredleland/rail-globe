@@ -47,6 +47,8 @@ export default function App() {
   const [railways, setRailways] = useState<Record<string, Railways>>({})
   const railwaysRef = useRef(railways)   // for openHit, which memoized click handlers call
   railwaysRef.current = railways
+  const peekRef = useRef(peek)   // for onClick, which is memoized; the reducer stays pure
+  peekRef.current = peek
   const [copied, setCopied] = useState(false)
   const [viewNow, setViewNow] = useState<View>(() => init.view ?? { center: init.region.center, zoom: init.region.zoom })
   const map = useRef<MapHandle>(null)
@@ -177,10 +179,9 @@ export default function App() {
     if (touch) {
       if (!hit) { act.clearPeek(); return }
       ensureIndex(hit.slug)
-      act.setPeek((cur) => {
-        if (cur && hitKey(cur) === hitKey(hit) && (inspect || hit.kind === 'station' || hit.kind === 'line' || (hit.kind === 'track' && !!(hit.props.ln || hit.props.n || hit.props.nk != null)))) { setTimeout(() => openHit(hit), 0); return cur }
-        return hit
-      })
+      const cur = peekRef.current
+      if (cur && hitKey(cur) === hitKey(hit) && (inspect || hit.kind === 'station' || hit.kind === 'line' || (hit.kind === 'track' && !!(hit.props.ln || hit.props.n || hit.props.nk != null)))) openHit(hit)
+      else act.setPeek(() => hit)
       return
     }
     if (!hit) { closePanel(); return }

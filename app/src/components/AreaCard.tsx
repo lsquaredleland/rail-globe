@@ -223,11 +223,11 @@ const bandName = (i: number) => (i === 0 ? `${SPEED_BANDS[0].min}+ km/h` : SPEED
 const BAND_TYPE: RailType[] = ['high_speed', 'high_speed', 'high_speed', 'high_speed', 'intercity', 'regional', 'regional', 'metro', 'light_rail']
 
 /** Track speed of the area under the view: km per band, each band a switch for the map. */
-export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, china, construction, proposed, embedded, onToggle, onShowAll, onHideAll }: {
-  area: StatsArea | null; units: Units; hiddenSpeed: number[]; hsrOnly: boolean; china: boolean; construction: boolean; proposed: boolean; embedded?: boolean
+export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, hsMin, construction, proposed, embedded, onToggle, onShowAll, onHideAll }: {
+  area: StatsArea | null; units: Units; hiddenSpeed: number[]; hsrOnly: boolean; hsMin: number; construction: boolean; proposed: boolean; embedded?: boolean
   onToggle(m: number): void; onShowAll(): void; onHideAll(): void
 }) {
-  const hsMin = china ? 250 : 200   // high-speed starts here: China's line, else the UIC line
+  const china = hsMin >= 250   // high-speed starts at China's line, else at the UIC line (200)
   const km = (m: number) => a?.speed?.[m === SPEED_NONE ? 'none' : String(m)] ?? 0
   const all = [...SPEED_BANDS.map((b) => b.min), SPEED_NONE]
   const conKm = (m: number) => a?.speed_con?.[m === SPEED_NONE ? 'none' : String(m)] ?? 0

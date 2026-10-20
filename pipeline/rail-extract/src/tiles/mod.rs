@@ -102,12 +102,7 @@ impl Logos {
         if ids.is_empty() {
             eprintln!("warning: no logos/logos.json found above {}; stations get no logo", out.display());
         }
-        let china = inp.cfg.get("china").is_some_and(|v| match v {
-            Value::Bool(b) => *b,
-            Value::String(s) => !s.is_empty() && s != "false",
-            Value::Number(n) => n.as_f64() != Some(0.0),
-            _ => false,
-        });
+        let china = inp.cfg.get("china").is_some_and(crate::config::truthy);
         Logos { ids, china }
     }
 

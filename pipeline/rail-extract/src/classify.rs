@@ -270,14 +270,6 @@ impl Cfg {
 
     pub fn load(path: &Path, regions_dir: &Path) -> Cfg {
         let v = Value::Object(crate::config::load_file(path));
-        let truthy = |x: &Value| match x {
-            Value::Bool(b) => *b,
-            Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
-            Value::String(s) => !s.is_empty(),
-            Value::Array(a) => !a.is_empty(),
-            Value::Object(o) => !o.is_empty(),
-            Value::Null => false,
-        };
         let overrides = |k: &str| -> Vec<(Rule, String)> {
             v.get(k)
                 .and_then(Value::as_array)
@@ -308,7 +300,7 @@ impl Cfg {
         Cfg {
             exemptions,
             passenger_names,
-            china: v.get("china").is_some_and(truthy),
+            china: v.get("china").is_some_and(crate::config::truthy),
             type_overrides: overrides("type_overrides"),
             track_type_overrides: overrides("track_type_overrides"),
             hs_track_overrides: v.get("high_speed_track_overrides").and_then(Value::as_array).map_or(Vec::new(), |a| a.iter().map(Rule::parse).collect()),
@@ -320,7 +312,7 @@ impl Cfg {
                 Some(Value::String(m)) if m == "stations" => Some(Evidence::Stations),
                 Some(Value::String(m)) if m == "routes" => Some(Evidence::Routes),
                 Some(Value::String(m)) => panic!("passenger_needs_evidence must be true, \"routes\" or \"stations\", not {m:?}"),
-                Some(x) if truthy(x) => Some(Evidence::Routes),
+                Some(x) if crate::config::truthy(x) => Some(Evidence::Routes),
                 _ => None,
             },
             passenger_operators: v

@@ -11,6 +11,9 @@ concurrency:
 jobs:
   rust:
     runs-on: ubuntu-latest
+    env:
+      # overrides .cargo/config.toml (target-cpu=native): rust-cache restores builds across runners with different CPUs, and native code from another CPU can crash
+      RUSTFLAGS: "-C target-cpu=x86-64-v2"
     defaults:
       run:
         working-directory: pipeline/rail-extract
@@ -23,6 +26,7 @@ jobs:
         with:
           workspaces: pipeline/rail-extract
       # .cargo/config.toml builds with target-cpu=native: fine here, the runner builds and runs on the same machine
+      # config validity is covered here: cargo test runs config.rs every_shipped_region_config_has_only_known_keys
       - run: cargo test --release
       - run: cargo clippy --release --all-targets -- -D warnings
       - run: cargo fmt --check
@@ -44,13 +48,3 @@ jobs:
       - run: npm test
       # VITE_DATA_BASE is left unset: the app falls back to its local data path. The Vercel build runs scripts/check-deploy.mjs separately.
       - run: npm run build
-
-  data-checks:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      # the exemption list checks need no data; the answer-list checks (pipeline/check.py without --exemptions) do
-      - run: python3 pipeline/check.py --exemptions
