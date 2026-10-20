@@ -31,6 +31,10 @@ The app already shows under-construction stations only when the construction fla
 Kept open because they carry both an open tag and a construction tag, unverifiable from tags: Montpellier tram line 5 stops, the Dudley extension, au Trentham, Lyonville and Wombat State Forest, kr 하양 and 군위. Still skipped (tags say "being built", unverified): de Sielmingen and Neuhausen auf den Fildern; fr four Ajaccio stops; gb one unnamed node; it Canepari and Pozzuoli; kr nine stations (과천정보타운 to 합천); ch Ils Cugns; th six Bangkok MRT stations. A manual check of a handful settles it.
 - Your call:
 
+### 1.6 HSR-only label filter reads `hsr` on complexes
+In HSR-only mode the station label layers (`lbl1`-`lbl3`, `lblcon1`-`lblcon3`) filter on `hsr == 1` or `ty` containing `high_speed`, but the `complexes` tile layer has no `hsr` property, so for complexes only the `ty` test applies. Nothing visibly breaks. Found by `app/src/tileSchema.test.ts` (listed there as `KNOWN_MISSING`). Options: add `hsr` to complexes in the pipeline (tiles change), or drop the `hsr` read for complex labels.
+- Your call:
+
 ## 2. To investigate
 
 - **Turkey station tiers fell back** after the last station fix: tier 1 10 to 5, tier 2 14 to 7; Şakirpaşa, Lüleburgaz YHT and Merkez Otogar went from tier 1 to tier 3; Gürsu, Yenişehir YHT, Karacabey, Teknosab from tier 2 to tier 3. Not traced. Assigned to the stations agent.
