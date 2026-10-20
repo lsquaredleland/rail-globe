@@ -59,5 +59,6 @@ export default defineConfig({
   publicDir: 'static',
   // public/data holds the pipeline's tiles and tens of thousands of side files: served by serveData above, but not watched,
   // so a pipeline run does not keep the dev server busy reacting to every file it writes
+  test: { setupFiles: ['./src/test-setup.ts'] },
   server: { watch: { ignored: ['**/public/data/**'] }, fs: { allow: ['..'] } },   // fs.allow: ../shared/constants.json lives outside app/
 })

@@ -85,7 +85,7 @@ export const railwayOf = (rw: Railways | undefined, props: Record<string, string
   !rw ? undefined : props.n != null ? rw.byName.get(String(props.n)) : props.nk != null ? rw.list[Number(props.nk)] : undefined
 
 /** 32-bit FNV-1a of the UTF-8 bytes: the same hash rail-extract (tiles.rs) shards the named-railway highlight files by */
-function fnv1a(s: string): number {
+export function fnv1a(s: string): number {
   let h = 0x811c9dc5
   for (const b of new TextEncoder().encode(s)) h = Math.imul(h ^ b, 0x01000193) >>> 0
   return h >>> 0
