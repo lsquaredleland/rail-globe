@@ -13,5 +13,5 @@ export default tseslint.config(
     plugins: { 'react-hooks': reactHooks },
     rules: { ...reactHooks.configs.recommended.rules },
   },
-  { files: ['**/*.mjs', 'vite.config.ts', 'eslint.config.js'], languageOptions: { globals: globals.node } },
+  { files: ['**/*.mjs', 'vite.config.ts', 'eslint.config.js'], languageOptions: { globals: globals.node } }
 )

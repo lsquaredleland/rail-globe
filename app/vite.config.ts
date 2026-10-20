@@ -19,16 +19,31 @@ function serveData(): Plugin {
         try {
           const st = statSync(path)
           if (st.isFile() && path.startsWith(DATA + sep)) size = st.size
-        } catch { /* missing: 404 below */ }
-        if (size < 0) { res.statusCode = 404; res.end(); return }
+        } catch {
+          /* missing: 404 below */
+        }
+        if (size < 0) {
+          res.statusCode = 404
+          res.end()
+          return
+        }
         res.setHeader('Content-Type', TYPES[extname(path)] ?? 'application/octet-stream')
         res.setHeader('Accept-Ranges', 'bytes')
         res.setHeader('Cache-Control', 'no-cache')
         const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '')
-        if (!m) { res.setHeader('Content-Length', size); createReadStream(path).pipe(res); return }
+        if (!m) {
+          res.setHeader('Content-Length', size)
+          createReadStream(path).pipe(res)
+          return
+        }
         const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]))
         const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1
-        if (start > end || start >= size) { res.statusCode = 416; res.setHeader('Content-Range', `bytes */${size}`); res.end(); return }
+        if (start > end || start >= size) {
+          res.statusCode = 416
+          res.setHeader('Content-Range', `bytes */${size}`)
+          res.end()
+          return
+        }
         res.statusCode = 206
         res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`)
         res.setHeader('Content-Length', end - start + 1)
@@ -46,7 +61,11 @@ function maplibreWorker(): Plugin {
     apply: 'build',
     generateBundle() {
       for (const f of ['maplibre-gl-worker.mjs', 'maplibre-gl-shared.mjs']) {
-        this.emitFile({ type: 'asset', fileName: `maplibre/${f}`, source: readFileSync(fileURLToPath(new URL(`./node_modules/maplibre-gl/dist/${f}`, import.meta.url))) })
+        this.emitFile({
+          type: 'asset',
+          fileName: `maplibre/${f}`,
+          source: readFileSync(fileURLToPath(new URL(`./node_modules/maplibre-gl/dist/${f}`, import.meta.url))),
+        })
       }
     },
   }
@@ -60,5 +79,5 @@ export default defineConfig({
   // public/data holds the pipeline's tiles and tens of thousands of side files: served by serveData above, but not watched,
   // so a pipeline run does not keep the dev server busy reacting to every file it writes
   test: { setupFiles: ['./src/test-setup.ts'] },
-  server: { watch: { ignored: ['**/public/data/**'] }, fs: { allow: ['..'] } },   // fs.allow: ../shared/constants.json lives outside app/
+  server: { watch: { ignored: ['**/public/data/**'] }, fs: { allow: ['..'] } }, // fs.allow: ../shared/constants.json lives outside app/
 })

@@ -4,7 +4,14 @@ export const UNKNOWN = 'unknown'
 
 export function railTypeLabel(t: string | undefined, usage?: string): string {
   const base = t ? (TYPE_LABEL[t] ?? t) : UNKNOWN
-  const u: Record<string, string> = { main: 'main line', branch: 'branch line', industrial: 'industrial', military: 'military', tourism: 'tourist line', freight: 'freight line' }
+  const u: Record<string, string> = {
+    main: 'main line',
+    branch: 'branch line',
+    industrial: 'industrial',
+    military: 'military',
+    tourism: 'tourist line',
+    freight: 'freight line',
+  }
   return usage && u[usage] ? `${base} · ${u[usage]}` : base
 }
 
@@ -26,7 +33,16 @@ export function maxSpeed(ms?: string): string {
   return /^\d+\s*mph$/.test(ms) ? ms.replace(/\s*mph/, ' mph') : ms
 }
 
-const GAUGES: Record<string, string> = { '1435': 'standard', '1000': 'metre', '1520': 'Russian', '1600': 'Irish', '1668': 'Iberian', '1067': 'Cape', '914': '3 ft', '762': '2 ft 6 in' }
+const GAUGES: Record<string, string> = {
+  '1435': 'standard',
+  '1000': 'metre',
+  '1520': 'Russian',
+  '1600': 'Irish',
+  '1668': 'Iberian',
+  '1067': 'Cape',
+  '914': '3 ft',
+  '762': '2 ft 6 in',
+}
 export function gauge(g?: string): string {
   if (!g) return UNKNOWN
   const first = String(g).split(';')[0]
@@ -52,7 +68,14 @@ export function km(v: number, units: 'km' | 'mi'): string {
   return `${x >= 100 ? Math.round(x) : x.toFixed(1)} ${units}`
 }
 
-export const AREA_LABEL: Record<string, string> = { aerodrome: 'Airport', terminal: 'Airport terminal', land: 'Station grounds', yard: 'Railway yard', building: 'Station building', platform: 'Platform' }
+export const AREA_LABEL: Record<string, string> = {
+  aerodrome: 'Airport',
+  terminal: 'Airport terminal',
+  land: 'Station grounds',
+  yard: 'Railway yard',
+  building: 'Station building',
+  platform: 'Platform',
+}
 export const SERVICE_LABEL: Record<string, string> = { yard: 'yard', siding: 'siding', spur: 'spur', crossover: 'crossover' }
 
 export function areaSize(ha: number, units: 'km' | 'mi'): string {

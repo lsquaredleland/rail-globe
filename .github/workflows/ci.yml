@@ -45,6 +45,7 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci --ignore-scripts
       - run: npm run lint
+      - run: npm run format:check
       - run: npm test
       # VITE_DATA_BASE is left unset: the app falls back to its local data path. The Vercel build runs scripts/check-deploy.mjs separately.
       - run: npm run build

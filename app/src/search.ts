@@ -21,15 +21,35 @@ export interface SearchItem {
   key: string
 }
 
-type Row = [string, string | null, string | null, SearchItem['kind'], number, number, number | null, number | null, number | null, number | null, number, string | null, number]
+type Row = [
+  string,
+  string | null,
+  string | null,
+  SearchItem['kind'],
+  number,
+  number,
+  number | null,
+  number | null,
+  number | null,
+  number | null,
+  number,
+  string | null,
+  number,
+]
 
 const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
 export function parseSearch(rows: Row[]): SearchItem[] {
   return rows.map((r) => ({
-    name: r[0], nameEn: r[1], local: r[2], kind: r[3], center: [r[4], r[5]],
+    name: r[0],
+    nameEn: r[1],
+    local: r[2],
+    kind: r[3],
+    center: [r[4], r[5]],
     bbox: r[6] == null || r[7] == null || r[8] == null || r[9] == null ? null : [r[6], r[7], r[8], r[9]],
-    zoom: r[10], slug: r[11], stations: r[12],
+    zoom: r[10],
+    slug: r[11],
+    stations: r[12],
     key: fold([r[0], r[1], r[2]].filter(Boolean).join('\n')),
   }))
 }
@@ -37,15 +57,32 @@ export function parseSearch(rows: Row[]): SearchItem[] {
 let loading: Promise<SearchItem[] | null> | null = null
 /** search.json, fetched once; null when it could not be loaded */
 export function loadSearch(): Promise<SearchItem[] | null> {
-  loading ??= fetch(`${DATA_BASE}search.json`).then((r) => (r.ok ? r.json() : Promise.reject(r.status))).then(parseSearch).catch(() => { loading = null; return null })   // a failure is not kept: the next call tries again
+  loading ??= fetch(`${DATA_BASE}search.json`)
+    .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+    .then(parseSearch)
+    .catch(() => {
+      loading = null
+      return null
+    }) // a failure is not kept: the next call tries again
   return loading
 }
 export type SearchStatus = 'loading' | 'ready' | 'failed'
 export function useSearch(): { items: SearchItem[]; status: SearchStatus; retry(): void } {
   const [state, setState] = useState<{ items: SearchItem[]; status: SearchStatus }>({ items: [], status: 'loading' })
   const [tries, setTries] = useState(0)
-  useEffect(() => { let live = true; loadSearch().then((i) => { if (live) setState(i ? { items: i, status: 'ready' } : { items: [], status: 'failed' }) }); return () => { live = false } }, [tries])
-  const retry = useCallback(() => { setState({ items: [], status: 'loading' }); setTries((n) => n + 1) }, [])
+  useEffect(() => {
+    let live = true
+    loadSearch().then((i) => {
+      if (live) setState(i ? { items: i, status: 'ready' } : { items: [], status: 'failed' })
+    })
+    return () => {
+      live = false
+    }
+  }, [tries])
+  const retry = useCallback(() => {
+    setState({ items: [], status: 'loading' })
+    setTries((n) => n + 1)
+  }, [])
   return { ...state, retry }
 }
 
@@ -87,23 +124,36 @@ function dropTwinProvinces(list: SearchItem[]): SearchItem[] {
   for (const p of list) {
     if (p.kind !== 'province') continue
     const pn = names(p)
-    const c = cities.find((c) => names(c).some((n) => pn.includes(n)) && (inBox(p.bbox, c.center) || inBox(c.bbox, p.center))
-      && (c.bbox ? area(p.bbox) <= 4 * area(c.bbox) : area(p.bbox) <= 4))
-    if (c) { twinOf.set(p, c); dropped.set(c, p) }
+    const c = cities.find(
+      (c) =>
+        names(c).some((n) => pn.includes(n)) &&
+        (inBox(p.bbox, c.center) || inBox(c.bbox, p.center)) &&
+        (c.bbox ? area(p.bbox) <= 4 * area(c.bbox) : area(p.bbox) <= 4)
+    )
+    if (c) {
+      twinOf.set(p, c)
+      dropped.set(c, p)
+    }
   }
-  return list.filter((i) => !twinOf.has(i)).map((i) => {
-    const p = dropped.get(i)
-    return p && !i.bbox ? { ...i, bbox: p.bbox, zoom: p.zoom, slug: p.slug } : i
-  })
+  return list
+    .filter((i) => !twinOf.has(i))
+    .map((i) => {
+      const p = dropped.get(i)
+      return p && !i.bbox ? { ...i, bbox: p.bbox, zoom: p.zoom, slug: p.slug } : i
+    })
 }
 
 /** What to list before anything is typed: the biggest rail networks, countries then cities */
 export function featured(items: SearchItem[], each = 6): SearchItem[] {
-  const top = (k: SearchItem['kind']) => items.filter((i) => i.kind === k).sort((a, b) => b.stations - a.stations).slice(0, each)
+  const top = (k: SearchItem['kind']) =>
+    items
+      .filter((i) => i.kind === k)
+      .sort((a, b) => b.stations - a.stations)
+      .slice(0, each)
   return [...top('country'), ...top('city')]
 }
 
-const viewSpan = (v: View, screenW: number) => (360 * screenW) / (512 * 2 ** v.zoom)   // degrees of longitude on screen
+const viewSpan = (v: View, screenW: number) => (360 * screenW) / (512 * 2 ** v.zoom) // degrees of longitude on screen
 
 /** `part`: the data region (country) the view centre is in, when known. The country, province or city the view is over, for the region button before the statistics of its country have loaded: the smallest
  *  outline that holds the view centre and spans at least half the screen; else a city whose point is near the centre when zoomed in. */
@@ -123,7 +173,7 @@ export function itemInView(items: SearchItem[], v: View, screenW: number, part =
     best = it
     bestSpan = span
   }
-  if (!best && part && v.zoom >= 3.5) best = items.find((it) => it.kind === 'country' && it.slug === part) ?? null   // the country is bigger than the screen
+  if (!best && part && v.zoom >= 3.5) best = items.find((it) => it.kind === 'country' && it.slug === part) ?? null // the country is bigger than the screen
   if (v.zoom >= 8.5) {
     const near = items.filter((it) => it.kind === 'city' && !it.bbox && Math.hypot(it.center[0] - lon, (it.center[1] - lat) * 1.2) < vs * 0.25)
     if (near.length) return near.sort((a, b) => b.stations - a.stations)[0]

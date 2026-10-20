@@ -30,6 +30,17 @@ export function notHiddenSpeed(off: number[]): Expr[] {
 /** the band a speed (or an overview band's lower bound) falls in */
 export const speedBand = (kmh: number) => SPEED_BANDS.find((b) => kmh >= b.min) ?? SPEED_BANDS[SPEED_BANDS.length - 1]
 export const SPEED_UNKNOWN = '#BDB9AE'
-export const speedColor: Expr = ['case', ['has', 'kmh'],
-  ['step', get('kmh'), SPEED_BANDS[SPEED_BANDS.length - 1].color, ...[...SPEED_BANDS].reverse().slice(1).flatMap((b) => [b.min, b.color])],
-  SPEED_UNKNOWN] as Expr
+export const speedColor: Expr = [
+  'case',
+  ['has', 'kmh'],
+  [
+    'step',
+    get('kmh'),
+    SPEED_BANDS[SPEED_BANDS.length - 1].color,
+    ...[...SPEED_BANDS]
+      .reverse()
+      .slice(1)
+      .flatMap((b) => [b.min, b.color]),
+  ],
+  SPEED_UNKNOWN,
+] as Expr

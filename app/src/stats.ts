@@ -19,35 +19,46 @@ export function useStats(items: SearchItem[], view: View, picked: string): Stats
   const [loaded, setLoaded] = useState<Loaded>({})
   const [lon, lat] = view.center
   const wanted = useMemo(() => {
-    const w = view.zoom < 3.2 ? [] : items.filter((i) => i.kind === 'country' && i.slug && i.bbox && lon >= i.bbox[0] && lon <= i.bbox[2] && lat >= i.bbox[1] && lat <= i.bbox[3]).map((i) => i.slug!)
+    const w =
+      view.zoom < 3.2
+        ? []
+        : items
+            .filter((i) => i.kind === 'country' && i.slug && i.bbox && lon >= i.bbox[0] && lon <= i.bbox[2] && lat >= i.bbox[1] && lat <= i.bbox[3])
+            .map((i) => i.slug!)
     return picked && items.some((i) => i.slug === picked && i.kind === 'country') ? [...new Set([...w, picked])] : w
   }, [items, lon, lat, view.zoom, picked])
   useEffect(() => {
     let live = true
     for (const slug of wanted) {
       if (loaded[slug]) continue
-      Promise.all([loadStats(slug), loadShapes(slug)]).then((r) => { if (live) setLoaded((l) => (l[slug] ? l : { ...l, [slug]: r })) })
+      Promise.all([loadStats(slug), loadShapes(slug)]).then((r) => {
+        if (live) setLoaded((l) => (l[slug] ? l : { ...l, [slug]: r }))
+      })
     }
-    return () => { live = false }
+    return () => {
+      live = false
+    }
   }, [wanted, loaded])
   return useMemo(() => {
     const slugs = Object.keys(loaded)
     const regions = slugs.map((s) => loaded[s][0].find((x) => x.slug === s)).filter((a): a is StatsArea => !!a)
-    const areas = slugs.flatMap((s) => loaded[s][0].filter((a) => a.kind !== 'region'))   // a region's own row is in `regions`
+    const areas = slugs.flatMap((s) => loaded[s][0].filter((a) => a.kind !== 'region')) // a region's own row is in `regions`
     return { regions, areas, shapes: Object.assign({}, ...slugs.map((s) => loaded[s][1])) }
   }, [loaded])
 }
 
-const viewSpan = (v: View, screenW: number) => (360 * screenW) / (512 * 2 ** v.zoom)   // degrees of longitude on screen
+const viewSpan = (v: View, screenW: number) => (360 * screenW) / (512 * 2 ** v.zoom) // degrees of longitude on screen
 
 function inRings(polys: number[][][][], x: number, y: number): boolean {
   let inside = false
-  for (const poly of polys) for (const ring of poly) {
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const [xi, yi] = ring[i], [xj, yj] = ring[j]
-      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside
+  for (const poly of polys)
+    for (const ring of poly) {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i],
+          [xj, yj] = ring[j]
+        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside
+      }
     }
-  }
   return inside
 }
 

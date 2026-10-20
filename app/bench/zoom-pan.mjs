@@ -15,10 +15,16 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { loadavg } from 'node:os'
 
-const arg = (n, d) => { const i = process.argv.indexOf('--' + n); return i > 0 ? process.argv[i + 1] : d }
+const arg = (n, d) => {
+  const i = process.argv.indexOf('--' + n)
+  return i > 0 ? process.argv[i + 1] : d
+}
 const num = (n, d, min) => {
   const v = Number(arg(n, d))
-  if (!Number.isFinite(v) || v < min) { console.error(`--${n} must be a number >= ${min}`); process.exit(1) }
+  if (!Number.isFinite(v) || v < min) {
+    console.error(`--${n} must be a number >= ${min}`)
+    process.exit(1)
+  }
   return v
 }
 const URL_ = arg('url', 'http://localhost:4173')
@@ -26,28 +32,35 @@ const RUNS = num('runs', 3, 1)
 const THROTTLE = num('throttle', 6, 1)
 const WARMUP = num('warmup', 1, 0)
 const LABEL = arg('label', 'run')
-const QUERY = arg('query', '')   // extra URL query for local runs, recorded in the result's env.query
+const QUERY = arg('query', '') // extra URL query for local runs, recorded in the result's env.query
 const SCENARIO = arg('scenario', 'default')
 const EVAL = arg('eval', '')
 const TRACE = arg('trace', '')
-const HEADED = process.argv.includes('--headed')   // real window on the real display: refresh rate follows the screen (ProMotion = 120 Hz); frame budget = measured control median
-const DELTA = arg('delta', '')                      // fast only: fixed wheel delta per tick, skips calibration
-const LATENCY = num('latency', 0, 0)   // fast only: CDP network emulation RTT in ms on page and workers (tile + basemap requests); 0 = off
-const DOWN = num('down', 0, 0)         // Mbps download cap used with --latency; 0 = unlimited
-const START_Z = num('start-zoom', 10, 0)   // fast only: zoom the bursts start from
-const ONLY = arg('view', '')           // fast only: run just these views (comma-separated names)
-const ZOOMOUT = process.argv.includes('--zoomout')   // fast only: zoom-OUT scenario, see below
-if (ZOOMOUT && TRACE) { console.error('--zoomout does not support --trace (the zoom-out loop does not record a trace)'); process.exit(2) }
-const OUTS = num('outs', 1, 1)         // --zoomout: wheel-out bursts per cycle (each ~4-7 levels with --delta 127; use 2 for z14 to about z4)
-const TILESTATE = process.argv.includes('--tilestate')   // fast only: per frame, was every tile the map wants loaded (areTilesLoaded); saved as a 0/1 string `ts` plus burst end marks
-const EXT = !/^https?:\/\/(localhost|127\.0\.0\.1)/.test(URL_)   // external site: no ?debug, start view set via the #view= hash
+const HEADED = process.argv.includes('--headed') // real window on the real display: refresh rate follows the screen (ProMotion = 120 Hz); frame budget = measured control median
+const DELTA = arg('delta', '') // fast only: fixed wheel delta per tick, skips calibration
+const LATENCY = num('latency', 0, 0) // fast only: CDP network emulation RTT in ms on page and workers (tile + basemap requests); 0 = off
+const DOWN = num('down', 0, 0) // Mbps download cap used with --latency; 0 = unlimited
+const START_Z = num('start-zoom', 10, 0) // fast only: zoom the bursts start from
+const ONLY = arg('view', '') // fast only: run just these views (comma-separated names)
+const ZOOMOUT = process.argv.includes('--zoomout') // fast only: zoom-OUT scenario, see below
+if (ZOOMOUT && TRACE) {
+  console.error('--zoomout does not support --trace (the zoom-out loop does not record a trace)')
+  process.exit(2)
+}
+const OUTS = num('outs', 1, 1) // --zoomout: wheel-out bursts per cycle (each ~4-7 levels with --delta 127; use 2 for z14 to about z4)
+const TILESTATE = process.argv.includes('--tilestate') // fast only: per frame, was every tile the map wants loaded (areTilesLoaded); saved as a 0/1 string `ts` plus burst end marks
+const EXT = !/^https?:\/\/(localhost|127\.0\.0\.1)/.test(URL_) // external site: no ?debug, start view set via the #view= hash
 const CHROME = arg('chrome', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
-let VSYNC = 1000 / 60   // frame budget; replaced by the measured control median in headed mode
-let DROP_MS = 25   // 1.5 vsync: a frame longer than this is dropped (33.3 sits on the 2-vsync rounding boundary)
+let VSYNC = 1000 / 60 // frame budget; replaced by the measured control median in headed mode
+let DROP_MS = 25 // 1.5 vsync: a frame longer than this is dropped (33.3 sits on the 2-vsync rounding boundary)
 const VIEWPORT = { width: 1440, height: 900, deviceScaleFactor: 2 }
 const VIEWS = [
   // China only: densest network, and every view draws from the one china.pmtiles
-  ['Chengdu East', 104.14, 30.63], ['Shenzhen', 114.06, 22.58], ['Guangzhou', 113.27, 23.13], ['Beijing', 116.40, 39.90], ['Shanghai', 121.47, 31.23],
+  ['Chengdu East', 104.14, 30.63],
+  ['Shenzhen', 114.06, 22.58],
+  ['Guangzhou', 113.27, 23.13],
+  ['Beijing', 116.4, 39.9],
+  ['Shanghai', 121.47, 31.23],
 ]
 // fixed durations so every run does identical work; essential ignores prefers-reduced-motion
 const MOVES = [
@@ -55,14 +68,31 @@ const MOVES = [
   ['pan', (m) => m.panBy([1440, 0], { duration: 1500, essential: true })],
   ['zoomOut', (m) => m.easeTo({ zoom: 8, duration: 2500, essential: true })],
 ]
-if (ONLY) { const want = ONLY.split(','); const k = VIEWS.filter((v) => want.includes(v[0])); if (k.length !== want.length) { console.error('unknown --view'); process.exit(1) } VIEWS.splice(0, VIEWS.length, ...k) }
+if (ONLY) {
+  const want = ONLY.split(',')
+  const k = VIEWS.filter((v) => want.includes(v[0]))
+  if (k.length !== want.length) {
+    console.error('unknown --view')
+    process.exit(1)
+  }
+  VIEWS.splice(0, VIEWS.length, ...k)
+}
 const MV = MOVES.map(([k]) => k)
 
-const median = (a) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); const n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2 }
+const median = (a) => {
+  if (!a.length) return 0
+  const s = [...a].sort((x, y) => x - y)
+  const n = s.length
+  return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2
+}
 const r1 = (x) => Math.round(x * 10) / 10
 const sum = (a) => a.reduce((x, y) => x + y, 0)
 
-const pct = (a, q) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.ceil(q / 100 * s.length) - 1)] }
+const pct = (a, q) => {
+  if (!a.length) return 0
+  const s = [...a].sort((x, y) => x - y)
+  return s[Math.min(s.length - 1, Math.ceil((q / 100) * s.length) - 1)]
+}
 // scores a list of frame intervals (ms) and the long tasks (ms durations) inside them
 function score(fr, long) {
   return {
@@ -71,15 +101,24 @@ function score(fr, long) {
     dropped: fr.filter((x) => x > DROP_MS).length,
     max: fr.length ? Math.max(...fr) : 0,
     jank: sum(fr.map((x) => Math.max(0, x - VSYNC))),
-    over: fr.filter((x) => x >= 1.5 * VSYNC).length,   // frames that missed at least one vsync (round(dt/budget) >= 2)
-    p95: pct(fr, 95), p99: pct(fr, 99),
-    longTasks: long.length, longMs: sum(long),
+    over: fr.filter((x) => x >= 1.5 * VSYNC).length, // frames that missed at least one vsync (round(dt/budget) >= 2)
+    p95: pct(fr, 95),
+    p99: pct(fr, 99),
+    longTasks: long.length,
+    longMs: sum(long),
   }
 }
 const combine = (ss) => ({
-  frames: sum(ss.map((s) => s.frames)), missed: sum(ss.map((s) => s.missed)), dropped: sum(ss.map((s) => s.dropped)), over: sum(ss.map((s) => s.over || 0)), p95: 0, p99: 0,
-  max: ss.length ? Math.max(...ss.map((s) => s.max)) : 0, jank: sum(ss.map((s) => s.jank)),
-  longTasks: sum(ss.map((s) => s.longTasks)), longMs: sum(ss.map((s) => s.longMs)),
+  frames: sum(ss.map((s) => s.frames)),
+  missed: sum(ss.map((s) => s.missed)),
+  dropped: sum(ss.map((s) => s.dropped)),
+  over: sum(ss.map((s) => s.over || 0)),
+  p95: 0,
+  p99: 0,
+  max: ss.length ? Math.max(...ss.map((s) => s.max)) : 0,
+  jank: sum(ss.map((s) => s.jank)),
+  longTasks: sum(ss.map((s) => s.longTasks)),
+  longMs: sum(ss.map((s) => s.longMs)),
 })
 
 // runs in the page: resolves at once if already idle, else after the next idle event
@@ -93,11 +132,16 @@ const IDLE = `window.__idle = () => new Promise((res, rej) => {
 
 // control: ~60 rAF intervals on the loaded page with the map not moving. A median near 33 ms means the display runs at 30 Hz.
 const CONTROL_MS = 25
-const control = (page) => page.evaluate(`new Promise((res) => {
+const control = (page) =>
+  page
+    .evaluate(
+      `new Promise((res) => {
   const fr = []; let last = performance.now(), n = 0
   const tick = (t) => { fr.push(t - last); last = t; if (++n < 61) requestAnimationFrame(tick); else { fr.shift(); res(fr) } }
   requestAnimationFrame(tick)
-})`).then(median)
+})`
+    )
+    .then(median)
 
 async function oneRun(browser, ctl) {
   const page = await browser.newPage()
@@ -105,7 +149,7 @@ async function oneRun(browser, ctl) {
     await page.setViewport(VIEWPORT)
     const cdp = await page.createCDPSession()
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE })
-    await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }])   // headless must not skip animations
+    await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }]) // headless must not skip animations
     await page.evaluateOnNewDocument(`window.__long = [];
       new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__long.push([e.startTime, e.duration]) }).observe({ entryTypes: ['longtask'] })`)
     await page.goto(URL_ + '/?debug' + (QUERY ? '&' + QUERY : ''), { waitUntil: 'load' })
@@ -140,23 +184,36 @@ async function oneRun(browser, ctl) {
         })()`)
         if (res.reduced) console.error('warning: prefers-reduced-motion is on')
         moves[mv] = {
-          fr: res.fr, long: res.long.filter(([s]) => s >= res.t0 && s <= res.t1).map(([s, d]) => ({ s, d })),
-          moveMs: res.moveMs, settle: res.settle,
+          fr: res.fr,
+          long: res.long.filter(([s]) => s >= res.t0 && s <= res.t1).map(([s, d]) => ({ s, d })),
+          moveMs: res.moveMs,
+          settle: res.settle,
         }
         await new Promise((r) => setTimeout(r, 300))
       }
       out[name] = moves
-      const s = combine(MV.map((k) => score(moves[k].fr, moves[k].long.map((x) => x.d))))
+      const s = combine(
+        MV.map((k) =>
+          score(
+            moves[k].fr,
+            moves[k].long.map((x) => x.d)
+          )
+        )
+      )
       process.stderr.write(`  ${name}: missed ${s.missed}, dropped ${s.dropped}/${s.frames}, max ${r1(s.max)} ms\n`)
     }
     ctl.push(await control(page))
     return out
-  } finally { await page.close() }
+  } finally {
+    await page.close()
+  }
 }
 
-
 // ---- fast scenario: real wheel input through MapLibre's scroll-zoom handler ----
-const netCond = (c) => (LATENCY || DOWN) ? c.send('Network.emulateNetworkConditions', { offline: false, latency: LATENCY, downloadThroughput: DOWN ? DOWN * 125000 : -1, uploadThroughput: -1 }) : null
+const netCond = (c) =>
+  LATENCY || DOWN
+    ? c.send('Network.emulateNetworkConditions', { offline: false, latency: LATENCY, downloadThroughput: DOWN ? DOWN * 125000 : -1, uploadThroughput: -1 })
+    : null
 const FAST = { startZoom: START_Z, span: 4, burstMs: 1000, tickMs: 25, pauseMs: 300, cycles: 3 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const FAST_IDLE = `window.__idleAfter = () => new Promise((res) => {
@@ -164,10 +221,12 @@ const FAST_IDLE = `window.__idleAfter = () => new Promise((res) => {
   const chk = () => { if (!m.isMoving() && m.loaded()) res(performance.now()); else m.once('idle', () => res(performance.now())) }
   setTimeout(chk, 50)
 })`
-const urlKind = (u) => (u.includes('.pmtiles') ? 'pmtiles' : u.includes('openfreemap') ? (u.includes('/fonts/') ? 'ofmGlyph' : 'ofmTile') : u.includes('/glyphs/') ? 'ownGlyph' : null)
+const urlKind = (u) =>
+  u.includes('.pmtiles') ? 'pmtiles' : u.includes('openfreemap') ? (u.includes('/fonts/') ? 'ofmGlyph' : 'ofmTile') : u.includes('/glyphs/') ? 'ownGlyph' : null
 
 async function wheelBurst(page, dir, delta) {
-  const n = Math.round(FAST.burstMs / FAST.tickMs), t0 = Date.now()
+  const n = Math.round(FAST.burstMs / FAST.tickMs),
+    t0 = Date.now()
   for (let i = 0; i < n; i++) {
     await page.mouse.wheel({ deltaY: dir * delta })
     const wait = t0 + (i + 1) * FAST.tickMs - Date.now()
@@ -178,7 +237,10 @@ const zoomOf = (page) => page.evaluate('window.__map.getZoom()')
 
 // finds the per-tick delta whose burst spans FAST.span zoom levels (zoom-in direction); returns {delta, log}
 async function calibrate(page, lon, lat) {
-  let delta = 60, lo = 0, hi = Infinity; const log = []
+  let delta = 60,
+    lo = 0,
+    hi = Infinity
+  const log = []
   for (let i = 0; i < 6; i++) {
     await page.evaluate(`window.__map.jumpTo({ center: [${lon}, ${lat}], zoom: ${FAST.startZoom} })`)
     await page.evaluate('window.__idle()')
@@ -187,8 +249,9 @@ async function calibrate(page, lon, lat) {
     const span = (await zoomOf(page)) - FAST.startZoom
     log.push([Math.round(delta), +span.toFixed(2)])
     if (Math.abs(span - FAST.span) < 0.15) break
-    if (span < FAST.span) lo = delta; else hi = delta
-    delta = Number.isFinite(hi) ? (lo + hi) / 2 : delta * FAST.span / Math.max(span, 0.2)
+    if (span < FAST.span) lo = delta
+    else hi = delta
+    delta = Number.isFinite(hi) ? (lo + hi) / 2 : (delta * FAST.span) / Math.max(span, 0.2)
     await page.evaluate('window.__idle()')
   }
   return { delta, log }
@@ -197,7 +260,9 @@ async function calibrate(page, lon, lat) {
 async function oneRunFast(browser, ctl, runIdx) {
   const page = await browser.newPage()
   const net = { on: false, cur: null }
-  const bump = (kind, key, n = 1) => { if (net.on && kind) net.cur[kind][key] += n }
+  const bump = (kind, key, n = 1) => {
+    if (net.on && kind) net.cur[kind][key] += n
+  }
   const ids = new Map()
   try {
     if (!HEADED) await page.setViewport(VIEWPORT)
@@ -209,18 +274,51 @@ async function oneRunFast(browser, ctl, runIdx) {
       new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__long.push([e.startTime, e.duration]) }).observe({ entryTypes: ['longtask'] })
       addEventListener('wheel', () => { window.__lastWheel = performance.now() }, { capture: true, passive: true })`)
     const track = (c) => {
-      c.on('Network.requestWillBeSent', (e) => { const k = urlKind(e.request.url); if (k) { ids.set(e.requestId, k); bump(k, 'requested') } })
-      c.on('Network.loadingFinished', (e) => { const k = ids.get(e.requestId); if (k) { bump(k, 'finished'); bump(k, 'bytes', e.encodedDataLength || 0); ids.delete(e.requestId) } })
-      c.on('Network.loadingFailed', (e) => { const k = ids.get(e.requestId); if (k) { bump(k, e.canceled ? 'aborted' : 'failed'); ids.delete(e.requestId) } })
+      c.on('Network.requestWillBeSent', (e) => {
+        const k = urlKind(e.request.url)
+        if (k) {
+          ids.set(e.requestId, k)
+          bump(k, 'requested')
+        }
+      })
+      c.on('Network.loadingFinished', (e) => {
+        const k = ids.get(e.requestId)
+        if (k) {
+          bump(k, 'finished')
+          bump(k, 'bytes', e.encodedDataLength || 0)
+          ids.delete(e.requestId)
+        }
+      })
+      c.on('Network.loadingFailed', (e) => {
+        const k = ids.get(e.requestId)
+        if (k) {
+          bump(k, e.canceled ? 'aborted' : 'failed')
+          ids.delete(e.requestId)
+        }
+      })
     }
-    track(cdp); await cdp.send('Network.enable'); await netCond(cdp)
-    page.on('workercreated', async (w) => { try { track(w.client); await w.client.send('Network.enable'); await netCond(w.client) } catch {} })
-    await page.goto(EXT ? `${URL_.replace(/\/$/, '')}/#view=${FAST.startZoom}/${VIEWS[0][2]}/${VIEWS[0][1]}` : URL_ + '/?debug' + (QUERY ? '&' + QUERY : ''), { waitUntil: 'load' })
+    track(cdp)
+    await cdp.send('Network.enable')
+    await netCond(cdp)
+    page.on('workercreated', async (w) => {
+      try {
+        track(w.client)
+        await w.client.send('Network.enable')
+        await netCond(w.client)
+      } catch {}
+    })
+    await page.goto(EXT ? `${URL_.replace(/\/$/, '')}/#view=${FAST.startZoom}/${VIEWS[0][2]}/${VIEWS[0][1]}` : URL_ + '/?debug' + (QUERY ? '&' + QUERY : ''), {
+      waitUntil: 'load',
+    })
     await page.waitForFunction('window.__map && window.__map.loaded()', { timeout: 120000 })
-    await page.evaluate(IDLE); await page.evaluate(FAST_IDLE)
-    const win = await page.evaluate('({ dpr: devicePixelRatio, iw: innerWidth, ih: innerHeight, sw: screen.width, sh: screen.height, vis: document.visibilityState, focus: document.hasFocus(), layers: window.__map.getStyle().layers.length })')
+    await page.evaluate(IDLE)
+    await page.evaluate(FAST_IDLE)
+    const win = await page.evaluate(
+      '({ dpr: devicePixelRatio, iw: innerWidth, ih: innerHeight, sw: screen.width, sh: screen.height, vis: document.visibilityState, focus: document.hasFocus(), layers: window.__map.getStyle().layers.length })'
+    )
     env.win = win
-    if (HEADED && (win.vis !== 'visible' || !win.focus)) console.error(`!!! window not foreground: visibility ${win.vis}, focus ${win.focus}; rAF may be throttled`)
+    if (HEADED && (win.vis !== 'visible' || !win.focus))
+      console.error(`!!! window not foreground: visibility ${win.vis}, focus ${win.focus}; rAF may be throttled`)
     if (EVAL) await page.evaluate(EVAL)
     await page.evaluate('window.__idle()')
     ctl.push(await control(page))
@@ -231,10 +329,22 @@ async function oneRunFast(browser, ctl, runIdx) {
       await page.evaluate(`window.__map.jumpTo({ center: [${lon}, ${lat}], zoom: ${FAST.startZoom} })`)
       await page.evaluate('window.__idle()')
       await sleep(300)
-      const z0 = () => ({ requested: 0, finished: 0, aborted: 0, failed: 0, bytes: 0 })   // bytes: transferred (encodedDataLength), cache hits count 0
+      const z0 = () => ({ requested: 0, finished: 0, aborted: 0, failed: 0, bytes: 0 }) // bytes: transferred (encodedDataLength), cache hits count 0
       net.cur = { pmtiles: z0(), ofmTile: z0(), ofmGlyph: z0(), ownGlyph: z0() }
       const tracing = TRACE && runIdx === 0
-      if (tracing) await page.tracing.start({ categories: ['devtools.timeline', 'disabled-by-default-devtools.timeline', 'disabled-by-default-devtools.timeline.frame', 'v8.execute', 'disabled-by-default-v8.cpu_profiler', 'gpu', 'toplevel', 'blink.user_timing'] })
+      if (tracing)
+        await page.tracing.start({
+          categories: [
+            'devtools.timeline',
+            'disabled-by-default-devtools.timeline',
+            'disabled-by-default-devtools.timeline.frame',
+            'v8.execute',
+            'disabled-by-default-v8.cpu_profiler',
+            'gpu',
+            'toplevel',
+            'blink.user_timing',
+          ],
+        })
       await page.evaluate(`window.__fr = []; window.__on = true; window.__zl = [];
         window.__ts = []; window.__marks = [];
         { let last = performance.now(); const tick = (t) => { window.__fr.push(t - last); last = t; if (${TILESTATE}) window.__ts.push(window.__map.areTilesLoaded() ? 0 : 1); if (window.__on) requestAnimationFrame(tick) }; requestAnimationFrame(tick) }
@@ -244,56 +354,98 @@ async function oneRunFast(browser, ctl, runIdx) {
       const settles = []
       if (ZOOMOUT) {
         // zoom-out scenario: frames are recorded only from the first out tick to the idle after the last one; the jump back to the start zoom is not recorded
-        const frAll = [], longAll = []
+        const frAll = [],
+          longAll = []
         net.on = false
-        await page.evaluate('window.__on = false'); await sleep(100)   // stop the generic frame loop started above
+        await page.evaluate('window.__on = false')
+        await sleep(100) // stop the generic frame loop started above
         for (let c = 0; c < FAST.cycles; c++) {
           await page.evaluate(`window.__map.jumpTo({ center: [${lon}, ${lat}], zoom: ${FAST.startZoom} })`)
-          await page.evaluate('window.__idle()'); await sleep(300)
-          await page.evaluate(`window.__fr = []; window.__long.length = 0; { let last = performance.now(); const tick = (t) => { window.__fr.push(t - last); last = t; if (window.__on) requestAnimationFrame(tick) }; window.__on = true; requestAnimationFrame(tick) }; window.__t0 = performance.now()`)
+          await page.evaluate('window.__idle()')
+          await sleep(300)
+          await page.evaluate(
+            `window.__fr = []; window.__long.length = 0; { let last = performance.now(); const tick = (t) => { window.__fr.push(t - last); last = t; if (window.__on) requestAnimationFrame(tick) }; window.__on = true; requestAnimationFrame(tick) }; window.__t0 = performance.now()`
+          )
           net.on = true
-          for (let o = 0; o < OUTS; o++) { await wheelBurst(page, 1, cal.delta); if (o < OUTS - 1) await sleep(FAST.pauseMs) }
+          for (let o = 0; o < OUTS; o++) {
+            await wheelBurst(page, 1, cal.delta)
+            if (o < OUTS - 1) await sleep(FAST.pauseMs)
+          }
           zooms.push(+(await zoomOf(page)).toFixed(2))
-          const ti = await page.evaluate('window.__idleAfter()'), lw = await page.evaluate('window.__lastWheel')
-          settles.push(ti - lw); net.on = false
+          const ti = await page.evaluate('window.__idleAfter()'),
+            lw = await page.evaluate('window.__lastWheel')
+          settles.push(ti - lw)
+          net.on = false
           const r = await page.evaluate('({ fr: window.__fr.slice(1), long: window.__long.slice() })')
-          frAll.push(...r.fr); longAll.push(...r.long.map(([, d]) => d))
-          await page.evaluate('window.__on = false'); await sleep(100)
+          frAll.push(...r.fr)
+          longAll.push(...r.long.map(([, d]) => d))
+          await page.evaluate('window.__on = false')
+          await sleep(100)
         }
         out[name] = { fr: frAll, long: longAll, net: net.cur, idleAfterLastWheelMs: median(settles), settles, zooms }
         const s = score(frAll, longAll)
-        process.stderr.write(`  ${name}: missed ${s.missed}, dropped ${s.dropped}/${s.frames}, max ${r1(s.max)} ms, settle ${settles.map(Math.round).join('/')} ms, zooms ${zooms.join(' ')}\n`)
+        process.stderr.write(
+          `  ${name}: missed ${s.missed}, dropped ${s.dropped}/${s.frames}, max ${r1(s.max)} ms, settle ${settles.map(Math.round).join('/')} ms, zooms ${zooms.join(' ')}\n`
+        )
         continue
       }
       for (let c = 0; c < FAST.cycles; c++) {
-        await wheelBurst(page, -1, cal.delta); zooms.push(+(await zoomOf(page)).toFixed(2)); await page.evaluate('window.__marks.push(performance.now() - window.__t0)')
+        await wheelBurst(page, -1, cal.delta)
+        zooms.push(+(await zoomOf(page)).toFixed(2))
+        await page.evaluate('window.__marks.push(performance.now() - window.__t0)')
         await sleep(FAST.pauseMs)
-        await wheelBurst(page, 1, cal.delta); zooms.push(+(await zoomOf(page)).toFixed(2)); await page.evaluate('window.__marks.push(performance.now() - window.__t0)')
+        await wheelBurst(page, 1, cal.delta)
+        zooms.push(+(await zoomOf(page)).toFixed(2))
+        await page.evaluate('window.__marks.push(performance.now() - window.__t0)')
         await sleep(FAST.pauseMs)
       }
-      if (EXT) { const to = await page.evaluate('window.__idleTimeouts || []'); if (to.length) { out._idleTimeouts = to; console.error('  idle timeouts: ' + to.join(' | ')) } }
+      if (EXT) {
+        const to = await page.evaluate('window.__idleTimeouts || []')
+        if (to.length) {
+          out._idleTimeouts = to
+          console.error('  idle timeouts: ' + to.join(' | '))
+        }
+      }
       const tIdle = await page.evaluate('window.__idleAfter()')
       const lastWheel = await page.evaluate('window.__lastWheel')
       net.on = false
       await page.evaluate('window.__on = false')
       await sleep(150)
-      if (tracing) { const buf = await page.tracing.stop(); mkdirSync(TRACE, { recursive: true }); writeFileSync(`${TRACE}/${LABEL}-${name.replace(/ /g, '_')}.json`, buf) }
-      const res = await page.evaluate('({ fr: window.__fr.slice(1), ts: window.__ts.slice(1).join(""), marks: window.__marks, t0: window.__t0, t1: performance.now(), long: window.__long.slice() })')
+      if (tracing) {
+        const buf = await page.tracing.stop()
+        mkdirSync(TRACE, { recursive: true })
+        writeFileSync(`${TRACE}/${LABEL}-${name.replace(/ /g, '_')}.json`, buf)
+      }
+      const res = await page.evaluate(
+        '({ fr: window.__fr.slice(1), ts: window.__ts.slice(1).join(""), marks: window.__marks, t0: window.__t0, t1: performance.now(), long: window.__long.slice() })'
+      )
       const long = res.long.filter(([s]) => s >= res.t0 && s <= res.t1).map(([, d]) => d)
       out[name] = { fr: res.fr, ...(TILESTATE ? { ts: res.ts, marks: res.marks } : {}), long, net: net.cur, idleAfterLastWheelMs: tIdle - lastWheel, zooms }
       const s = score(res.fr, long)
-      process.stderr.write(`  ${name}: missed ${s.missed}, dropped ${s.dropped}/${s.frames}, max ${r1(s.max)} ms, idle ${r1(tIdle - lastWheel)} ms, zooms ${zooms.join(' ')}\n`)
+      process.stderr.write(
+        `  ${name}: missed ${s.missed}, dropped ${s.dropped}/${s.frames}, max ${r1(s.max)} ms, idle ${r1(tIdle - lastWheel)} ms, zooms ${zooms.join(' ')}\n`
+      )
     }
     ctl.push(await control(page))
     return out
-  } finally { await page.close() }
+  } finally {
+    await page.close()
+  }
 }
 
 // per-run scores from raw frames
 function scoreRun(run) {
   const views = {}
   for (const [name] of VIEWS) {
-    const per = Object.fromEntries(MV.map((k) => [k, score(run[name][k].fr, run[name][k].long.map((x) => x.d))]))
+    const per = Object.fromEntries(
+      MV.map((k) => [
+        k,
+        score(
+          run[name][k].fr,
+          run[name][k].long.map((x) => x.d)
+        ),
+      ])
+    )
     views[name] = { moves: per, total: combine(Object.values(per)), settle: Object.fromEntries(MV.map((k) => [k, run[name][k].settle])) }
   }
   const total = combine(Object.values(views).map((v) => v.total))
@@ -303,11 +455,12 @@ function scoreRun(run) {
 
 // Per-phase warning only (never used to exclude a run): a phase whose frames are all ~33.3 ms looks like a 30 Hz display, but at
 // 60 Hz genuinely slow frames also show as 33.3 ms. The control (idle page, before and after a run) decides whether a run is flagged.
-const halved = (fr) => fr.length >= 10 && (Math.min(...fr) >= 30 || (Math.abs(median(fr) - 2 * VSYNC) < 1.5 && fr.filter((x) => x < 20).length <= fr.length * 0.02))
+const halved = (fr) =>
+  fr.length >= 10 && (Math.min(...fr) >= 30 || (Math.abs(median(fr) - 2 * VSYNC) < 1.5 && fr.filter((x) => x < 20).length <= fr.length * 0.02))
 const phaseWarn = (run) => VIEWS.flatMap(([n]) => MV.filter((k) => halved(run[n][k].fr)).map((k) => `${n}/${k}`))
 const flagged = (c) => c.some((x) => x > CONTROL_MS)
 
-const spread = (a) => (median(a) ? (Math.max(...a) - Math.min(...a)) / median(a) : 0)   // unrounded
+const spread = (a) => (median(a) ? (Math.max(...a) - Math.min(...a)) / median(a) : 0) // unrounded
 function summarize(runs) {
   const sc = runs.map(scoreRun)
   const med = (f) => median(sc.map(f))
@@ -315,29 +468,70 @@ function summarize(runs) {
   for (const [name] of VIEWS) {
     views[name] = {
       missed: Object.fromEntries([...MV, 'total'].map((k) => [k, med((r) => (k === 'total' ? r.views[name].total : r.views[name].moves[k]).missed)])),
-      dropped: med((r) => r.views[name].total.dropped), max: med((r) => r.views[name].total.max), jank: med((r) => r.views[name].total.jank),
-      longTasks: med((r) => r.views[name].total.longTasks), longMs: med((r) => r.views[name].total.longMs), frames: med((r) => r.views[name].total.frames),
+      dropped: med((r) => r.views[name].total.dropped),
+      max: med((r) => r.views[name].total.max),
+      jank: med((r) => r.views[name].total.jank),
+      longTasks: med((r) => r.views[name].total.longTasks),
+      longMs: med((r) => r.views[name].total.longMs),
+      frames: med((r) => r.views[name].total.frames),
       settle: Object.fromEntries(MV.map((k) => [k, med((r) => r.views[name].settle[k])])),
       missedSpread: spread(sc.map((r) => r.views[name].total.missed)),
     }
   }
   const T = (k) => med((r) => r.total[k])
   const total = {
-    frames: T('frames'), missed: T('missed'), dropped: T('dropped'), max: T('max'), jank: T('jank'), longTasks: T('longTasks'), longMs: T('longMs'), settle: T('settle'),
-    missedSpread: spread(sc.map((r) => r.total.missed)), jankSpread: spread(sc.map((r) => r.total.jank)),
+    frames: T('frames'),
+    missed: T('missed'),
+    dropped: T('dropped'),
+    max: T('max'),
+    jank: T('jank'),
+    longTasks: T('longTasks'),
+    longMs: T('longMs'),
+    settle: T('settle'),
+    missedSpread: spread(sc.map((r) => r.total.missed)),
+    jankSpread: spread(sc.map((r) => r.total.jank)),
   }
   return { views, total }
 }
 
-const git = (c) => { try { return execSync('git ' + c, { encoding: 'utf8' }).trim() } catch { return null } }
+const git = (c) => {
+  try {
+    return execSync('git ' + c, { encoding: 'utf8' }).trim()
+  } catch {
+    return null
+  }
+}
 const t0 = Date.now()
-const browser = await puppeteer.launch({ executablePath: CHROME, headless: !HEADED, ...(HEADED ? { defaultViewport: null } : {}),
-  args: ['--enable-gpu-rasterization', '--ignore-gpu-blocklist', ...(HEADED ? ['--window-size=1440,900', '--window-position=0,0'] : [])] })
+const browser = await puppeteer.launch({
+  executablePath: CHROME,
+  headless: !HEADED,
+  ...(HEADED ? { defaultViewport: null } : {}),
+  args: ['--enable-gpu-rasterization', '--ignore-gpu-blocklist', ...(HEADED ? ['--window-size=1440,900', '--window-position=0,0'] : [])],
+})
 const env = {
-  query: QUERY, tilestate: TILESTATE, latencyMs: LATENCY, downMbps: DOWN, startZoom: START_Z,
-  chrome: await browser.version(), commit: git('rev-parse HEAD'), dirty: !!git('status --porcelain'),
-  viewport: VIEWPORT, headed: HEADED, ext: EXT, url: URL_, throttle: THROTTLE, runs: RUNS, warmup: WARMUP, vsyncMs: VSYNC, dropMs: DROP_MS, date: new Date().toISOString(),
-  loadAvg: loadavg(), loadAvgEnd: null, controlMs: [], refreshHalved: [], controlLimitMs: CONTROL_MS,
+  query: QUERY,
+  tilestate: TILESTATE,
+  latencyMs: LATENCY,
+  downMbps: DOWN,
+  startZoom: START_Z,
+  chrome: await browser.version(),
+  commit: git('rev-parse HEAD'),
+  dirty: !!git('status --porcelain'),
+  viewport: VIEWPORT,
+  headed: HEADED,
+  ext: EXT,
+  url: URL_,
+  throttle: THROTTLE,
+  runs: RUNS,
+  warmup: WARMUP,
+  vsyncMs: VSYNC,
+  dropMs: DROP_MS,
+  date: new Date().toISOString(),
+  loadAvg: loadavg(),
+  loadAvgEnd: null,
+  controlMs: [],
+  refreshHalved: [],
+  controlLimitMs: CONTROL_MS,
 }
 if (env.loadAvg[0] > 2) console.error(`WARNING: 1-min load average ${env.loadAvg[0].toFixed(1)} > 2: the machine is busy, results may be noisy`)
 
@@ -346,88 +540,166 @@ if (SCENARIO === 'fast') {
   const ffile = new URL(`./results/${LABEL}-fast-${new Date().toISOString().replace(/[:.]/g, '-')}.json`, import.meta.url)
   const fruns = []
   try {
-    for (let i = 0; i < WARMUP; i++) { console.error(`warmup ${i + 1}/${WARMUP}`); await oneRunFast(browser, [], -1) }
+    for (let i = 0; i < WARMUP; i++) {
+      console.error(`warmup ${i + 1}/${WARMUP}`)
+      await oneRunFast(browser, [], -1)
+    }
     for (let i = 0; i < RUNS; i++) {
       console.error(`run ${i + 1}/${RUNS}`)
       const ctl = []
       fruns.push(await oneRunFast(browser, ctl, i))
-      env.controlMs.push(ctl.map(r1)); env.refreshHalved.push(flagged(ctl))
+      env.controlMs.push(ctl.map(r1))
+      env.refreshHalved.push(flagged(ctl))
       if (flagged(ctl)) console.error(`!!! run ${i + 1} REFRESH HALVED: control ${ctl.map(r1).join(' / ')} ms`)
       writeFileSync(ffile, JSON.stringify({ label: LABEL, scenario: 'fast', fast: FAST, eval: EVAL, env, raw: fruns }))
     }
-  } catch (e) { console.error('aborted: ' + e.stack); process.exitCode = 1 } finally { await browser.close(); env.loadAvgEnd = loadavg() }
+  } catch (e) {
+    console.error('aborted: ' + e.stack)
+    process.exitCode = 1
+  } finally {
+    await browser.close()
+    env.loadAvgEnd = loadavg()
+  }
   writeFileSync(ffile, JSON.stringify({ label: LABEL, scenario: 'fast', fast: FAST, eval: EVAL, env, raw: fruns }))
   const p = (v, n) => String(v).padStart(n)
   if (HEADED && fruns.length) {
-    VSYNC = median(env.controlMs.flat()); DROP_MS = 1.5 * VSYNC
-    console.log(`\nHEADED: window ${JSON.stringify(env.win)}; control median per run ${JSON.stringify(env.controlMs)} ms -> frame budget ${VSYNC.toFixed(2)} ms (${(1000 / VSYNC).toFixed(0)} Hz); style layers ${env.win?.layers}`)
+    VSYNC = median(env.controlMs.flat())
+    DROP_MS = 1.5 * VSYNC
+    console.log(
+      `\nHEADED: window ${JSON.stringify(env.win)}; control median per run ${JSON.stringify(env.controlMs)} ms -> frame budget ${VSYNC.toFixed(2)} ms (${(1000 / VSYNC).toFixed(0)} Hz); style layers ${env.win?.layers}`
+    )
     console.log(`budget-relative, median across ${fruns.length} runs ("over" = frames with dt >= 1.5 budget)`)
     console.log('view          missed  over/frames  over%   p95    p99    max   jank ms  zooms(run1)')
     const row = (n, f) => {
-      const sc = fruns.map((r) => score(f(r), n === 'TOTAL' ? [] : r[n].long)), m = (k) => median(sc.map((x) => x[k]))
-      console.log(`${n.padEnd(13)} ${p(m('missed'), 6)} ${p(m('over') + '/' + m('frames'), 12)} ${p((100 * m('over') / m('frames')).toFixed(1), 6)} ${p(r1(m('p95')), 6)} ${p(r1(m('p99')), 6)} ${p(r1(m('max')), 6)} ${p(Math.round(m('jank')), 8)}  ${n === 'TOTAL' ? '' : fruns[0][n].zooms.join(' ')}`)
+      const sc = fruns.map((r) => score(f(r), n === 'TOTAL' ? [] : r[n].long)),
+        m = (k) => median(sc.map((x) => x[k]))
+      console.log(
+        `${n.padEnd(13)} ${p(m('missed'), 6)} ${p(m('over') + '/' + m('frames'), 12)} ${p(((100 * m('over')) / m('frames')).toFixed(1), 6)} ${p(r1(m('p95')), 6)} ${p(r1(m('p99')), 6)} ${p(r1(m('max')), 6)} ${p(Math.round(m('jank')), 8)}  ${n === 'TOTAL' ? '' : fruns[0][n].zooms.join(' ')}`
+      )
     }
     for (const [name] of VIEWS) row(name, (r) => r[name].fr)
     row('TOTAL', (r) => VIEWS.flatMap(([n]) => r[n].fr))
   }
-  console.log(`\n${LABEL} fast: ${fruns.length} runs, throttle ${THROTTLE}x, median across runs; calibrated delta ${fruns.map((r) => Math.round(r._cal.delta)).join('/')} (cal log ${JSON.stringify(fruns[0]?._cal.log)})`)
-  console.log('view          missed dropped/frames  max ms  jank ms longTasks longMs idleAfter(ms) | pmtiles req/abort/fail | ofmTile req/abort/fail | glyph req/abort | own glyph req/KB | pmtiles KB')
+  console.log(
+    `\n${LABEL} fast: ${fruns.length} runs, throttle ${THROTTLE}x, median across runs; calibrated delta ${fruns.map((r) => Math.round(r._cal.delta)).join('/')} (cal log ${JSON.stringify(fruns[0]?._cal.log)})`
+  )
+  console.log(
+    'view          missed dropped/frames  max ms  jank ms longTasks longMs idleAfter(ms) | pmtiles req/abort/fail | ofmTile req/abort/fail | glyph req/abort | own glyph req/KB | pmtiles KB'
+  )
   const tot = { missed: [], dropped: [], jank: [], max: [] }
   for (const [name] of VIEWS) {
     const sc = fruns.map((r) => ({ s: score(r[name].fr, r[name].long), r: r[name] }))
     const m = (f) => median(sc.map(f))
     const nm = (k, f) => m((x) => x.r.net[k][f])
-    console.log(`${name.padEnd(13)} ${p(m((x) => x.s.missed), 6)} ${p(m((x) => x.s.dropped) + '/' + m((x) => x.s.frames), 14)} ${p(r1(m((x) => x.s.max)), 7)} ${p(Math.round(m((x) => x.s.jank)), 8)} ${p(m((x) => x.s.longTasks), 9)} ${p(Math.round(m((x) => x.s.longMs)), 6)} ${p(Math.round(m((x) => x.r.idleAfterLastWheelMs)), 14)} | ${p(nm('pmtiles', 'requested') + '/' + nm('pmtiles', 'aborted') + '/' + nm('pmtiles', 'failed'), 12)} | ${p(nm('ofmTile', 'requested') + '/' + nm('ofmTile', 'aborted') + '/' + nm('ofmTile', 'failed'), 12)} | ${nm('ofmGlyph', 'requested')}/${nm('ofmGlyph', 'aborted')} | ${nm('ownGlyph', 'requested')}/${Math.round(nm('ownGlyph', 'bytes') / 1024)} | ${Math.round(nm('pmtiles', 'bytes') / 1024)}`)
-    tot.missed.push(m((x) => x.s.missed)); tot.dropped.push(m((x) => x.s.dropped)); tot.jank.push(m((x) => x.s.jank)); tot.max.push(m((x) => x.s.max))
+    console.log(
+      `${name.padEnd(13)} ${p(
+        m((x) => x.s.missed),
+        6
+      )} ${p(m((x) => x.s.dropped) + '/' + m((x) => x.s.frames), 14)} ${p(r1(m((x) => x.s.max)), 7)} ${p(Math.round(m((x) => x.s.jank)), 8)} ${p(
+        m((x) => x.s.longTasks),
+        9
+      )} ${p(Math.round(m((x) => x.s.longMs)), 6)} ${p(Math.round(m((x) => x.r.idleAfterLastWheelMs)), 14)} | ${p(nm('pmtiles', 'requested') + '/' + nm('pmtiles', 'aborted') + '/' + nm('pmtiles', 'failed'), 12)} | ${p(nm('ofmTile', 'requested') + '/' + nm('ofmTile', 'aborted') + '/' + nm('ofmTile', 'failed'), 12)} | ${nm('ofmGlyph', 'requested')}/${nm('ofmGlyph', 'aborted')} | ${nm('ownGlyph', 'requested')}/${Math.round(nm('ownGlyph', 'bytes') / 1024)} | ${Math.round(nm('pmtiles', 'bytes') / 1024)}`
+    )
+    tot.missed.push(m((x) => x.s.missed))
+    tot.dropped.push(m((x) => x.s.dropped))
+    tot.jank.push(m((x) => x.s.jank))
+    tot.max.push(m((x) => x.s.max))
   }
-  console.log(`TOTAL missed ${sum(tot.missed)}, dropped ${sum(tot.dropped)}, jank ${Math.round(sum(tot.jank))} ms, max ${r1(Math.max(...tot.max))} ms; zooms at end of each half-burst (run 1, last view): ${fruns[0]?.[VIEWS[VIEWS.length - 1][0]].zooms.join(' ')}`)
-  console.log('refresh-halved control medians ms: ' + env.controlMs.map((c) => c.join('/')).join('; ') + `; load avg start ${env.loadAvg.map((x) => x.toFixed(2)).join(' ')} end ${env.loadAvgEnd.map((x) => x.toFixed(2)).join(' ')}`)
+  console.log(
+    `TOTAL missed ${sum(tot.missed)}, dropped ${sum(tot.dropped)}, jank ${Math.round(sum(tot.jank))} ms, max ${r1(Math.max(...tot.max))} ms; zooms at end of each half-burst (run 1, last view): ${fruns[0]?.[VIEWS[VIEWS.length - 1][0]].zooms.join(' ')}`
+  )
+  console.log(
+    'refresh-halved control medians ms: ' +
+      env.controlMs.map((c) => c.join('/')).join('; ') +
+      `; load avg start ${env.loadAvg.map((x) => x.toFixed(2)).join(' ')} end ${env.loadAvgEnd.map((x) => x.toFixed(2)).join(' ')}`
+  )
   console.error('wrote ' + ffile.pathname)
   process.exit(process.exitCode || 0)
 }
 mkdirSync(new URL('./results/', import.meta.url), { recursive: true })
 const file = new URL(`./results/${LABEL}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`, import.meta.url)
 const runs = []
-const save = () => writeFileSync(file, JSON.stringify({ label: LABEL, url: URL_, env, completedRuns: runs.length, summary: runs.length ? summarize(runs) : null,
-  summaryCleanRuns: runs.length ? cleanSummary() : null, raw: runs }))
+const save = () =>
+  writeFileSync(
+    file,
+    JSON.stringify({
+      label: LABEL,
+      url: URL_,
+      env,
+      completedRuns: runs.length,
+      summary: runs.length ? summarize(runs) : null,
+      summaryCleanRuns: runs.length ? cleanSummary() : null,
+      raw: runs,
+    })
+  )
 const cleanIdx = () => runs.map((_, i) => i).filter((i) => !flagged(env.controlMs[i] || []))
-const cleanSummary = () => { const ix = cleanIdx(); return ix.length >= 2 ? { runs: ix.length, ...summarize(ix.map((i) => runs[i])) } : null }
+const cleanSummary = () => {
+  const ix = cleanIdx()
+  return ix.length >= 2 ? { runs: ix.length, ...summarize(ix.map((i) => runs[i])) } : null
+}
 try {
-  for (let i = 0; i < WARMUP; i++) { console.error(`warmup ${i + 1}/${WARMUP} (not measured)`); await oneRun(browser, []) }
+  for (let i = 0; i < WARMUP; i++) {
+    console.error(`warmup ${i + 1}/${WARMUP} (not measured)`)
+    await oneRun(browser, [])
+  }
   for (let i = 0; i < RUNS; i++) {
     console.error(`run ${i + 1}/${RUNS}`)
     const ctl = []
     runs.push(await oneRun(browser, ctl))
     env.controlMs.push(ctl.map(r1))
-    const pw = phaseWarn(runs[runs.length - 1]), fl = flagged(ctl)
+    const pw = phaseWarn(runs[runs.length - 1]),
+      fl = flagged(ctl)
     env.refreshHalved.push(fl)
-    if (fl) console.error(`!!! WARNING: run ${i + 1} looks REFRESH HALVED (30 Hz): idle-page control median ${ctl.map(r1).join(' / ')} ms (limit ${CONTROL_MS}). Environmental, not code. Run kept in the all-runs summary.`)
+    if (fl)
+      console.error(
+        `!!! WARNING: run ${i + 1} looks REFRESH HALVED (30 Hz): idle-page control median ${ctl.map(r1).join(' / ')} ms (limit ${CONTROL_MS}). Environmental, not code. Run kept in the all-runs summary.`
+      )
     if (pw.length) console.error(`warning (info only, run kept): run ${i + 1} phases with all frames ~33 ms: ${pw.join(', ')}`)
     save()
   }
 } catch (e) {
   console.error('aborted: ' + e.message)
   process.exitCode = 1
-} finally { await browser.close(); env.loadAvgEnd = loadavg(); if (runs.length) save() }
+} finally {
+  await browser.close()
+  env.loadAvgEnd = loadavg()
+  if (runs.length) save()
+}
 
 if (runs.length) {
   const p = (v, n) => String(v).padStart(n)
   const print = (title, rs) => {
     const { views, total: T } = summarize(rs)
-    console.log(`\n${title}: ${rs.length} runs of ${RUNS} after ${WARMUP} warmup, throttle ${THROTTLE}x, median across runs, ${Math.round((Date.now() - t0) / 1000)} s`)
+    console.log(
+      `\n${title}: ${rs.length} runs of ${RUNS} after ${WARMUP} warmup, throttle ${THROTTLE}x, median across runs, ${Math.round((Date.now() - t0) / 1000)} s`
+    )
     console.log('view          missed(in/pan/out)  total spread dropped  max ms  jank ms longTasks longMs  settle in/pan/out (ms)')
     for (const [n, v] of Object.entries(views)) {
       const m = v.missed
-      console.log(`${n.padEnd(13)} ${(m.zoomIn + '/' + m.pan + '/' + m.zoomOut).padStart(18)} ${p(m.total, 6)} ${p(Math.round(v.missedSpread * 100) + '%', 6)} ${p(v.dropped, 7)} ${p(r1(v.max), 7)} ${p(Math.round(v.jank), 8)} ${p(v.longTasks, 9)} ${p(Math.round(v.longMs), 6)}  ${MV.map((k) => Math.round(v.settle[k])).join('/')}`)
+      console.log(
+        `${n.padEnd(13)} ${(m.zoomIn + '/' + m.pan + '/' + m.zoomOut).padStart(18)} ${p(m.total, 6)} ${p(Math.round(v.missedSpread * 100) + '%', 6)} ${p(v.dropped, 7)} ${p(r1(v.max), 7)} ${p(Math.round(v.jank), 8)} ${p(v.longTasks, 9)} ${p(Math.round(v.longMs), 6)}  ${MV.map((k) => Math.round(v.settle[k])).join('/')}`
+      )
     }
-    console.log(`${'TOTAL'.padEnd(13)} ${' '.repeat(18)} ${p(T.missed, 6)} ${p(Math.round(T.missedSpread * 100) + '%', 6)} ${p(T.dropped, 7)} ${p(r1(T.max), 7)} ${p(Math.round(T.jank), 8)} ${p(T.longTasks, 9)} ${p(Math.round(T.longMs), 6)}  ${Math.round(T.settle)} summed`)
+    console.log(
+      `${'TOTAL'.padEnd(13)} ${' '.repeat(18)} ${p(T.missed, 6)} ${p(Math.round(T.missedSpread * 100) + '%', 6)} ${p(T.dropped, 7)} ${p(r1(T.max), 7)} ${p(Math.round(T.jank), 8)} ${p(T.longTasks, 9)} ${p(Math.round(T.longMs), 6)}  ${Math.round(T.settle)} summed`
+    )
     console.log(`frames ${T.frames}; jank spread ${Math.round(T.jankSpread * 100)}%`)
   }
   print(`${LABEL} (ALL ${runs.length} runs)`, runs)
   const ix = cleanIdx()
   if (ix.length < runs.length) {
-    console.log(`\n!!! REFRESH HALVED (30 Hz) control flagged run(s) ${runs.map((_, i) => i).filter((i) => !ix.includes(i)).map((i) => i + 1).join(', ')} (control medians ms: ${env.controlMs.map((c) => c.join('/')).join('; ')})`)
-    if (ix.length >= 2) print(`${LABEL} (CLEAN runs only: ${ix.length})`, ix.map((i) => runs[i]))
+    console.log(
+      `\n!!! REFRESH HALVED (30 Hz) control flagged run(s) ${runs
+        .map((_, i) => i)
+        .filter((i) => !ix.includes(i))
+        .map((i) => i + 1)
+        .join(', ')} (control medians ms: ${env.controlMs.map((c) => c.join('/')).join('; ')})`
+    )
+    if (ix.length >= 2)
+      print(
+        `${LABEL} (CLEAN runs only: ${ix.length})`,
+        ix.map((i) => runs[i])
+      )
     else console.log(`only ${ix.length} clean run(s): no clean-only summary`)
   } else console.log('refresh-halved control: none flagged (control medians ms ' + env.controlMs.map((c) => c.join('/')).join('; ') + ')')
   const f = (a) => a.map((x) => x.toFixed(2)).join(' ')

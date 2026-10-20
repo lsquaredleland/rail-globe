@@ -6,7 +6,18 @@ import { useSelection, type Selected } from './useSelection'
 import { useSettings, useTypeSpeedSwitches } from './useSettings'
 import { regionBySlug, registerSearch, isKnownRegion, partAt, onPartsChange, DEFAULT_REGION } from './regions'
 import { featured, itemInView, useSearch, type SearchItem } from './search'
-import { loadBoundary, loadLine, loadLineIndex, loadNamedLines, loadRailways, loadStation, railwayOf, type LineIndex, type NamedLine, type Railways } from './data'
+import {
+  loadBoundary,
+  loadLine,
+  loadLineIndex,
+  loadNamedLines,
+  loadRailways,
+  loadStation,
+  railwayOf,
+  type LineIndex,
+  type NamedLine,
+  type Railways,
+} from './data'
 import { ignoreError } from './dev'
 import { readHash } from './urlState'
 import { Toolbar, RegionPicker, type Controls } from './components/Toolbar'
@@ -38,33 +49,66 @@ export default function App() {
   const touch = useMedia('(pointer: coarse)')
   const view = useRef<View | null>(init.view)
   const settings = useSettings(init, view)
-  const { region, setRegionState, mode, setMode, hsrOnly, construction, setConstruction, proposed, setProposed, freight, setFreight, units, setUnits, lang, setLang, theme, setTheme, hidden, hiddenSpeed, inspect, setInspect, outline, setOutline, sync } = settings
+  const {
+    region,
+    setRegionState,
+    mode,
+    setMode,
+    hsrOnly,
+    construction,
+    setConstruction,
+    proposed,
+    setProposed,
+    freight,
+    setFreight,
+    units,
+    setUnits,
+    lang,
+    setLang,
+    theme,
+    setTheme,
+    hidden,
+    hiddenSpeed,
+    inspect,
+    setInspect,
+    outline,
+    setOutline,
+    sync,
+  } = settings
   const [sheetOpen, setSheetOpen] = useState(false)
-  const [sel, act] = useSelection()   // what is picked and what the pointer is on, reset together
+  const [sel, act] = useSelection() // what is picked and what the pointer is on, reset together
   const { selected, selPt, hover, peek, selTrackName, selTrackSlug, listHoverLine, listHoverName } = sel
   const [indexes, setIndexes] = useState<Record<string, LineIndex>>({})
   const [named, setNamed] = useState<Record<string, NamedLine[]>>({})
   const [railways, setRailways] = useState<Record<string, Railways>>({})
-  const railwaysRef = useRef(railways)   // for openHit, which memoized click handlers call
+  const railwaysRef = useRef(railways) // for openHit, which memoized click handlers call
   railwaysRef.current = railways
-  const peekRef = useRef(peek)   // for onClick, which is memoized; the reducer stays pure
+  const peekRef = useRef(peek) // for onClick, which is memoized; the reducer stays pure
   peekRef.current = peek
   const [copied, setCopied] = useState(false)
   const [viewNow, setViewNow] = useState<View>(() => init.view ?? { center: init.region.center, zoom: init.region.zoom })
   const map = useRef<MapHandle>(null)
   const wrap = useRef<HTMLDivElement>(null)
 
-  const { items: found, status: placesStatus, retry: retryPlaces } = useSearch()   // search.json: the countries, provinces / states and cities with rail
+  const { items: found, status: placesStatus, retry: retryPlaces } = useSearch() // search.json: the countries, provinces / states and cities with rail
   const ensureIndex = useCallback((slug: string) => {
-    loadLineIndex(slug).then((ix) => setIndexes((p) => (p[slug] ? p : { ...p, [slug]: ix }))).catch(ignoreError(`${slug}/lines-index.json`))
-    loadRailways(slug).then((rw) => setRailways((p) => (p[slug] ? p : { ...p, [slug]: rw }))).catch(ignoreError(`${slug}/railways.json`))
+    loadLineIndex(slug)
+      .then((ix) => setIndexes((p) => (p[slug] ? p : { ...p, [slug]: ix })))
+      .catch(ignoreError(`${slug}/lines-index.json`))
+    loadRailways(slug)
+      .then((rw) => setRailways((p) => (p[slug] ? p : { ...p, [slug]: rw })))
+      .catch(ignoreError(`${slug}/railways.json`))
   }, [])
   // side files (lines, railways) exist per country; a province or the world placeholder has none
   const hasData = useCallback((slug: string) => found.some((i) => i.kind === 'country' && i.slug === slug), [found])
-  useEffect(() => { if (hasData(region.slug)) ensureIndex(region.slug) }, [region.slug, ensureIndex, hasData])
+  useEffect(() => {
+    if (hasData(region.slug)) ensureIndex(region.slug)
+  }, [region.slug, ensureIndex, hasData])
   useEffect(() => {
     if (!hasData(region.slug)) return
-    loadNamedLines(region.slug).then((n) => setNamed((p) => (p[region.slug] ? p : { ...p, [region.slug]: n }))).catch(ignoreError(`${region.slug}/named-lines.json`))
+    loadNamedLines(region.slug)
+      .then((n) => setNamed((p) => (p[region.slug] ? p : { ...p, [region.slug]: n })))
+      .catch(ignoreError(`${region.slug}/named-lines.json`))
   }, [region.slug, hasData])
 
   // the card follows the view; so does the region in the picker (no fly: the map is already where the user put it)
@@ -77,12 +121,25 @@ export default function App() {
   const [boundaryGeo, setBoundaryGeo] = useState<{ slug: string; geo: GeoJSON.Geometry | null } | null>(null)
   // the card follows the outline: it is there only while an area fills the screen (the same test as the outline), and goes away when zoomed out further
   // World build: a country's box can cover far islands and its neighbours, so the country under the view centre is the one whose outline holds it
-  const [partsVer, setPartsVer] = useState(0)   // partAt changes answer once world.parts.json and the outlines of overlapping countries load: the card is worked out again then, without waiting for a pan
+  const [partsVer, setPartsVer] = useState(0) // partAt changes answer once world.parts.json and the outlines of overlapping countries load: the card is worked out again then, without waiting for a pan
   const viewNowRef = useRef(viewNow)
   viewNowRef.current = viewNow
   const partSeen = useRef('')
-  useEffect(() => onPartsChange(() => { const p = partAt(viewNowRef.current.center); if (p !== partSeen.current) { partSeen.current = p; setPartsVer((v) => v + 1) } }), [])
-  const overRegions = useMemo(() => { void partsVer; return stats.regions.filter((r) => r.slug === partAt(viewNow.center)) }, [stats, viewNow, partsVer])
+  useEffect(
+    () =>
+      onPartsChange(() => {
+        const p = partAt(viewNowRef.current.center)
+        if (p !== partSeen.current) {
+          partSeen.current = p
+          setPartsVer((v) => v + 1)
+        }
+      }),
+    []
+  )
+  const overRegions = useMemo(() => {
+    void partsVer
+    return stats.regions.filter((r) => r.slug === partAt(viewNow.center))
+  }, [stats, viewNow, partsVer])
   const allAreas = useMemo(() => [...overRegions.filter((r) => !regionBySlug(r.slug).noCard), ...stats.areas], [overRegions, stats])
   // the area that fills half the screen: it gets the outline, which goes away when zoomed out further
   // the place picked in the search keeps the card and outline while it still fills 15% of the screen's width (else Chengdu would give way to its New Area)
@@ -91,13 +148,18 @@ export default function App() {
     const p = pickedSlug ? allAreas.filter((a) => a.slug === pickedSlug) : []
     return areaForView(p, stats.shapes, viewNow, window.innerWidth, 0.15) ?? areaForView(allAreas, stats.shapes, viewNow, window.innerWidth)
   }, [allAreas, stats, viewNow, pickedSlug])
-  const viewItem = useMemo(() => { void partsVer; return itemInView(found, viewNow, window.innerWidth, partAt(viewNow.center)) }, [found, viewNow, partsVer])
+  const viewItem = useMemo(() => {
+    void partsVer
+    return itemInView(found, viewNow, window.innerWidth, partAt(viewNow.center))
+  }, [found, viewNow, partsVer])
   // the card shows exactly when the outline can: the area that fills the screen, and nothing at the zoom levels where no area does
   const cardArea = viewArea
   // the outline of the area in view: its simplified shape, else its boundary file
   const shape = viewArea ? stats.shapes[viewArea.slug] : undefined
   const needBoundary = outline && viewArea && !shape ? viewArea.slug : null
-  useEffect(() => { if (needBoundary) loadBoundary(needBoundary).then((geo) => setBoundaryGeo({ slug: needBoundary, geo })) }, [needBoundary])
+  useEffect(() => {
+    if (needBoundary) loadBoundary(needBoundary).then((geo) => setBoundaryGeo({ slug: needBoundary, geo }))
+  }, [needBoundary])
   const outlineGeo = useMemo<GeoJSON.Geometry | null>(() => {
     if (!outline || !viewArea) return null
     if (shape) return { type: 'MultiPolygon', coordinates: shape }
@@ -113,11 +175,17 @@ export default function App() {
   useEffect(() => {
     if (!found.length || init.view || !isKnownRegion(region.slug)) return
     const r = regionBySlug(region.slug)
-    if (r !== region) { setRegionState(r); map.current?.flyTo({ center: r.center, zoom: compact ? r.zoomPhone : r.zoom }) }
+    if (r !== region) {
+      setRegionState(r)
+      map.current?.flyTo({ center: r.center, zoom: compact ? r.zoomPhone : r.zoom })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [found])
 
-  const mapState = useMemo<MapState>(() => ({ mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang, theme }), [mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang, theme])
+  const mapState = useMemo<MapState>(
+    () => ({ mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang, theme }),
+    [mode, construction, proposed, freight, hidden, hiddenSpeed, hsrOnly, lang, theme]
+  )
   const setRegion = (slug: string) => {
     const r = regionBySlug(slug)
     setRegionState(r)
@@ -135,32 +203,58 @@ export default function App() {
   }
 
   const openStation = (slug: string, id: string, pt?: [number, number], fly = false) => {
-    act.openStation(slug, id, pt); ensureIndex(slug)
+    act.openStation(slug, id, pt)
+    ensureIndex(slug)
     if (fly || !pt) {
-      loadStation(slug, id).then((s) => {
-        act.setSelPt(s.pt)
-        const z = Math.max(map.current?.getZoom() ?? 0, 13)
-        map.current?.flyTo({ center: s.pt, zoom: z })
-      }).catch(ignoreError(`station ${slug}/${id}`))
+      loadStation(slug, id)
+        .then((s) => {
+          act.setSelPt(s.pt)
+          const z = Math.max(map.current?.getZoom() ?? 0, 13)
+          map.current?.flyTo({ center: s.pt, zoom: z })
+        })
+        .catch(ignoreError(`station ${slug}/${id}`))
     }
   }
-  const openLine = (slug: string, id: number, from?: { sel: Selected; pt: [number, number] | null }) => { act.openLine(slug, id, from); ensureIndex(slug) }
+  const openLine = (slug: string, id: number, from?: { sel: Selected; pt: [number, number] | null }) => {
+    act.openLine(slug, id, from)
+    ensureIndex(slug)
+  }
   const closePanel = act.close
   const openList = act.openList
-  const openNamed = (n: NamedLine) => { act.openNamed(n.n); map.current?.fitBounds(n.bbox) }
+  const openNamed = (n: NamedLine) => {
+    act.openNamed(n.n)
+    map.current?.fitBounds(n.bbox)
+  }
   const openHit = (h: Hit) => {
-    if (inspect) { act.openInspect(h); return }
+    if (inspect) {
+      act.openInspect(h)
+      return
+    }
     if (h.kind === 'station') openStation(h.slug, String(h.props.id), h.lngLat)
     else if (h.kind === 'line') openLine(h.slug, Number(h.props.lid))
     else if (h.kind === 'track') {
       // outside inspect mode a click on track opens the line that runs on it, or lets the user choose when several do; with none, the Lines list on that named railway
-      const ids = [...new Set(String(h.props.ln ?? '').split(',').map(Number).filter((n) => Number.isFinite(n) && n > 0))]
+      const ids = [
+        ...new Set(
+          String(h.props.ln ?? '')
+            .split(',')
+            .map(Number)
+            .filter((n) => Number.isFinite(n) && n > 0)
+        ),
+      ]
       if (ids.length === 1) openLine(h.slug, ids[0])
       else if (ids.length > 1) {
         const rw = railwayOf(railwaysRef.current[h.slug], h.props)
         const name = rw?.[0] ?? (h.props.n ? String(h.props.n) : '')
         const type = String(h.props.type ?? '')
-        act.openServices({ kind: 'services', slug: h.slug, ids, title: name || railTypeLabel(type), titleEn: rw?.[1] ?? (h.props.ne ? String(h.props.ne) : null), sub: `${railTypeLabel(type, h.props.usage as string | undefined)}${h.props.prop ? ' · proposed' : h.props.con ? ' · under construction' : ''}` })
+        act.openServices({
+          kind: 'services',
+          slug: h.slug,
+          ids,
+          title: name || railTypeLabel(type),
+          titleEn: rw?.[1] ?? (h.props.ne ? String(h.props.ne) : null),
+          sub: `${railTypeLabel(type, h.props.usage as string | undefined)}${h.props.prop ? ' · proposed' : h.props.con ? ' · under construction' : ''}`,
+        })
         ensureIndex(h.slug)
       } else {
         const name = railwayOf(railwaysRef.current[h.slug], h.props)?.[0] ?? (h.props.n ? String(h.props.n) : null)
@@ -169,27 +263,47 @@ export default function App() {
     }
   }
 
-  const onHover = useCallback((hit: Hit | null, pt: { x: number; y: number }) => {
-    if (!hit) { act.setHover(null); return }
-    ensureIndex(hit.slug)
-    act.setHover({ hit, x: pt.x, y: pt.y })
-  }, [ensureIndex, act])
-
-  const onClick = useCallback((hit: Hit | null) => {
-    if (touch) {
-      if (!hit) { act.clearPeek(); return }
+  const onHover = useCallback(
+    (hit: Hit | null, pt: { x: number; y: number }) => {
+      if (!hit) {
+        act.setHover(null)
+        return
+      }
       ensureIndex(hit.slug)
-      const cur = peekRef.current
-      if (cur && hitKey(cur) === hitKey(hit) && (inspect || hit.kind === 'station' || hit.kind === 'line' || (hit.kind === 'track' && !!(hit.props.ln || hit.props.n || hit.props.nk != null)))) openHit(hit)
-      else act.setPeek(() => hit)
-      return
-    }
-    if (!hit) { closePanel(); return }
-    openHit(hit)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [touch, ensureIndex, inspect])
+      act.setHover({ hit, x: pt.x, y: pt.y })
+    },
+    [ensureIndex, act]
+  )
 
-  const areaSlug = cardArea?.slug ?? (partAt(viewNow.center) || region.slug)   // zoomed out: the country under the centre sets where high-speed starts
+  const onClick = useCallback(
+    (hit: Hit | null) => {
+      if (touch) {
+        if (!hit) {
+          act.clearPeek()
+          return
+        }
+        ensureIndex(hit.slug)
+        const cur = peekRef.current
+        if (
+          cur &&
+          hitKey(cur) === hitKey(hit) &&
+          (inspect || hit.kind === 'station' || hit.kind === 'line' || (hit.kind === 'track' && !!(hit.props.ln || hit.props.n || hit.props.nk != null)))
+        )
+          openHit(hit)
+        else act.setPeek(() => hit)
+        return
+      }
+      if (!hit) {
+        closePanel()
+        return
+      }
+      openHit(hit)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [touch, ensureIndex, inspect]
+  )
+
+  const areaSlug = cardArea?.slug ?? (partAt(viewNow.center) || region.slug) // zoomed out: the country under the centre sets where high-speed starts
   const { setHsrOnly, legendProps, speedProps } = useTypeSpeedSwitches(settings, areaSlug)
 
   const copyLink = () => {
@@ -199,8 +313,42 @@ export default function App() {
   }
 
   const controls: Controls = {
-    area: cardArea, inView: viewItem, items, featured: foundFeatured, placesStatus, retryPlaces, pickPlace, region, fallback: DEFAULT_REGION, mode, hsrOnly, setHsrOnly, construction, proposed, setProposed, outline, setOutline, freight, units, inspect, setInspect, lang, setLang, theme, setTheme, setRegion, setMode, setConstruction, setFreight, setUnits, copied, copyLink,
-    openLines: () => { openList(); setSheetOpen(false) },
+    area: cardArea,
+    inView: viewItem,
+    items,
+    featured: foundFeatured,
+    placesStatus,
+    retryPlaces,
+    pickPlace,
+    region,
+    fallback: DEFAULT_REGION,
+    mode,
+    hsrOnly,
+    setHsrOnly,
+    construction,
+    proposed,
+    setProposed,
+    outline,
+    setOutline,
+    freight,
+    units,
+    inspect,
+    setInspect,
+    lang,
+    setLang,
+    theme,
+    setTheme,
+    setRegion,
+    setMode,
+    setConstruction,
+    setFreight,
+    setUnits,
+    copied,
+    copyLink,
+    openLines: () => {
+      openList()
+      setSheetOpen(false)
+    },
   }
 
   const selectedLine = selected?.kind === 'line' ? selected.id : null
@@ -211,8 +359,12 @@ export default function App() {
     if (selected?.kind !== 'station') return
     const { slug, id } = selected
     let live = true
-    loadStation(slug, id).then((s) => live && setStLines({ key: `${slug}/${id}`, ids: Object.values(s.lines).flat() })).catch(ignoreError(`station ${slug}/${id}`))
-    return () => { live = false }
+    loadStation(slug, id)
+      .then((s) => live && setStLines({ key: `${slug}/${id}`, ids: Object.values(s.lines).flat() }))
+      .catch(ignoreError(`station ${slug}/${id}`))
+    return () => {
+      live = false
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stKey])
   const groupLines = useMemo<number[] | null>(() => {
@@ -223,7 +375,9 @@ export default function App() {
   const panelIdx = selected && (selected.kind === 'station' || selected.kind === 'line' || selected.kind === 'services') ? indexes[selected.slug] : idx
 
   // keep the map sized when the panel opens on desktop
-  useEffect(() => { map.current?.resizeSoon() }, [selected?.kind, compact])
+  useEffect(() => {
+    map.current?.resizeSoon()
+  }, [selected?.kind, compact])
 
   // the line under the pointer is highlighted until something is selected (a track piece with no mapped line falls back to its name)
   const hh = !touch && !selected && hover ? hover.hit : null
@@ -234,10 +388,16 @@ export default function App() {
   // the region the highlighted line belongs to: the selected line's, else the Lines list's (current region), else the hovered one's
   const hlLine = selectedLine ?? listHoverLine ?? groupLines ?? hoverLine
   const hlName = selectedLine == null && selTrackName == null ? (listHoverName ?? (listHoverLine == null ? hoverName : null)) : selTrackName
-  const hlSlug = selected?.kind === 'line' || (groupLines && (selected?.kind === 'services' || selected?.kind === 'station')) ? selected.slug
-    : selTrackName != null && selTrackSlug ? selTrackSlug   // a clicked track keeps the region part it was hit in, so its highlight is not redone
-    : listHoverLine != null || listHoverName != null || selTrackName != null ? region.slug
-    : hh ? hh.slug : null
+  const hlSlug =
+    selected?.kind === 'line' || (groupLines && (selected?.kind === 'services' || selected?.kind === 'station'))
+      ? selected.slug
+      : selTrackName != null && selTrackSlug
+        ? selTrackSlug // a clicked track keeps the region part it was hit in, so its highlight is not redone
+        : listHoverLine != null || listHoverName != null || selTrackName != null
+          ? region.slug
+          : hh
+            ? hh.slug
+            : null
   // hovering highlights straight from the map's hit test (MapView), as long as nothing is selected
   const hoverHighlight = useCallback((hit: Hit | null) => {
     if (!hit) return null
@@ -250,10 +410,16 @@ export default function App() {
   }, [])
   // stations: only those on the focused lines (the selected line, the services on a clicked track, a station's lines, or the row hovered in a panel) stay at full strength
   const focusLines = selectedLine ?? listHoverLine ?? groupLines
-  const focusKey = focusLines == null || hlSlug == null ? '' : `${hlSlug}|${Array.isArray(focusLines) ? focusLines.join(',') : focusLines}|${selected?.kind === 'station' ? selected.id : ''}`
+  const focusKey =
+    focusLines == null || hlSlug == null
+      ? ''
+      : `${hlSlug}|${Array.isArray(focusLines) ? focusLines.join(',') : focusLines}|${selected?.kind === 'station' ? selected.id : ''}`
   const [focusStations, setFocusStations] = useState<string[] | null>(null)
   useEffect(() => {
-    if (!focusKey) { setFocusStations(null); return }
+    if (!focusKey) {
+      setFocusStations(null)
+      return
+    }
     const [slug, ids, own] = focusKey.split('|')
     let live = true
     Promise.all(ids.split(',').map((id) => loadLine(slug, Number(id)).catch(() => null))).then((ls) => {
@@ -262,7 +428,9 @@ export default function App() {
       for (const l of ls) for (const r of l?.routes ?? []) for (const s of r.stations) set.add(s)
       setFocusStations(set.size ? [...set] : null)
     })
-    return () => { live = false }   // the previous set stays on the map until the new one is in: no flash between rows
+    return () => {
+      live = false
+    } // the previous set stays on the map until the new one is in: no flash between rows
   }, [focusKey])
   const tip = !touch && hover && !selected ? hover : null
   const W = wrap.current?.clientWidth ?? 1200
@@ -270,102 +438,329 @@ export default function App() {
 
   return (
     <LangContext.Provider value={lang}>
-    <div className={`app${compact ? ' compact' : ''}`} ref={wrap}>
-      <MapView ref={map} state={mapState} units={units} initial={init.view ?? { center: region.center, zoom: compact ? region.zoomPhone : region.zoom }}
-        highlightSlug={hlLine != null || hlName != null ? hlSlug : null} selectedLine={hlLine} selectedTrackName={hlName} hoverHighlight={touch || selected || listHoverLine != null || listHoverName != null ? null : hoverHighlight} focusSlug={selected?.kind === 'line' || (groupLines && selected?.kind === 'station') || selected?.kind === 'services' ? selected.slug : selTrackName != null ? (selTrackSlug ?? region.slug) : null} focusStations={focusStations} selectedStation={selPt} outline={outlineGeo} touch={touch}
-        onHover={onHover} onClick={onClick} onMoveEnd={(v) => { view.current = v; setViewNow(v); sync() }} />
+      <div className={`app${compact ? ' compact' : ''}`} ref={wrap}>
+        <MapView
+          ref={map}
+          state={mapState}
+          units={units}
+          initial={init.view ?? { center: region.center, zoom: compact ? region.zoomPhone : region.zoom }}
+          highlightSlug={hlLine != null || hlName != null ? hlSlug : null}
+          selectedLine={hlLine}
+          selectedTrackName={hlName}
+          hoverHighlight={touch || selected || listHoverLine != null || listHoverName != null ? null : hoverHighlight}
+          focusSlug={
+            selected?.kind === 'line' || (groupLines && selected?.kind === 'station') || selected?.kind === 'services'
+              ? selected.slug
+              : selTrackName != null
+                ? (selTrackSlug ?? region.slug)
+                : null
+          }
+          focusStations={focusStations}
+          selectedStation={selPt}
+          outline={outlineGeo}
+          touch={touch}
+          onHover={onHover}
+          onClick={onClick}
+          onMoveEnd={(v) => {
+            view.current = v
+            setViewNow(v)
+            sync()
+          }}
+        />
 
-      {compact && (
-        <>
-          <div className="phone-top">
-            <RegionPicker c={controls} block />
-            <button type="button" className="btn icon big" aria-label="Map settings" onClick={() => setSheetOpen(true)}>{Icon.sliders}</button>
+        {compact && (
+          <>
+            <div className="phone-top">
+              <RegionPicker c={controls} block />
+              <button type="button" className="btn icon big" aria-label="Map settings" onClick={() => setSheetOpen(true)}>
+                {Icon.sliders}
+              </button>
+            </div>
+            <div className="phone-bottom">
+              <Segmented<ColorMode>
+                label="Colour lines by"
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { value: 'type', label: 'Type' },
+                  { value: 'operator', label: 'Operator' },
+                  { value: 'speed', label: 'Speed' },
+                ]}
+              />
+            </div>
+          </>
+        )}
+
+        {/* toolbar and card share one column, so the card moves down when the toolbar grows (wraps) */}
+        {!compact && (
+          <div className="left-stack">
+            <Toolbar c={controls} />
+            {mode === 'speed' ? (
+              <SpeedCard area={cardArea} units={units} construction={construction} proposed={proposed} {...speedProps} />
+            ) : cardArea ? (
+              mode !== 'operator' && (
+                <TypeCard
+                  area={cardArea}
+                  units={units}
+                  hidden={hidden}
+                  freight={freight}
+                  construction={construction}
+                  proposed={proposed}
+                  hsrOnly={hsrOnly}
+                  onToggleType={legendProps.onToggleType}
+                  onShowAll={legendProps.onShowAll}
+                  onHideAll={legendProps.onHideAll}
+                  onToggleFreight={legendProps.onToggleFreight}
+                />
+              )
+            ) : (
+              <WorldCard
+                operator={mode === 'operator'}
+                zoom={viewNow.zoom}
+                hidden={hidden}
+                freight={freight}
+                hsrOnly={hsrOnly}
+                onToggleType={legendProps.onToggleType}
+                onShowAll={legendProps.onShowAll}
+                onHideAll={legendProps.onHideAll}
+                onToggleFreight={legendProps.onToggleFreight}
+              />
+            )}
           </div>
-          <div className="phone-bottom">
-            <Segmented<ColorMode> label="Colour lines by" value={mode} onChange={setMode} options={[{ value: 'type', label: 'Type' }, { value: 'operator', label: 'Operator' }, { value: 'speed', label: 'Speed' }]} />
+        )}
+        {!compact && (
+          <div className="zoom" role="group" aria-label="Zoom">
+            <button type="button" aria-label="Zoom in" onClick={() => map.current?.zoomBy(1)}>
+              {Icon.plus}
+            </button>
+            <i />
+            <button type="button" aria-label="Zoom out" onClick={() => map.current?.zoomBy(-1)}>
+              {Icon.minus}
+            </button>
           </div>
-        </>
-      )}
+        )}
 
-      {/* toolbar and card share one column, so the card moves down when the toolbar grows (wraps) */}
-      {!compact && <div className="left-stack"><Toolbar c={controls} />{mode === 'speed'
-        ? <SpeedCard area={cardArea} units={units} construction={construction} proposed={proposed} {...speedProps} />
-        : cardArea
-          ? mode !== 'operator' && <TypeCard area={cardArea} units={units} hidden={hidden} freight={freight} construction={construction} proposed={proposed} hsrOnly={hsrOnly}
-            onToggleType={legendProps.onToggleType} onShowAll={legendProps.onShowAll} onHideAll={legendProps.onHideAll} onToggleFreight={legendProps.onToggleFreight} />
-          : <WorldCard operator={mode === 'operator'} zoom={viewNow.zoom} hidden={hidden} freight={freight} hsrOnly={hsrOnly}
-            onToggleType={legendProps.onToggleType} onShowAll={legendProps.onShowAll} onHideAll={legendProps.onHideAll} onToggleFreight={legendProps.onToggleFreight} />}</div>}
-      {!compact && (
-        <div className="zoom" role="group" aria-label="Zoom">
-          <button type="button" aria-label="Zoom in" onClick={() => map.current?.zoomBy(1)}>{Icon.plus}</button>
-          <i />
-          <button type="button" aria-label="Zoom out" onClick={() => map.current?.zoomBy(-1)}>{Icon.minus}</button>
-        </div>
-      )}
-
-      {tip && (
-        <div className={`tooltip${inspect ? ' inspect' : ''}`} role="tooltip" style={{ left: tipLeft, top: Math.min(tip.y + 14, (wrap.current?.clientHeight ?? 800) - 260) }}>
-          {inspect ? <InspectTooltipBody hit={tip.hit} /> : <TooltipBody hit={tip.hit} index={indexes[tip.hit.slug]} railways={railways[tip.hit.slug]} touch={false} units={units} />}
-        </div>
-      )}
-      {touch && peek && !selected && (
-        <div className="peek" role="status">
-          <button type="button" className="close" aria-label="Dismiss" onClick={act.clearPeek}>{Icon.close}</button>
-          {inspect ? <><InspectTooltipBody hit={peek} /><button type="button" className="more" onClick={() => openHit(peek)}>More</button></> : <TooltipBody hit={peek} index={indexes[peek.slug]} railways={railways[peek.slug]} touch onMore={() => openHit(peek)} units={units} />}
-        </div>
-      )}
-
-      {selected?.kind === 'station' && (
-        <StationPanel slug={selected.slug} id={selected.id} index={panelIdx} onClose={closePanel}
-          onLine={(id) => openLine(selected.slug, id, { sel: selected, pt: selPt })} onStation={(id) => openStation(selected.slug, id, undefined, true)} onHoverLine={act.setListHoverLine} />
-      )}
-      {selected?.kind === 'line' && (
-        <LinePanel slug={selected.slug} id={selected.id} units={units} onClose={closePanel}
-          onBack={selected.from ? () => act.back(selected.from!) : openList}
-          backLabel={selected.from ? (selected.from.sel?.kind === 'station' ? 'Station' : 'Services here') : undefined} onStation={(id) => openStation(selected.slug, id, undefined, true)} />
-      )}
-      {selected?.kind === 'services' && (
-        <ServicesPanel ids={selected.ids} index={panelIdx} title={selected.title} titleEn={selected.titleEn} sub={selected.sub} units={units} onClose={closePanel}
-          onLine={(id) => openLine(selected.slug, id, { sel: selected, pt: null })} onHoverLine={act.setListHoverLine} />
-      )}
-      {selected?.kind === 'inspect' && <InspectPanel hit={selected.hit} onClose={closePanel} />}
-      {inspect && (
-        <div className="insp-banner" role="status"><strong>Inspect on</strong><span className="muted-w">Tooltips show raw OSM tags</span><button type="button" onClick={() => { setInspect(false); closePanel() }}>Turn off</button></div>
-      )}
-      {selected?.kind === 'lines' && (
-        <LinesList index={idx} named={named[region.slug]} regionName={region.name} units={units} onClose={closePanel} onLine={(id) => { act.clearTrackName(); openLine(region.slug, id) }} onNamed={openNamed} activeName={selTrackName} onHoverLine={act.setListHoverLine} onHoverNamed={act.setListHoverName} />
-      )}
-
-      {compact && sheetOpen && (
-        <div className="sheet-wrap" onClick={() => setSheetOpen(false)}>
-          <div className="sheet" role="dialog" aria-label="Map settings" onClick={(e) => e.stopPropagation()}>
-            <div className="sheet-head"><h2>Map settings</h2><button type="button" className="close static" aria-label="Close" onClick={() => setSheetOpen(false)}>{Icon.close}</button></div>
-            <Segmented label="Mode" value="explore" onChange={() => {}} options={[{ value: 'explore', label: 'Explore' }, { value: 'compare', label: 'Compare', disabled: true, title: 'Compare view arrives in phase 4' }]} />
-            <h3 className="eyebrow">Colour lines by</h3>
-            <Segmented<ColorMode> label="Colour lines by" value={mode} onChange={setMode} options={[{ value: 'type', label: 'Rail type' }, { value: 'operator', label: 'Operator colours' }, { value: 'speed', label: 'Speed' }]} />
-            <h3 className="eyebrow">Show</h3>
-            <Toggle on={hsrOnly} onChange={setHsrOnly}>HSR only</Toggle>
-            <Toggle on={construction} onChange={setConstruction}>Under construction</Toggle>
-            <Toggle on={proposed} onChange={setProposed}>Proposed (Hong Kong)</Toggle>
-            <Toggle on={freight} onChange={setFreight}>Freight and industrial</Toggle>
-            <Toggle on={outline} onChange={setOutline}>Outline area in view</Toggle>
-            <button type="button" className="btn wide" onClick={controls.openLines}>{Icon.list}Line list<span className="muted grow-r">{idx ? Object.keys(idx).length : ''}</span></button>
-            <h3 className="eyebrow">Legend</h3>
-            {mode === 'speed'
-              ? <SpeedCard area={cardArea} units={units} construction={construction} proposed={proposed} embedded {...speedProps} />
-              : mode === 'operator'
-                ? <WorldCard embedded operator zoom={viewNow.zoom} hidden={hidden} freight={freight} hsrOnly={hsrOnly} onToggleType={legendProps.onToggleType} onShowAll={legendProps.onShowAll} onHideAll={legendProps.onHideAll} onToggleFreight={legendProps.onToggleFreight} />
-                : <Legend mode={mode} hsrOnly={hsrOnly} open setOpen={() => {}} freight={freight} index={idx} compact {...legendProps} />}
-            <h3 className="eyebrow">More</h3>
-            <div className="row between"><span>Units</span><Segmented<'km' | 'mi'> label="Units" value={units} onChange={setUnits} options={[{ value: 'km', label: 'km' }, { value: 'mi', label: 'mi' }]} /></div>
-            <div className="row between"><span>Map</span><Segmented<Theme> label="Map" value={theme} onChange={setTheme} options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} /></div>
-            <div className="row between"><span>Names</span><Segmented<Lang> label="Names" value={lang} onChange={setLang} options={[{ value: 'local', label: 'Local' }, { value: 'en', label: 'English' }]} /></div>
-            <Toggle on={inspect} onChange={(v) => { setInspect(v); setSheetOpen(false) }}>Inspect OSM tags<span className="muted sm"> taps show raw tags</span></Toggle>
-            <button type="button" className="btn wide" onClick={copyLink}>{copied ? Icon.check : Icon.link}{copied ? 'Link copied' : 'Copy link to this view'}</button>
+        {tip && (
+          <div
+            className={`tooltip${inspect ? ' inspect' : ''}`}
+            role="tooltip"
+            style={{ left: tipLeft, top: Math.min(tip.y + 14, (wrap.current?.clientHeight ?? 800) - 260) }}
+          >
+            {inspect ? (
+              <InspectTooltipBody hit={tip.hit} />
+            ) : (
+              <TooltipBody hit={tip.hit} index={indexes[tip.hit.slug]} railways={railways[tip.hit.slug]} touch={false} units={units} />
+            )}
           </div>
-        </div>
-      )}
-    </div>
+        )}
+        {touch && peek && !selected && (
+          <div className="peek" role="status">
+            <button type="button" className="close" aria-label="Dismiss" onClick={act.clearPeek}>
+              {Icon.close}
+            </button>
+            {inspect ? (
+              <>
+                <InspectTooltipBody hit={peek} />
+                <button type="button" className="more" onClick={() => openHit(peek)}>
+                  More
+                </button>
+              </>
+            ) : (
+              <TooltipBody hit={peek} index={indexes[peek.slug]} railways={railways[peek.slug]} touch onMore={() => openHit(peek)} units={units} />
+            )}
+          </div>
+        )}
+
+        {selected?.kind === 'station' && (
+          <StationPanel
+            slug={selected.slug}
+            id={selected.id}
+            index={panelIdx}
+            onClose={closePanel}
+            onLine={(id) => openLine(selected.slug, id, { sel: selected, pt: selPt })}
+            onStation={(id) => openStation(selected.slug, id, undefined, true)}
+            onHoverLine={act.setListHoverLine}
+          />
+        )}
+        {selected?.kind === 'line' && (
+          <LinePanel
+            slug={selected.slug}
+            id={selected.id}
+            units={units}
+            onClose={closePanel}
+            onBack={selected.from ? () => act.back(selected.from!) : openList}
+            backLabel={selected.from ? (selected.from.sel?.kind === 'station' ? 'Station' : 'Services here') : undefined}
+            onStation={(id) => openStation(selected.slug, id, undefined, true)}
+          />
+        )}
+        {selected?.kind === 'services' && (
+          <ServicesPanel
+            ids={selected.ids}
+            index={panelIdx}
+            title={selected.title}
+            titleEn={selected.titleEn}
+            sub={selected.sub}
+            units={units}
+            onClose={closePanel}
+            onLine={(id) => openLine(selected.slug, id, { sel: selected, pt: null })}
+            onHoverLine={act.setListHoverLine}
+          />
+        )}
+        {selected?.kind === 'inspect' && <InspectPanel hit={selected.hit} onClose={closePanel} />}
+        {inspect && (
+          <div className="insp-banner" role="status">
+            <strong>Inspect on</strong>
+            <span className="muted-w">Tooltips show raw OSM tags</span>
+            <button
+              type="button"
+              onClick={() => {
+                setInspect(false)
+                closePanel()
+              }}
+            >
+              Turn off
+            </button>
+          </div>
+        )}
+        {selected?.kind === 'lines' && (
+          <LinesList
+            index={idx}
+            named={named[region.slug]}
+            regionName={region.name}
+            units={units}
+            onClose={closePanel}
+            onLine={(id) => {
+              act.clearTrackName()
+              openLine(region.slug, id)
+            }}
+            onNamed={openNamed}
+            activeName={selTrackName}
+            onHoverLine={act.setListHoverLine}
+            onHoverNamed={act.setListHoverName}
+          />
+        )}
+
+        {compact && sheetOpen && (
+          <div className="sheet-wrap" onClick={() => setSheetOpen(false)}>
+            <div className="sheet" role="dialog" aria-label="Map settings" onClick={(e) => e.stopPropagation()}>
+              <div className="sheet-head">
+                <h2>Map settings</h2>
+                <button type="button" className="close static" aria-label="Close" onClick={() => setSheetOpen(false)}>
+                  {Icon.close}
+                </button>
+              </div>
+              <Segmented
+                label="Mode"
+                value="explore"
+                onChange={() => {}}
+                options={[
+                  { value: 'explore', label: 'Explore' },
+                  { value: 'compare', label: 'Compare', disabled: true, title: 'Compare view arrives in phase 4' },
+                ]}
+              />
+              <h3 className="eyebrow">Colour lines by</h3>
+              <Segmented<ColorMode>
+                label="Colour lines by"
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { value: 'type', label: 'Rail type' },
+                  { value: 'operator', label: 'Operator colours' },
+                  { value: 'speed', label: 'Speed' },
+                ]}
+              />
+              <h3 className="eyebrow">Show</h3>
+              <Toggle on={hsrOnly} onChange={setHsrOnly}>
+                HSR only
+              </Toggle>
+              <Toggle on={construction} onChange={setConstruction}>
+                Under construction
+              </Toggle>
+              <Toggle on={proposed} onChange={setProposed}>
+                Proposed (Hong Kong)
+              </Toggle>
+              <Toggle on={freight} onChange={setFreight}>
+                Freight and industrial
+              </Toggle>
+              <Toggle on={outline} onChange={setOutline}>
+                Outline area in view
+              </Toggle>
+              <button type="button" className="btn wide" onClick={controls.openLines}>
+                {Icon.list}Line list<span className="muted grow-r">{idx ? Object.keys(idx).length : ''}</span>
+              </button>
+              <h3 className="eyebrow">Legend</h3>
+              {mode === 'speed' ? (
+                <SpeedCard area={cardArea} units={units} construction={construction} proposed={proposed} embedded {...speedProps} />
+              ) : mode === 'operator' ? (
+                <WorldCard
+                  embedded
+                  operator
+                  zoom={viewNow.zoom}
+                  hidden={hidden}
+                  freight={freight}
+                  hsrOnly={hsrOnly}
+                  onToggleType={legendProps.onToggleType}
+                  onShowAll={legendProps.onShowAll}
+                  onHideAll={legendProps.onHideAll}
+                  onToggleFreight={legendProps.onToggleFreight}
+                />
+              ) : (
+                <Legend mode={mode} hsrOnly={hsrOnly} open setOpen={() => {}} freight={freight} index={idx} compact {...legendProps} />
+              )}
+              <h3 className="eyebrow">More</h3>
+              <div className="row between">
+                <span>Units</span>
+                <Segmented<'km' | 'mi'>
+                  label="Units"
+                  value={units}
+                  onChange={setUnits}
+                  options={[
+                    { value: 'km', label: 'km' },
+                    { value: 'mi', label: 'mi' },
+                  ]}
+                />
+              </div>
+              <div className="row between">
+                <span>Map</span>
+                <Segmented<Theme>
+                  label="Map"
+                  value={theme}
+                  onChange={setTheme}
+                  options={[
+                    { value: 'light', label: 'Light' },
+                    { value: 'dark', label: 'Dark' },
+                  ]}
+                />
+              </div>
+              <div className="row between">
+                <span>Names</span>
+                <Segmented<Lang>
+                  label="Names"
+                  value={lang}
+                  onChange={setLang}
+                  options={[
+                    { value: 'local', label: 'Local' },
+                    { value: 'en', label: 'English' },
+                  ]}
+                />
+              </div>
+              <Toggle
+                on={inspect}
+                onChange={(v) => {
+                  setInspect(v)
+                  setSheetOpen(false)
+                }}
+              >
+                Inspect OSM tags<span className="muted sm"> taps show raw tags</span>
+              </Toggle>
+              <button type="button" className="btn wide" onClick={copyLink}>
+                {copied ? Icon.check : Icon.link}
+                {copied ? 'Link copied' : 'Copy link to this view'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </LangContext.Provider>
   )
 }

@@ -17,17 +17,46 @@ export function useSettings(init: UrlState, view: MutableRefObject<View | null>)
   const [lang, setLang] = useState(init.lang)
   const [theme, setTheme] = useState<Theme>(init.theme)
   const [hidden, setHidden] = useState<string[]>(init.hidden)
-  const [hiddenSpeed, setHiddenSpeed] = useState<number[]>(() => (init.hidden.includes('high_speed') ? [...new Set([...init.hiddenSpeed, 400, 350, 300, 250])] : init.hiddenSpeed))
+  const [hiddenSpeed, setHiddenSpeed] = useState<number[]>(() =>
+    init.hidden.includes('high_speed') ? [...new Set([...init.hiddenSpeed, 400, 350, 300, 250])] : init.hiddenSpeed
+  )
   const [inspect, setInspect] = useState(init.inspect)
   const [outline, setOutline] = useState(init.outline)
 
-  const sync = useCallback(() => writeHash({ region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, outline, theme, view: view.current }),
-    [region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, outline, theme, view])
+  const sync = useCallback(
+    () => writeHash({ region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, outline, theme, view: view.current }),
+    [region, mode, hsrOnly, construction, proposed, freight, units, lang, hidden, hiddenSpeed, inspect, outline, theme, view]
+  )
   useEffect(sync, [sync])
 
   return {
-    region, setRegionState, mode, setMode, hsrOnly, setHsrOnlyState, construction, setConstruction, proposed, setProposed, freight, setFreight, units, setUnits,
-    lang, setLang, theme, setTheme, hidden, setHidden, hiddenSpeed, setHiddenSpeed, inspect, setInspect, outline, setOutline, sync,
+    region,
+    setRegionState,
+    mode,
+    setMode,
+    hsrOnly,
+    setHsrOnlyState,
+    construction,
+    setConstruction,
+    proposed,
+    setProposed,
+    freight,
+    setFreight,
+    units,
+    setUnits,
+    lang,
+    setLang,
+    theme,
+    setTheme,
+    hidden,
+    setHidden,
+    hiddenSpeed,
+    setHiddenSpeed,
+    inspect,
+    setInspect,
+    outline,
+    setOutline,
+    sync,
   }
 }
 type Settings = ReturnType<typeof useSettings>
@@ -42,7 +71,10 @@ export function useTypeSpeedSwitches(s: Settings, areaSlug: string) {
   // HSR only needs high-speed track to show: turning it on brings high-speed (type and speed bands) back
   const setHsrOnly = (on: boolean) => {
     setHsrOnlyState(on)
-    if (on) { setHidden((h) => h.filter((x) => x !== 'high_speed')); setHiddenSpeed((sp) => withHs(sp, false)) }
+    if (on) {
+      setHidden((h) => h.filter((x) => x !== 'high_speed'))
+      setHiddenSpeed((sp) => withHs(sp, false))
+    }
   }
   const toggleType = (t: string) => {
     const off = !hidden.includes(t)
@@ -61,8 +93,14 @@ export function useTypeSpeedSwitches(s: Settings, areaSlug: string) {
       setHidden((h) => (allHsOff ? (h.includes('high_speed') ? h : [...h, 'high_speed']) : h.filter((x) => x !== 'high_speed')))
     }
   }
-  const showAll = () => { setHidden([]); setHiddenSpeed([]) }
-  const hideAll = () => { setHidden([...TYPE_ORDER]); setHiddenSpeed(allSpeed) }
+  const showAll = () => {
+    setHidden([])
+    setHiddenSpeed([])
+  }
+  const hideAll = () => {
+    setHidden([...TYPE_ORDER])
+    setHiddenSpeed(allSpeed)
+  }
   const legendProps = { hidden, onShowAll: showAll, onHideAll: hideAll, onToggleFreight: () => setFreight((v) => !v), onToggleType: toggleType }
   const speedProps = { hiddenSpeed, hsrOnly: s.hsrOnly, hsMin: hsMinKmh(areaSlug), onShowAll: showAll, onHideAll: hideAll, onToggle: toggleBand }
   return { setHsrOnly, legendProps, speedProps }

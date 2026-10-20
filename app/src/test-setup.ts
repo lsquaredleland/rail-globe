@@ -3,5 +3,9 @@ const loc = { hash: '' }
 Object.assign(globalThis, {
   document: { baseURI: 'http://localhost/' },
   location: loc,
-  history: { replaceState: (_s: unknown, _t: string, url: string) => { loc.hash = url.replace(/^[^#]*/, '') } },
+  history: {
+    replaceState: (_s: unknown, _t: string, url: string) => {
+      loc.hash = url.replace(/^[^#]*/, '')
+    },
+  },
 })

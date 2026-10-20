@@ -9,7 +9,10 @@ export const AREA_KIND: Record<string, string> = { province: 'Province', city: '
 const MI = 0.621371
 const conv = (v: number, u: Units) => (u === 'km' ? v : v * MI)
 /** a length without its unit: whole numbers from 100 up, one decimal below */
-const num = (v: number, u: Units) => { const x = conv(v, u); return x >= 100 ? Math.round(x).toLocaleString('en-US') : x < 0.05 ? '0' : x.toFixed(1) }
+const num = (v: number, u: Units) => {
+  const x = conv(v, u)
+  return x >= 100 ? Math.round(x).toLocaleString('en-US') : x < 0.05 ? '0' : x.toFixed(1)
+}
 const pct = (share: number) => (share < 0.005 ? '<1%' : `${Math.round(share * 100)}%`)
 const n0 = (n: number) => Math.round(n).toLocaleString('en-US')
 
@@ -27,59 +30,135 @@ function Squares({ parts, unit }: { parts: { color: string; v: number; off?: boo
   const total = parts.reduce((s, p) => s + p.v, 0)
   const n = Math.max(1, Math.ceil(total / unit - 1e-9))
   const cells = Array.from({ length: n }, (_, i) => {
-    const a = i * unit, b = (i + 1) * unit
+    const a = i * unit,
+      b = (i + 1) * unit
     const stops: string[] = []
-    let at = 0, from = 0
+    let at = 0,
+      from = 0
     for (const p of parts) {
-      const lo = Math.max(from, a), hi = Math.min(from + p.v, b)
-      if (hi > lo) { const x0 = ((lo - a) / unit) * 100, x1 = ((hi - a) / unit) * 100; const c = p.off ? HIDDEN_FILL : p.color; stops.push(`${c} ${x0}% ${x1}%`); at = x1 }
+      const lo = Math.max(from, a),
+        hi = Math.min(from + p.v, b)
+      if (hi > lo) {
+        const x0 = ((lo - a) / unit) * 100,
+          x1 = ((hi - a) / unit) * 100
+        const c = p.off ? HIDDEN_FILL : p.color
+        stops.push(`${c} ${x0}% ${x1}%`)
+        at = x1
+      }
       from += p.v
     }
     if (at < 99.9) stops.push(`transparent ${at}% 100%`)
     return `linear-gradient(90deg, ${stops.join(', ')})`
   })
-  return <div className="sq-grid" aria-hidden="true">{cells.map((g, i) => <i key={i} style={{ background: g }} />)}</div>
+  return (
+    <div className="sq-grid" aria-hidden="true">
+      {cells.map((g, i) => (
+        <i key={i} style={{ background: g }} />
+      ))}
+    </div>
+  )
 }
 
 /** Dashed outlined squares at the same scale, each in the colour of the part under its middle. */
 function Outlined({ n, unit, parts }: { n: number; unit: number; parts: { color: string; v: number }[] }) {
   const count = Math.min(120, Math.max(1, Math.ceil(n / unit - 1e-9)))
-  const colourAt = (x: number) => { let from = 0; for (const p of parts) { from += p.v; if (x < from) return p.color } return parts[parts.length - 1]?.color }
-  return <div className="sq-grid out" aria-hidden="true">{Array.from({ length: count }, (_, i) => <i key={i} style={{ borderColor: colourAt((i + 0.5) * unit) }} />)}</div>
+  const colourAt = (x: number) => {
+    let from = 0
+    for (const p of parts) {
+      from += p.v
+      if (x < from) return p.color
+    }
+    return parts[parts.length - 1]?.color
+  }
+  return (
+    <div className="sq-grid out" aria-hidden="true">
+      {Array.from({ length: count }, (_, i) => (
+        <i key={i} style={{ borderColor: colourAt((i + 0.5) * unit) }} />
+      ))}
+    </div>
+  )
 }
 
 /** A block that slides open and closed (grid rows 0fr -> 1fr) instead of popping in; it also takes back the card's flex gap when shut. */
 function Collapse({ open, children }: { open: boolean; children: React.ReactNode }) {
-  return <div className={`collapse${open ? ' open' : ''}`} aria-hidden={!open}><div>{children}</div></div>
+  return (
+    <div className={`collapse${open ? ' open' : ''}`} aria-hidden={!open}>
+      <div>{children}</div>
+    </div>
+  )
 }
 
 /** Freight at the same scale as the grid above: plain outlined squares, one per unit, outside the total. */
 function FreightSquares({ n, unit, color }: { n: number; unit: number; color: string }) {
-  const count = Math.min(2000, Math.max(1, Math.ceil(n / unit - 1e-9)))   // one square per unit, however much freight there is (the US has 165,000 km: 830 squares)
-  return <div className="sq-grid frt" aria-hidden="true">{Array.from({ length: count }, (_, i) => <i key={i} style={{ borderColor: color }} />)}</div>
+  const count = Math.min(2000, Math.max(1, Math.ceil(n / unit - 1e-9))) // one square per unit, however much freight there is (the US has 165,000 km: 830 squares)
+  return (
+    <div className="sq-grid frt" aria-hidden="true">
+      {Array.from({ length: count }, (_, i) => (
+        <i key={i} style={{ borderColor: color }} />
+      ))}
+    </div>
+  )
 }
 
 function Dots({ parts, unit }: { parts: { color: string; v: number; ring?: boolean }[]; unit: number }) {
   const dots: { color: string; ring?: boolean }[] = []
-  let acc = 0, placed = 0
-  for (const p of parts) { acc += p.v; while ((placed + 1) * unit <= acc + unit / 2 && placed * unit < acc) { dots.push(p); placed++ } }
-  return <div className="dot-grid" aria-hidden="true">{dots.map((d, i) => <i key={i} className={d.ring ? 'ring' : undefined} style={d.ring ? undefined : { background: d.color }} />)}</div>
+  let acc = 0,
+    placed = 0
+  for (const p of parts) {
+    acc += p.v
+    while ((placed + 1) * unit <= acc + unit / 2 && placed * unit < acc) {
+      dots.push(p)
+      placed++
+    }
+  }
+  return (
+    <div className="dot-grid" aria-hidden="true">
+      {dots.map((d, i) => (
+        <i key={i} className={d.ring ? 'ring' : undefined} style={d.ring ? undefined : { background: d.color }} />
+      ))}
+    </div>
+  )
 }
 
 /** one fold state for the three cards (area, world / operator, speed): a card that is folded stays folded when the colour mode swaps it for another */
 let cardFolded = false
 function useFold(): [boolean, React.ReactNode] {
   const [folded, set] = useState(cardFolded)
-  const toggle = () => { cardFolded = !folded; set(cardFolded) }
-  return [folded, <button type="button" className="ac-fold" aria-label={folded ? 'Expand card' : 'Collapse card'} aria-expanded={!folded} onClick={toggle}>
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" style={{ transform: folded ? undefined : 'rotate(180deg)' }}><path d="m6 9 6 6 6-6" /></svg></button>]
+  const toggle = () => {
+    cardFolded = !folded
+    set(cardFolded)
+  }
+  return [
+    folded,
+    <button type="button" className="ac-fold" aria-label={folded ? 'Expand card' : 'Collapse card'} aria-expanded={!folded} onClick={toggle}>
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        aria-hidden="true"
+        style={{ transform: folded ? undefined : 'rotate(180deg)' }}
+      >
+        <path d="m6 9 6 6 6-6" />
+      </svg>
+    </button>,
+  ]
 }
 
 function Head({ area, fold }: { area: StatsArea; fold?: React.ReactNode }) {
   return (
     <div className="ac-head ac-keep">
-      <strong>{area.name}</strong>{area.local && area.local !== area.name && <span lang="zh" className="ac-local">{area.local}</span>}
-      <span className="muted sm ac-kind">{AREA_KIND[area.kind]}</span>{fold}
+      <strong>{area.name}</strong>
+      {area.local && area.local !== area.name && (
+        <span lang="zh" className="ac-local">
+          {area.local}
+        </span>
+      )}
+      <span className="muted sm ac-kind">{AREA_KIND[area.kind]}</span>
+      {fold}
     </div>
   )
 }
@@ -87,16 +166,41 @@ function Head({ area, fold }: { area: StatsArea; fold?: React.ReactNode }) {
 function Tools({ allOn, allOff, onAll, onNone }: { allOn: boolean; allOff: boolean; onAll(): void; onNone(): void }) {
   return (
     <span className="ac-tools">
-      <button type="button" className="ac-btn" disabled={allOn} onClick={onAll}>All</button>
-      <button type="button" className="ac-btn" disabled={allOff} onClick={onNone}>None</button>
+      <button type="button" className="ac-btn" disabled={allOn} onClick={onAll}>
+        All
+      </button>
+      <button type="button" className="ac-btn" disabled={allOff} onClick={onNone}>
+        None
+      </button>
     </span>
   )
 }
 
 /** Rail types of the area under the view: kilometres as a grid of squares, then each type as a switch for the map. */
-export function TypeCard({ area: a, units, hidden, freight, construction, proposed, hsrOnly, onToggleType, onShowAll, onHideAll, onToggleFreight }: {
-  area: StatsArea | null; units: Units; hidden: string[]; freight: boolean; construction: boolean; proposed: boolean; hsrOnly: boolean
-  onToggleType(t: string): void; onShowAll(): void; onHideAll(): void; onToggleFreight(): void
+export function TypeCard({
+  area: a,
+  units,
+  hidden,
+  freight,
+  construction,
+  proposed,
+  hsrOnly,
+  onToggleType,
+  onShowAll,
+  onHideAll,
+  onToggleFreight,
+}: {
+  area: StatsArea | null
+  units: Units
+  hidden: string[]
+  freight: boolean
+  construction: boolean
+  proposed: boolean
+  hsrOnly: boolean
+  onToggleType(t: string): void
+  onShowAll(): void
+  onHideAll(): void
+  onToggleFreight(): void
 }) {
   const [folded, fold] = useFold()
   if (!a) return null
@@ -107,12 +211,15 @@ export function TypeCard({ area: a, units, hidden, freight, construction, propos
   const propOf = (t: string) => a.km[t]?.prop ?? 0
   const hasCon = TYPE_ORDER.some((t) => conOf(t) > 0)
   const hasProp = TYPE_ORDER.some((t) => propOf(t) > 0)
-  const showCon = construction && hasCon, showProp = proposed && hasProp   // a switch on: its km get a column next to what runs
+  const showCon = construction && hasCon,
+    showProp = proposed && hasProp // a switch on: its km get a column next to what runs
   const rowTypes = TYPE_ORDER.filter((t) => open(t) > 0 || (showCon && conOf(t) > 0) || (showProp && propOf(t) > 0))
   const freightKm = open('freight')
   const unit = niceUnit(total, 250)
   const st = a.stations
-  const metro = st.metro ?? 0, tram = st.light_rail ?? 0, main = Math.max(0, (st.open ?? 0) - metro - tram)
+  const metro = st.metro ?? 0,
+    tram = st.light_rail ?? 0,
+    main = Math.max(0, (st.open ?? 0) - metro - tram)
   const conTypes = TYPE_ORDER.filter((t) => conOf(t) > 0)
   const con = conTypes.reduce((s, t) => s + conOf(t), 0)
   const shade = (t: string) => (hidden.includes(t) ? '#CFCBC3' : hsrOnly && t !== 'high_speed' ? INACTIVE : TYPE_COLOR[t as RailType])
@@ -122,120 +229,309 @@ export function TypeCard({ area: a, units, hidden, freight, construction, propos
     <aside className={`area-card${showCon ? ' con-on' : ''}${showProp ? ' prop-on' : ''}${folded ? ' folded' : ''}`} aria-label={`Rail in ${a.name}`}>
       <Head area={a} fold={fold} />
       <div className="ac-total">
-        <div><strong className="ac-big">{num(total, units)} {units}</strong><div className="muted sm">passenger route in service</div></div>
-        <span className="ac-scale"><i />= {unitLabel(unit, units)}</span>
+        <div>
+          <strong className="ac-big">
+            {num(total, units)} {units}
+          </strong>
+          <div className="muted sm">passenger route in service</div>
+        </div>
+        <span className="ac-scale">
+          <i />= {unitLabel(unit, units)}
+        </span>
       </div>
-      <Squares unit={unit} parts={types.map((t) => ({ color: hsrOnly && t !== 'high_speed' ? INACTIVE : TYPE_COLOR[t], v: open(t), off: hidden.includes(t) }))} />
+      <Squares
+        unit={unit}
+        parts={types.map((t) => ({ color: hsrOnly && t !== 'high_speed' ? INACTIVE : TYPE_COLOR[t], v: open(t), off: hidden.includes(t) }))}
+      />
       {freightKm > 0 && <FreightSquares n={freightKm} unit={unit} color={hsrOnly ? INACTIVE : freight ? TYPE_COLOR.freight : '#CFCBC3'} />}
       {hasCon && (
         <Collapse open={showCon}>
           <div className="ac-con">
-            <div className="ac-sec"><span className="eyebrow">Under construction</span><span><strong className="ac-conkm">+{num(con, units)} {units}</strong> <span className="muted sm">not in the total</span></span></div>
+            <div className="ac-sec">
+              <span className="eyebrow">Under construction</span>
+              <span>
+                <strong className="ac-conkm">
+                  +{num(con, units)} {units}
+                </strong>{' '}
+                <span className="muted sm">not in the total</span>
+              </span>
+            </div>
             <Outlined n={con} unit={unit} parts={conTypes.map((t) => ({ color: shade(t), v: conOf(t) }))} />
           </div>
         </Collapse>
       )}
-      <div className="ac-sec"><span className="eyebrow">On the map</span>
-        <Tools allOn={hidden.length === 0} allOff={TYPE_ORDER.every((t) => hidden.includes(t))} onAll={onShowAll} onNone={onHideAll} /></div>
-      <div className="ac-colhead"><span className="ih">In service</span>{hasCon && <span className="c">Construction</span>}{hasProp && <span className="c pr">Proposed</span>}</div>
+      <div className="ac-sec">
+        <span className="eyebrow">On the map</span>
+        <Tools allOn={hidden.length === 0} allOff={TYPE_ORDER.every((t) => hidden.includes(t))} onAll={onShowAll} onNone={onHideAll} />
+      </div>
+      <div className="ac-colhead">
+        <span className="ih">In service</span>
+        {hasCon && <span className="c">Construction</span>}
+        {hasProp && <span className="c pr">Proposed</span>}
+      </div>
       <div className="ac-rows">
         {rowTypes.map((t) => {
           const off = hidden.includes(t)
           const grey = hsrOnly && t !== 'high_speed'
           const sw = grey ? INACTIVE : TYPE_COLOR[t]
           return (
-            <button key={t} type="button" className={`ac-row${off ? ' off' : ''}${grey ? ' grey' : ''}`} aria-pressed={!off} title={off ? `Show ${TYPE_LABEL[t]}` : `Hide ${TYPE_LABEL[t]}`} onClick={() => onToggleType(t)}>
+            <button
+              key={t}
+              type="button"
+              className={`ac-row${off ? ' off' : ''}${grey ? ' grey' : ''}`}
+              aria-pressed={!off}
+              title={off ? `Show ${TYPE_LABEL[t]}` : `Hide ${TYPE_LABEL[t]}`}
+              onClick={() => onToggleType(t)}
+            >
               <i className="sw" style={{ background: off ? 'transparent' : sw, borderColor: sw }} />
-              <span className="grow"><span className="nm">{TYPE_LABEL[t]}</span>{off && <span className="muted sm"> hidden</span>}</span>
-              <span className="v">{open(t) > 0 ? num(open(t), units) : '–'}</span><span className="p muted">{open(t) > 0 ? pct(open(t) / total) : ''}</span>
-              {hasCon && <span className="c muted"><span>{conOf(t) > 0 ? `+${num(conOf(t), units)}` : '–'}</span></span>}
-              {hasProp && <span className="c pr muted"><span>{propOf(t) > 0 ? `+${num(propOf(t), units)}` : '–'}</span></span>}
+              <span className="grow">
+                <span className="nm">{TYPE_LABEL[t]}</span>
+                {off && <span className="muted sm"> hidden</span>}
+              </span>
+              <span className="v">{open(t) > 0 ? num(open(t), units) : '–'}</span>
+              <span className="p muted">{open(t) > 0 ? pct(open(t) / total) : ''}</span>
+              {hasCon && (
+                <span className="c muted">
+                  <span>{conOf(t) > 0 ? `+${num(conOf(t), units)}` : '–'}</span>
+                </span>
+              )}
+              {hasProp && (
+                <span className="c pr muted">
+                  <span>{propOf(t) > 0 ? `+${num(propOf(t), units)}` : '–'}</span>
+                </span>
+              )}
             </button>
           )
         })}
         {freightKm > 0 && (
-          <button type="button" className={`ac-row frt${freight ? '' : ' off'}${hsrOnly ? ' grey' : ''}`} aria-pressed={freight} title={freight ? 'Hide freight' : 'Show freight'} onClick={onToggleFreight}>
+          <button
+            type="button"
+            className={`ac-row frt${freight ? '' : ' off'}${hsrOnly ? ' grey' : ''}`}
+            aria-pressed={freight}
+            title={freight ? 'Hide freight' : 'Show freight'}
+            onClick={onToggleFreight}
+          >
             <i className="sw" style={{ background: 'transparent', borderColor: hsrOnly ? INACTIVE : freight ? TYPE_COLOR.freight : '#B8B4AB' }} />
-            <span className="grow"><span className="nm">Freight</span>{!freight && <span className="muted sm"> hidden</span>}<span className="muted sm"> · not in the total</span></span>
-            <span className="v muted">{num(freightKm, units)}</span><span className="p muted">–</span>
-            {hasCon && <span className="c muted"><span>–</span></span>}
-            {hasProp && <span className="c pr muted"><span>–</span></span>}
+            <span className="grow">
+              <span className="nm">Freight</span>
+              {!freight && <span className="muted sm"> hidden</span>}
+              <span className="muted sm"> · not in the total</span>
+            </span>
+            <span className="v muted">{num(freightKm, units)}</span>
+            <span className="p muted">–</span>
+            {hasCon && (
+              <span className="c muted">
+                <span>–</span>
+              </span>
+            )}
+            {hasProp && (
+              <span className="c pr muted">
+                <span>–</span>
+              </span>
+            )}
           </button>
         )}
       </div>
-      {hsrOnly && <div className="ac-grey muted"><i />HSR only is on: other types are greyed on the map</div>}
+      {hsrOnly && (
+        <div className="ac-grey muted">
+          <i />
+          HSR only is on: other types are greyed on the map
+        </div>
+      )}
       {st.open != null && st.open > 0 && (
         <div className="ac-st">
-          <div className="ac-total"><span><strong>{n0(st.open)} stations</strong>{stCon > 0 && <span className="muted"> · +{n0(stCon)} under construction</span>}</span><span className="ac-scale small"><b />= {n0(sUnit)} {sUnit === 1 ? 'station' : 'stations'}</span></div>
-          <Dots unit={sUnit} parts={[{ color: TYPE_COLOR.metro, v: metro }, { color: '#B8A889', v: main }, { color: TYPE_COLOR.light_rail, v: tram }, { color: '#8a867d', v: stCon, ring: true }]} />
+          <div className="ac-total">
+            <span>
+              <strong>{n0(st.open)} stations</strong>
+              {stCon > 0 && <span className="muted"> · +{n0(stCon)} under construction</span>}
+            </span>
+            <span className="ac-scale small">
+              <b />= {n0(sUnit)} {sUnit === 1 ? 'station' : 'stations'}
+            </span>
+          </div>
+          <Dots
+            unit={sUnit}
+            parts={[
+              { color: TYPE_COLOR.metro, v: metro },
+              { color: '#B8A889', v: main },
+              { color: TYPE_COLOR.light_rail, v: tram },
+              { color: '#8a867d', v: stCon, ring: true },
+            ]}
+          />
           <div className="ac-key muted">
-            {stCon > 0 && <span className="full"><b className="ring" />new stations under construction</span>}
-            {metro > 0 && <span><b style={{ background: TYPE_COLOR.metro }} />{n0(metro)} metro</span>}
-            {main > 0 && <span><b style={{ background: '#B8A889' }} />{n0(main)} main-line</span>}
-            {tram > 0 && <span><b style={{ background: TYPE_COLOR.light_rail }} />{n0(tram)} light rail, tram</span>}
+            {stCon > 0 && (
+              <span className="full">
+                <b className="ring" />
+                new stations under construction
+              </span>
+            )}
+            {metro > 0 && (
+              <span>
+                <b style={{ background: TYPE_COLOR.metro }} />
+                {n0(metro)} metro
+              </span>
+            )}
+            {main > 0 && (
+              <span>
+                <b style={{ background: '#B8A889' }} />
+                {n0(main)} main-line
+              </span>
+            )}
+            {tram > 0 && (
+              <span>
+                <b style={{ background: TYPE_COLOR.light_rail }} />
+                {n0(tram)} light rail, tram
+              </span>
+            )}
             {!stCon && !!st.construction && <span>{n0(st.construction)} under construction</span>}
           </div>
         </div>
       )}
-      <div className="muted sm ac-foot">Route length: double track counts once (about 10% accuracy). {Object.values(a.lines).reduce((s, n) => s + n, 0)} lines.</div>
+      <div className="muted sm ac-foot">
+        Route length: double track counts once (about 10% accuracy). {Object.values(a.lines).reduce((s, n) => s + n, 0)} lines.
+      </div>
     </aside>
   )
 }
 
 /** Zoomed out (no area fills the screen): the colour key and the on/off switches for the whole world, without kilometres. */
-export function WorldCard({ operator, zoom, embedded, hidden, freight, hsrOnly, onToggleType, onShowAll, onHideAll, onToggleFreight }: {
-  operator: boolean; zoom: number; embedded?: boolean; hidden: string[]; freight: boolean; hsrOnly: boolean
-  onToggleType(t: string): void; onShowAll(): void; onHideAll(): void; onToggleFreight(): void
+export function WorldCard({
+  operator,
+  zoom,
+  embedded,
+  hidden,
+  freight,
+  hsrOnly,
+  onToggleType,
+  onShowAll,
+  onHideAll,
+  onToggleFreight,
+}: {
+  operator: boolean
+  zoom: number
+  embedded?: boolean
+  hidden: string[]
+  freight: boolean
+  hsrOnly: boolean
+  onToggleType(t: string): void
+  onShowAll(): void
+  onHideAll(): void
+  onToggleFreight(): void
 }) {
   const [folded, fold] = useFold()
   return (
     <aside className={`area-card${embedded ? ' embedded' : ''}${folded && !embedded ? ' folded' : ''}`} aria-label="Rail in the world">
-      {!embedded && (zoom > 5
-        ? <div className="ac-head ac-keep"><strong>No area here</strong><span className="muted sm ac-kind">Move the centre over land</span>{fold}</div>
-        : <div className="ac-head ac-keep"><strong>World</strong><span className="muted sm ac-kind">Zoom in to an area for its totals</span>{fold}</div>)}
-      {operator && <div className="muted sm">Lines take each operator&apos;s colour{hsrOnly ? '; lines that are not high-speed are greyed' : ''}. Rail types below still switch on and off.</div>}
-      <div className="ac-sec"><span className="eyebrow">On the map</span>
-        <Tools allOn={hidden.length === 0} allOff={TYPE_ORDER.every((t) => hidden.includes(t))} onAll={onShowAll} onNone={onHideAll} /></div>
+      {!embedded &&
+        (zoom > 5 ? (
+          <div className="ac-head ac-keep">
+            <strong>No area here</strong>
+            <span className="muted sm ac-kind">Move the centre over land</span>
+            {fold}
+          </div>
+        ) : (
+          <div className="ac-head ac-keep">
+            <strong>World</strong>
+            <span className="muted sm ac-kind">Zoom in to an area for its totals</span>
+            {fold}
+          </div>
+        ))}
+      {operator && (
+        <div className="muted sm">
+          Lines take each operator&apos;s colour{hsrOnly ? '; lines that are not high-speed are greyed' : ''}. Rail types below still switch on and off.
+        </div>
+      )}
+      <div className="ac-sec">
+        <span className="eyebrow">On the map</span>
+        <Tools allOn={hidden.length === 0} allOff={TYPE_ORDER.every((t) => hidden.includes(t))} onAll={onShowAll} onNone={onHideAll} />
+      </div>
       <div className="ac-rows">
         {TYPE_ORDER.filter((t) => t !== 'freight').map((t) => {
           const off = hidden.includes(t)
           const grey = hsrOnly && t !== 'high_speed'
           const sw = grey ? INACTIVE : TYPE_COLOR[t]
           return (
-            <button key={t} type="button" className={`ac-row${off ? ' off' : ''}${grey ? ' grey' : ''}`} aria-pressed={!off} title={off ? `Show ${TYPE_LABEL[t]}` : `Hide ${TYPE_LABEL[t]}`} onClick={() => onToggleType(t)}>
+            <button
+              key={t}
+              type="button"
+              className={`ac-row${off ? ' off' : ''}${grey ? ' grey' : ''}`}
+              aria-pressed={!off}
+              title={off ? `Show ${TYPE_LABEL[t]}` : `Hide ${TYPE_LABEL[t]}`}
+              onClick={() => onToggleType(t)}
+            >
               <i className="sw" style={{ background: off ? 'transparent' : sw, borderColor: sw }} />
-              <span className="grow"><span className="nm">{TYPE_LABEL[t]}</span>{off && <span className="muted sm"> hidden</span>}</span>
+              <span className="grow">
+                <span className="nm">{TYPE_LABEL[t]}</span>
+                {off && <span className="muted sm"> hidden</span>}
+              </span>
             </button>
           )
         })}
-        <button type="button" className={`ac-row frt${freight ? '' : ' off'}${hsrOnly ? ' grey' : ''}`} aria-pressed={freight} title={freight ? 'Hide freight' : 'Show freight'} onClick={onToggleFreight}>
+        <button
+          type="button"
+          className={`ac-row frt${freight ? '' : ' off'}${hsrOnly ? ' grey' : ''}`}
+          aria-pressed={freight}
+          title={freight ? 'Hide freight' : 'Show freight'}
+          onClick={onToggleFreight}
+        >
           <i className="sw" style={{ background: 'transparent', borderColor: hsrOnly ? INACTIVE : freight ? TYPE_COLOR.freight : '#B8B4AB' }} />
-          <span className="grow"><span className="nm">Freight</span>{!freight && <span className="muted sm"> hidden</span>}</span>
+          <span className="grow">
+            <span className="nm">Freight</span>
+            {!freight && <span className="muted sm"> hidden</span>}
+          </span>
         </button>
       </div>
-      {hsrOnly && <div className="ac-grey muted"><i />HSR only is on: other types are greyed on the map</div>}
+      {hsrOnly && (
+        <div className="ac-grey muted">
+          <i />
+          HSR only is on: other types are greyed on the map
+        </div>
+      )}
     </aside>
   )
 }
 
-const bandName = (i: number) => (i === 0 ? `${SPEED_BANDS[0].min}+ km/h` : SPEED_BANDS[i].min === 0 ? 'under 80' : `${SPEED_BANDS[i].min}–${SPEED_BANDS[i - 1].min - 1} km/h`)
+const bandName = (i: number) =>
+  i === 0 ? `${SPEED_BANDS[0].min}+ km/h` : SPEED_BANDS[i].min === 0 ? 'under 80' : `${SPEED_BANDS[i].min}–${SPEED_BANDS[i - 1].min - 1} km/h`
 /** swatch thickness per band: the rail type that typically runs at that speed */
 const BAND_TYPE: RailType[] = ['high_speed', 'high_speed', 'high_speed', 'high_speed', 'intercity', 'regional', 'regional', 'metro', 'light_rail']
 
 /** Track speed of the area under the view: km per band, each band a switch for the map. */
-export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, hsMin, construction, proposed, embedded, onToggle, onShowAll, onHideAll }: {
-  area: StatsArea | null; units: Units; hiddenSpeed: number[]; hsrOnly: boolean; hsMin: number; construction: boolean; proposed: boolean; embedded?: boolean
-  onToggle(m: number): void; onShowAll(): void; onHideAll(): void
+export function SpeedCard({
+  area: a,
+  units,
+  hiddenSpeed,
+  hsrOnly,
+  hsMin,
+  construction,
+  proposed,
+  embedded,
+  onToggle,
+  onShowAll,
+  onHideAll,
+}: {
+  area: StatsArea | null
+  units: Units
+  hiddenSpeed: number[]
+  hsrOnly: boolean
+  hsMin: number
+  construction: boolean
+  proposed: boolean
+  embedded?: boolean
+  onToggle(m: number): void
+  onShowAll(): void
+  onHideAll(): void
 }) {
-  const china = hsMin >= 250   // high-speed starts at China's line, else at the UIC line (200)
+  const china = hsMin >= 250 // high-speed starts at China's line, else at the UIC line (200)
   const km = (m: number) => a?.speed?.[m === SPEED_NONE ? 'none' : String(m)] ?? 0
   const all = [...SPEED_BANDS.map((b) => b.min), SPEED_NONE]
   const conKm = (m: number) => a?.speed_con?.[m === SPEED_NONE ? 'none' : String(m)] ?? 0
   const totalCon = all.reduce((s, m) => s + conKm(m), 0)
   const propKm = (m: number) => a?.speed_prop?.[m === SPEED_NONE ? 'none' : String(m)] ?? 0
   const totalProp = all.reduce((s, m) => s + propKm(m), 0)
-  const hasCon = totalCon > 0, hasProp = totalProp > 0
-  const showCon = construction && hasCon, showProp = proposed && hasProp   // a switch on: its own column next to what runs
+  const hasCon = totalCon > 0,
+    hasProp = totalProp > 0
+  const showCon = construction && hasCon,
+    showProp = proposed && hasProp // a switch on: its own column next to what runs
   const totalOpen = all.reduce((s, m) => s + km(m), 0)
   const row = (m: number, i: number) => {
     const band = SPEED_BANDS[i]
@@ -246,24 +542,63 @@ export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, hsMin, constru
     const grey = hsrOnly && (none || m < hsMin)
     const v = km(m)
     return (
-      <button key={m} type="button" className={`sp-row${off ? ' off' : ''}${hs ? ' hs' : ''}${grey ? ' grey' : ''}`} aria-pressed={!off} title={off ? `Show ${none ? 'speed not mapped' : bandName(i)}` : `Hide ${none ? 'speed not mapped' : bandName(i)}`} onClick={() => onToggle(m)}>
+      <button
+        key={m}
+        type="button"
+        className={`sp-row${off ? ' off' : ''}${hs ? ' hs' : ''}${grey ? ' grey' : ''}`}
+        aria-pressed={!off}
+        title={off ? `Show ${none ? 'speed not mapped' : bandName(i)}` : `Hide ${none ? 'speed not mapped' : bandName(i)}`}
+        onClick={() => onToggle(m)}
+      >
         <svg width="34" height="10" viewBox="0 0 44 12" aria-hidden="true">
-          <line x1="3" y1="6" x2="41" y2="6" stroke={grey ? INACTIVE : none ? SPEED_UNKNOWN : band.color} strokeWidth={grey ? Math.min(w, 1.6) : w} strokeLinecap={none ? 'butt' : 'round'} strokeDasharray={none ? '4 3' : undefined} />
+          <line
+            x1="3"
+            y1="6"
+            x2="41"
+            y2="6"
+            stroke={grey ? INACTIVE : none ? SPEED_UNKNOWN : band.color}
+            strokeWidth={grey ? Math.min(w, 1.6) : w}
+            strokeLinecap={none ? 'butt' : 'round'}
+            strokeDasharray={none ? '4 3' : undefined}
+          />
         </svg>
-        <span className="grow"><span className="nm">{none ? 'Not mapped' : bandName(i)}</span>
-          {m === 200 && <span className="sub">{china ? 'high-speed elsewhere, intercity here' : 'high-speed here (UIC)'}</span>}</span>
+        <span className="grow">
+          <span className="nm">{none ? 'Not mapped' : bandName(i)}</span>
+          {m === 200 && <span className="sub">{china ? 'high-speed elsewhere, intercity here' : 'high-speed here (UIC)'}</span>}
+        </span>
         {a ? <span className="v muted">{v > 0 ? `${num(v, units)} ${units}` : 'none'}</span> : <span className="v" />}
         {hasCon && (
-          <span className="cv muted"><span className="cv-in">
-            {conKm(m) > 0 && <svg width="24" height="8" viewBox="0 0 24 8" aria-hidden="true"><line x1="1" y1="4" x2="23" y2="4" stroke={grey ? INACTIVE : none ? SPEED_UNKNOWN : band.color} strokeWidth="2" strokeDasharray="4 3" /></svg>}
-            <span>{conKm(m) > 0 ? `+${num(conKm(m), units)}` : '–'}</span>
-          </span></span>
+          <span className="cv muted">
+            <span className="cv-in">
+              {conKm(m) > 0 && (
+                <svg width="24" height="8" viewBox="0 0 24 8" aria-hidden="true">
+                  <line x1="1" y1="4" x2="23" y2="4" stroke={grey ? INACTIVE : none ? SPEED_UNKNOWN : band.color} strokeWidth="2" strokeDasharray="4 3" />
+                </svg>
+              )}
+              <span>{conKm(m) > 0 ? `+${num(conKm(m), units)}` : '–'}</span>
+            </span>
+          </span>
         )}
         {hasProp && (
-          <span className="cv pr muted"><span className="cv-in">
-            {propKm(m) > 0 && <svg width="24" height="8" viewBox="0 0 24 8" aria-hidden="true"><line x1="1" y1="4" x2="23" y2="4" stroke={grey ? INACTIVE : none ? SPEED_UNKNOWN : band.color} strokeOpacity="0.55" strokeWidth="2" strokeDasharray="2 3" /></svg>}
-            <span>{propKm(m) > 0 ? `+${num(propKm(m), units)}` : '–'}</span>
-          </span></span>
+          <span className="cv pr muted">
+            <span className="cv-in">
+              {propKm(m) > 0 && (
+                <svg width="24" height="8" viewBox="0 0 24 8" aria-hidden="true">
+                  <line
+                    x1="1"
+                    y1="4"
+                    x2="23"
+                    y2="4"
+                    stroke={grey ? INACTIVE : none ? SPEED_UNKNOWN : band.color}
+                    strokeOpacity="0.55"
+                    strokeWidth="2"
+                    strokeDasharray="2 3"
+                  />
+                </svg>
+              )}
+              <span>{propKm(m) > 0 ? `+${num(propKm(m), units)}` : '–'}</span>
+            </span>
+          </span>
         )}
       </button>
     )
@@ -271,25 +606,75 @@ export function SpeedCard({ area: a, units, hiddenSpeed, hsrOnly, hsMin, constru
   const hidN = hiddenSpeed.length
   const [folded, fold] = useFold()
   return (
-    <aside className={`area-card sp${embedded ? ' embedded' : ''}${showCon ? ' con-on' : ''}${showProp ? ' prop-on' : ''}${folded && !embedded ? ' folded' : ''}`} aria-label={a ? `Track speed in ${a.name}` : 'Track speed'}>
+    <aside
+      className={`area-card sp${embedded ? ' embedded' : ''}${showCon ? ' con-on' : ''}${showProp ? ' prop-on' : ''}${folded && !embedded ? ' folded' : ''}`}
+      aria-label={a ? `Track speed in ${a.name}` : 'Track speed'}
+    >
       <div className="ac-sec top ac-keep">
-        <div><strong className="ac-title">Track speed</strong><div className="muted sm">{a ? `${a.name} · ` : 'Zoom in to an area for its totals · '}{hidN === 0 ? 'all bands on the map' : `${hidN} band${hidN > 1 ? 's' : ''} hidden`}</div></div>
+        <div>
+          <strong className="ac-title">Track speed</strong>
+          <div className="muted sm">
+            {a ? `${a.name} · ` : 'Zoom in to an area for its totals · '}
+            {hidN === 0 ? 'all bands on the map' : `${hidN} band${hidN > 1 ? 's' : ''} hidden`}
+          </div>
+        </div>
         <Tools allOn={hidN === 0} allOff={hidN === all.length} onAll={onShowAll} onNone={onHideAll} />
         {!embedded && fold}
       </div>
-      <div className="sp-colhead"><span>In service</span><span className="bt">Construction</span><span className="bt pr">Proposed</span></div>
-      <div className={`sp-hs${SPEED_BANDS.filter((b) => b.min >= hsMin).every((b) => hiddenSpeed.includes(b.min)) ? ' off' : ''}`}>
-        <div className="sp-cap"><span className="eyebrow">High-speed on this map</span><i /></div>
-        {SPEED_BANDS.slice(0, 4).map((b, i) => row(b.min, i))}
-        {!china && <><div className="sp-line china"><b>250 · China line</b><i /></div>{row(200, 4)}</>}
+      <div className="sp-colhead">
+        <span>In service</span>
+        <span className="bt">Construction</span>
+        <span className="bt pr">Proposed</span>
       </div>
-      {china && <><div className="sp-line china"><b>250 · China line</b><i /></div>{row(200, 4)}</>}
-      <div className="sp-line uic"><b>200 · UIC line</b><i /></div>
-      {SPEED_BANDS.slice(5).map((b, i) => <Fragment key={b.min}>{row(b.min, i + 5)}</Fragment>)}
+      <div className={`sp-hs${SPEED_BANDS.filter((b) => b.min >= hsMin).every((b) => hiddenSpeed.includes(b.min)) ? ' off' : ''}`}>
+        <div className="sp-cap">
+          <span className="eyebrow">High-speed on this map</span>
+          <i />
+        </div>
+        {SPEED_BANDS.slice(0, 4).map((b, i) => row(b.min, i))}
+        {!china && (
+          <>
+            <div className="sp-line china">
+              <b>250 · China line</b>
+              <i />
+            </div>
+            {row(200, 4)}
+          </>
+        )}
+      </div>
+      {china && (
+        <>
+          <div className="sp-line china">
+            <b>250 · China line</b>
+            <i />
+          </div>
+          {row(200, 4)}
+        </>
+      )}
+      <div className="sp-line uic">
+        <b>200 · UIC line</b>
+        <i />
+      </div>
+      {SPEED_BANDS.slice(5).map((b, i) => (
+        <Fragment key={b.min}>{row(b.min, i + 5)}</Fragment>
+      ))}
       {row(SPEED_NONE, 0)}
-      <div className="sp-total"><b>Total</b><b>{a ? `${num(totalOpen, units)} ${units}` : ''}</b><b className="bt">{hasCon ? `+${num(totalCon, units)} ${units}` : ''}</b><b className="bt pr">{hasProp ? `+${num(totalProp, units)} ${units}` : ''}</b></div>
-      {hsrOnly && <div className="ac-grey muted"><i />Not high-speed (greyed)</div>}
-      <div className="muted sm ac-foot">Colour from the maxspeed tag. {china ? "High-speed here follows China's 250 km/h line." : 'High-speed here is 200 km/h and up (UIC); China uses 250.'} Passenger route in service, double track counted once.</div>
+      <div className="sp-total">
+        <b>Total</b>
+        <b>{a ? `${num(totalOpen, units)} ${units}` : ''}</b>
+        <b className="bt">{hasCon ? `+${num(totalCon, units)} ${units}` : ''}</b>
+        <b className="bt pr">{hasProp ? `+${num(totalProp, units)} ${units}` : ''}</b>
+      </div>
+      {hsrOnly && (
+        <div className="ac-grey muted">
+          <i />
+          Not high-speed (greyed)
+        </div>
+      )}
+      <div className="muted sm ac-foot">
+        Colour from the maxspeed tag. {china ? "High-speed here follows China's 250 km/h line." : 'High-speed here is 200 km/h and up (UIC); China uses 250.'}{' '}
+        Passenger route in service, double track counted once.
+      </div>
     </aside>
   )
 }

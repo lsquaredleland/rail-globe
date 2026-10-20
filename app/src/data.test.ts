@@ -20,6 +20,6 @@ test('a station is read from shard fnv1a(id) % count of shards.json', async () =
     return { ok: true, status: 200, json: async () => body }
   })
   expect((await loadStation('zz', 'way/123')).id).toBe('way/123')
-  expect(asked).toEqual(['zz/shards.json', 'zz/stations/3.json'])   // 3327974463 % 4
+  expect(asked).toEqual(['zz/shards.json', 'zz/stations/3.json']) // 3327974463 % 4
   await expect(loadStation('zz', 'way/999')).rejects.toThrow('no station')
 })
