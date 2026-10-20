@@ -107,7 +107,8 @@ fn stations_under_construction_are_not_open_stations() {
     assert!(under_construction(&p(&[("railway", "site"), ("construction:railway", "halt"), ("_stop_area", "relation/1")])));
     assert!(!con_tags(&p(&[("public_transport", "station"), ("construction", "yes")]), true));
     assert!(con_tags(&p(&[("public_transport", "station"), ("construction", "yes")]), false));
-    for n in ["陶然桥(在建)", "龙吴路（在建）", "青龙(建设中)", "青龙（建设中）", "怀德(5号线建设中)", "Foo (under construction)", "Foo (En construcción)"] {
+    for n in ["陶然桥(在建)", "龙吴路（在建）", "青龙(建设中)", "青龙（建设中）", "怀德(5号线建设中)", "Foo (under construction)", "Foo (En construcción)"]
+    {
         assert!(under_construction(&p(&[("railway", "station"), ("name", n)])), "{n}");
     }
     assert!(!under_construction(&p(&[("railway", "station"), ("name", "Zeche Construction Road"), ("construction", "no")])));
@@ -167,9 +168,15 @@ fn bare_names_take_a_place() {
     // through the model: the place comes from the nearest station that names it; with none the bare name stays
     let alone = names(vec![feat(Some("Hauptbahnhof"), 8.0, LAT, &[])]);
     assert_eq!(alone, vec![Some("Hauptbahnhof".to_string())]);
-    let near = names(vec![feat(Some("Hauptbahnhof"), 8.0, LAT, &[("station", "subway"), ("subway", "yes"), ("train", "no")]), feat(Some("Bremen Hbf"), 8.0, LAT + 300.0 * M, &[])]);
+    let near = names(vec![
+        feat(Some("Hauptbahnhof"), 8.0, LAT, &[("station", "subway"), ("subway", "yes"), ("train", "no")]),
+        feat(Some("Bremen Hbf"), 8.0, LAT + 300.0 * M, &[]),
+    ]);
     assert_eq!(near, vec![Some("Bremen Hauptbahnhof".to_string()), Some("Bremen Hbf".to_string())]);
-    let far = names(vec![feat(Some("Hauptbahnhof"), 8.0, LAT, &[("station", "subway"), ("subway", "yes"), ("train", "no")]), feat(Some("Bremen Hbf"), 8.0, LAT + 3000.0 * M, &[])]);
+    let far = names(vec![
+        feat(Some("Hauptbahnhof"), 8.0, LAT, &[("station", "subway"), ("subway", "yes"), ("train", "no")]),
+        feat(Some("Bremen Hbf"), 8.0, LAT + 3000.0 * M, &[]),
+    ]);
     assert!(far.contains(&Some("Hauptbahnhof".to_string())));
     // addr:city wins
     let city = names(vec![feat(Some("Bahnhof"), 8.0, LAT, &[("addr:city", "Hameln")])]);
@@ -234,7 +241,10 @@ fn close_but_different_stations_stay_two() {
     assert_eq!(two("Lexington Avenue–59th Street", &sub, "59th Street", &sub, 35.0), 2);
     assert_eq!(two("临高南", &[], "临高", &[], 9.0), 2); // a direction is another station
     assert_eq!(two("红安", &[], "红安西", &[], 88.0), 2);
-    assert_eq!(two("Sky Tower, North Tram", &[("network", "Skytrain Monorail North")], "Sky Tower, South Tram", &[("network", "Skytrain Monorail South")], 80.0), 2);
+    assert_eq!(
+        two("Sky Tower, North Tram", &[("network", "Skytrain Monorail North")], "Sky Tower, South Tram", &[("network", "Skytrain Monorail South")], 80.0),
+        2
+    );
     assert_eq!(two("Paignton", &[], "Paignton Queens Park", &[], 71.0), 2);
     // farther than 100 m
     assert_eq!(two("Neckarsulm", &[], "Neckarsulm AVG", &[("operator", "Albtal-Verkehrs-Gesellschaft mbH")], 130.0), 2);

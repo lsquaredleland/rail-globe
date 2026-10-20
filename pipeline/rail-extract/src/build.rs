@@ -106,7 +106,6 @@ struct NodeBlk {
     villages: usize, // place=village nodes seen (counted, not kept)
 }
 
-
 /// Wikidata ids of the place=city nodes (a pass over the node blobs, tags only), for the cities' own boundaries
 fn city_wikidata(f: &File, nodes: &[BlobRef]) -> std::collections::HashSet<Vec<u8>> {
     nodes
@@ -253,8 +252,7 @@ fn ways_pass(f: &File, blobs: &[BlobRef], mem_ways: &[i64], bnd_ways: &[i64]) ->
                             o.bnd_end.push(o.bnd_refs.len());
                         }
                         let member = j < mem_ways.len() && mem_ways[j] == id;
-                        let keep = member
-                            || (keys.iter().any(|k| quick.contains(k)) && rules::way_wanted(&Sep { blk: &blk, keys, vals }));
+                        let keep = member || (keys.iter().any(|k| quick.contains(k)) && rules::way_wanted(&Sep { blk: &blk, keys, vals }));
                         if !keep {
                             return;
                         }
@@ -351,11 +349,9 @@ fn nodes_pass(f: &File, blobs: &[BlobRef], need: &[i64]) -> Vec<NodeBlk> {
                             j += 1;
                         }
                         let needed = j < need.len() && need[j] == id;
-                        let tagged = !kv.is_empty()
-                            && kv.as_chunks::<2>().0.iter().any(|p| quick.contains(&p[0]))
-                            && rules::node_kind(&Kv { blk: &blk, kv }).is_some();
-                        let place = !kv.is_empty()
-                            && kv.as_chunks::<2>().0.iter().any(|p| place_k.contains(&p[0]) && matches!(blk.s(p[1]), b"city" | b"town"));
+                        let tagged =
+                            !kv.is_empty() && kv.as_chunks::<2>().0.iter().any(|p| quick.contains(&p[0])) && rules::node_kind(&Kv { blk: &blk, kv }).is_some();
+                        let place = !kv.is_empty() && kv.as_chunks::<2>().0.iter().any(|p| place_k.contains(&p[0]) && matches!(blk.s(p[1]), b"city" | b"town"));
                         if !place && !kv.is_empty() && kv.as_chunks::<2>().0.iter().any(|p| place_k.contains(&p[0]) && blk.s(p[1]) == b"village") {
                             o.villages += 1;
                         }
@@ -609,10 +605,7 @@ pub fn build(planet: &Path, out: &Path) {
     let n = data.len();
     let w0 = first_of(f, &data, K_WAYS);
     let r0 = first_of(f, &data, K_RELS);
-    lap(&format!(
-        "indexed {n} blobs{} (nodes 0..{w0}, ways {w0}..{r0}, relations {r0}..{n})",
-        if from_cache { " from the cached index" } else { "" }
-    ));
+    lap(&format!("indexed {n} blobs{} (nodes 0..{w0}, ways {w0}..{r0}, relations {r0}..{n})", if from_cache { " from the cached index" } else { "" }));
 
     // ---- pass 0, place nodes: whose boundary is wanted
     let city_wd = city_wikidata(f, &data[..w0]);
@@ -694,7 +687,7 @@ pub fn build(planet: &Path, out: &Path) {
             &place_dat,
         ],
     )
-        .unwrap_or_else(|e| panic!("write {}: {e}", out.display()));
+    .unwrap_or_else(|e| panic!("write {}: {e}", out.display()));
     let size = std::fs::metadata(out).map(|m| m.len()).unwrap_or(0);
     lap(&format!(
         "wrote {} ({:.0} MB): {} ways, {} tagged nodes, {} relations",

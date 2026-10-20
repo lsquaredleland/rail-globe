@@ -87,7 +87,7 @@ pub fn config_path(config_dir: &Path, slug: &str) -> (PathBuf, bool) {
     if own.exists() {
         (own, false)
     } else if let Some(group) = config_group(config_dir, slug) {
-        (config_dir.join(format!("{group}.json")), true)   // a template like the default: names are filled from the outline
+        (config_dir.join(format!("{group}.json")), true) // a template like the default: names are filled from the outline
     } else {
         (config_dir.join("_default.json"), true)
     }
@@ -98,7 +98,7 @@ pub fn config_path(config_dir: &Path, slug: &str) -> (PathBuf, bool) {
 fn config_group(config_dir: &Path, slug: &str) -> Option<String> {
     let path = config_dir.join("_groups.json");
     let text = std::fs::read_to_string(&path).ok()?; // no file: no groups
-    // a broken _groups.json must stop the run (the whole group would quietly use _default.json)
+                                                     // a broken _groups.json must stop the run (the whole group would quietly use _default.json)
     let v: Value = serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
     let groups = v.as_object().unwrap_or_else(|| panic!("{} must be a JSON object", path.display()));
     let mut found: Vec<&String> = Vec::new();
@@ -163,7 +163,10 @@ pub struct Paths {
 pub fn preflight(slug: &str, paths: &Paths) -> Result<(), String> {
     let dir = paths.data.join(slug);
     if !dir.join("features.typed.geojsonl").exists() {
-        return Err(format!("no cut for {slug}: {} is missing; run `rail-extract cut {slug}` first (or `cut {slug} --build`)", dir.join("features.typed.geojsonl").display()));
+        return Err(format!(
+            "no cut for {slug}: {} is missing; run `rail-extract cut {slug}` first (or `cut {slug} --build`)",
+            dir.join("features.typed.geojsonl").display()
+        ));
     }
     let (cfg, _) = config_path(&paths.config, slug);
     if !cfg.exists() {
@@ -190,9 +193,7 @@ pub fn build(slug: &str, paths: &Paths) -> Vec<String> {
     // a file of its own that says "extends" gets the same fill for the keys it leaves out; the hand-written pilot configs (no extends) stay as written
     if is_default || extends_template(&cfg_path) {
         let outline = paths.regions.iter().map(|d| d.join(format!("{slug}.geojson"))).find(|p| p.exists());
-        let props = outline
-            .and_then(|p| serde_json::from_str::<Value>(&fs::read_to_string(p).ok()?).ok())
-            .map_or(Value::Null, |v| v["properties"].clone());
+        let props = outline.and_then(|p| serde_json::from_str::<Value>(&fs::read_to_string(p).ok()?).ok()).map_or(Value::Null, |v| v["properties"].clone());
         fill_default(&mut inp.cfg, &props);
         if is_default {
             log.push(format!("  config: pipeline/config/_default.json (no {slug}.json)"));

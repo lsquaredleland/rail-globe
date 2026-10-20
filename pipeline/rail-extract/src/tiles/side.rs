@@ -32,9 +32,13 @@ pub(super) struct Side<'a> {
 
 /// km of a route relation: the summed length of its way members
 fn route_km(sc: &Scan, r: &Value) -> f64 {
-    r["members"].as_array().into_iter().flatten()
+    r["members"]
+        .as_array()
+        .into_iter()
+        .flatten()
         .filter(|m| m["type"] == "way" && matches!(m["role"].as_str(), Some("" | "route")))
-        .map(|m| sc.way_len.get(&m["id"].as_i64().unwrap_or(0)).copied().unwrap_or(0.0)).sum()
+        .map(|m| sc.way_len.get(&m["id"].as_i64().unwrap_or(0)).copied().unwrap_or(0.0))
+        .sum()
 }
 
 impl<'a> Side<'a> {
@@ -47,7 +51,10 @@ impl<'a> Side<'a> {
         let (n_line_shards, big_lines) = self.lines();
         let n_hl_shards = self.name_highlights();
         // shard counts for the app: it hashes a key with fnv1a and takes it modulo the count; `lines_big` are line ids kept as their own files
-        write_json(&self.dir.join("shards.json"), &json!({"stations": n_station_shards, "lines": n_line_shards, "lines_big": big_lines, "tags": n_tag_shards, "name-hl": n_hl_shards}));
+        write_json(
+            &self.dir.join("shards.json"),
+            &json!({"stations": n_station_shards, "lines": n_line_shards, "lines_big": big_lines, "tags": n_tag_shards, "name-hl": n_hl_shards}),
+        );
         self.boundary();
         n_named
     }
@@ -62,8 +69,11 @@ impl<'a> Side<'a> {
                 }
             }
             let id = l["id"].as_str().unwrap_or("");
-            idx.insert(short(id).to_string(), json!({"n": l["name"], "r": l["ref"], "c": colour(l["colour"].as_str()), "t": l["type"], "o": l["operator"],
-                "f": l["from"], "to": l["to"], "km": Value::from(round(km, 1)), "ne": l.get("name_en").cloned().unwrap_or(Value::Null)}));
+            idx.insert(
+                short(id).to_string(),
+                json!({"n": l["name"], "r": l["ref"], "c": colour(l["colour"].as_str()), "t": l["type"], "o": l["operator"],
+                "f": l["from"], "to": l["to"], "km": Value::from(round(km, 1)), "ne": l.get("name_en").cloned().unwrap_or(Value::Null)}),
+            );
         }
         write_json(&self.dir.join("lines-index.json"), &Value::Object(idx));
     }
@@ -73,9 +83,21 @@ impl<'a> Side<'a> {
         let mut nl: Vec<&(String, Option<String>, String, f64, i64, [f64; 4])> = self.sc.named.iter().filter(|v| v.3 >= 1.5).collect();
         // by length rounded to 0.1 km, longest first (build_tiles.py sorted after rounding: equal lengths keep first-seen order)
         nl.sort_by(|a, b| round(b.3, 1).partial_cmp(&round(a.3, 1)).unwrap_or(std::cmp::Ordering::Equal));
-        write_json(&self.dir.join("named-lines.json"), &Value::Array(nl.iter().map(|v| json!({"n": v.0, "ne": v.1, "t": v.2, "km": Value::from(round(v.3, 1)), "ways": v.4,
-            "bbox": v.5.iter().map(|x| Value::from(round(*x, 4))).collect::<Vec<_>>()})).collect()));
-        write_json(&self.dir.join("railways.json"), &Value::Array(self.sc.railways.iter().map(|r| json!([r.0, r.1, r.2, Value::from(round(r.3, 1))])).collect()));
+        write_json(
+            &self.dir.join("named-lines.json"),
+            &Value::Array(
+                nl.iter()
+                    .map(|v| {
+                        json!({"n": v.0, "ne": v.1, "t": v.2, "km": Value::from(round(v.3, 1)), "ways": v.4,
+            "bbox": v.5.iter().map(|x| Value::from(round(*x, 4))).collect::<Vec<_>>()})
+                    })
+                    .collect(),
+            ),
+        );
+        write_json(
+            &self.dir.join("railways.json"),
+            &Value::Array(self.sc.railways.iter().map(|r| json!([r.0, r.1, r.2, Value::from(round(r.3, 1))])).collect()),
+        );
         nl.len()
     }
 
@@ -95,12 +117,26 @@ impl<'a> Side<'a> {
 
     fn stations(&self, props_by_id: &FxHashMap<&str, &Map<String, Value>>) -> u32 {
         let (lk, stations) = (self.lk, self.stations);
-        let cx_name_of: FxHashMap<&str, &Value> = self.complexes.iter().map(|c| (c["properties"]["id"].as_str().unwrap_or(""), &c["properties"]["name"])).collect();
+        let cx_name_of: FxHashMap<&str, &Value> =
+            self.complexes.iter().map(|c| (c["properties"]["id"].as_str().unwrap_or(""), &c["properties"]["name"])).collect();
         let mut cx_members: FxHashMap<&str, Vec<&Value>> = FxHashMap::default();
         for x in stations.iter() {
             cx_members.entry(x["properties"]["complex"].as_str().unwrap_or("")).or_default().push(&x["properties"]);
         }
-        let model_keys = ["score", "tier", "major", "terminus", "dead_ends", "mainline_platforms", "platform_count", "mainline_track_ways", "land_ha", "building_ha", "grouping", "hsr"];
+        let model_keys = [
+            "score",
+            "tier",
+            "major",
+            "terminus",
+            "dead_ends",
+            "mainline_platforms",
+            "platform_count",
+            "mainline_track_ways",
+            "land_ha",
+            "building_ha",
+            "grouping",
+            "hsr",
+        ];
         let mut station_recs: Vec<(String, String)> = Vec::with_capacity(stations.len());
         for (k, stv) in stations.iter().enumerate() {
             let p = &stv["properties"];
@@ -114,13 +150,23 @@ impl<'a> Side<'a> {
                 }
             }
             groups.sort_by_key(|g| rank(&g.0));
-            let others: Vec<Value> = cx_members.get(p["complex"].as_str().unwrap_or("")).into_iter().flatten().filter(|o| o["id"] != p["id"])
-                .map(|o| json!({"id": o["id"], "name": o["name"], "name_en": o["name_en"], "modes": o["modes"]})).collect();
+            let others: Vec<Value> = cx_members
+                .get(p["complex"].as_str().unwrap_or(""))
+                .into_iter()
+                .flatten()
+                .filter(|o| o["id"] != p["id"])
+                .map(|o| json!({"id": o["id"], "name": o["name"], "name_en": o["name_en"], "modes": o["modes"]}))
+                .collect();
             let sources: Vec<&str> = p["source_ids"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-            let mut tags: Vec<Value> = sources.iter().filter_map(|i| props_by_id.get(i).map(|pr| {
-                let t: Map<String, Value> = pr.iter().filter(|(k, _)| k.as_str() != "osm_id").map(|(k, v)| (k.clone(), v.clone())).collect();
-                json!({"id": i, "tags": t})
-            })).collect();
+            let mut tags: Vec<Value> = sources
+                .iter()
+                .filter_map(|i| {
+                    props_by_id.get(i).map(|pr| {
+                        let t: Map<String, Value> = pr.iter().filter(|(k, _)| k.as_str() != "osm_id").map(|(k, v)| (k.clone(), v.clone())).collect();
+                        json!({"id": i, "tags": t})
+                    })
+                })
+                .collect();
             tags.extend(sources.iter().filter_map(|i| lk.rels.get(i).map(|r| json!({"id": i, "tags": r["tags"]}))));
             let model: Map<String, Value> = model_keys.iter().map(|k| (k.to_string(), p.get(*k).cloned().unwrap_or(Value::Null))).collect();
             let rec = json!({
@@ -162,7 +208,8 @@ impl<'a> Side<'a> {
                 kb.0.cmp(&ka.0).then(kb.1.partial_cmp(&ka.1).unwrap_or(std::cmp::Ordering::Equal))
             });
             let used: BTreeSet<&str> = routes.iter().take(8).flat_map(|r| r["stations"].as_array().into_iter().flatten().filter_map(Value::as_str)).collect();
-            let names: Map<String, Value> = used.iter().filter_map(|sid| st_by_id.get(sid).map(|p| (sid.to_string(), json!({"n": p["name"], "ne": p["name_en"]})))).collect();
+            let names: Map<String, Value> =
+                used.iter().filter_map(|sid| st_by_id.get(sid).map(|p| (sid.to_string(), json!({"n": p["name"], "ne": p["name_en"]})))).collect();
             let km = routes.iter().filter_map(|r| r["km"].as_f64()).fold(None, |a: Option<f64>, x| Some(a.map_or(x, |a| a.max(x))));
             let c = colour(l["colour"].as_str());
             let mut extra = vec![("type", l["type"].clone())];

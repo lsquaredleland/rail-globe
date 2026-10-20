@@ -114,7 +114,8 @@ pub fn run(slug: &str, inp: &Input, stations: &mut Vec<Value>, complexes: &mut V
     let nodes: Vec<usize> = (0..inp.feats.len())
         .filter(|&i| inp.feats[i].gtype == "Point" && is_con(&inp.feats[i].p) && s(&inp.feats[i].p, "name").is_some_and(|n| !n.is_empty()))
         .collect();
-    let con: Vec<usize> = (0..inp.feats.len()).filter(|&i| inp.feats[i].gtype == "LineString" && s(&inp.feats[i].p, "railway") == Some("construction")).collect();
+    let con: Vec<usize> =
+        (0..inp.feats.len()).filter(|&i| inp.feats[i].gtype == "LineString" && s(&inp.feats[i].p, "railway") == Some("construction")).collect();
     let con_g: Vec<geomx::G> = con.iter().filter_map(|&i| geomx::from_geojson(&inp.feats[i].g, geomx::id)).collect();
     let track_tree = Index::new(con_g.iter().map(geomx::bbox));
     let tp = |k: usize, key: &str| s(&inp.feats[con[k]].p, key);
@@ -133,7 +134,11 @@ pub fn run(slug: &str, inp: &Input, stations: &mut Vec<Value>, complexes: &mut V
     let mut tiers = [0usize; 4];
     for g in &groups {
         // the longest normalised name of the cluster (the first such)
-        let nm = g.iter().map(|&i| &nms[i]).fold(None, |a: Option<&String>, n| if a.is_none_or(|b| n.chars().count() > b.chars().count()) { Some(n) } else { a }).unwrap();
+        let nm = g
+            .iter()
+            .map(|&i| &nms[i])
+            .fold(None, |a: Option<&String>, n| if a.is_none_or(|b| n.chars().count() > b.chars().count()) { Some(n) } else { a })
+            .unwrap();
         let (cx, cy) = (g.iter().map(|&i| pts[i].x()).sum::<f64>() / g.len() as f64, g.iter().map(|&i| pts[i].y()).sum::<f64>() / g.len() as f64);
         let c = Point::new(cx, cy);
         let cg = Geometry::Point(c);
@@ -189,7 +194,13 @@ pub fn run(slug: &str, inp: &Input, stations: &mut Vec<Value>, complexes: &mut V
         }
         hsr = hsr || (mainline && (hs_ways > 0 || hs_name.is_match(&label)));
         let major = mainline && ((hsr && main_ways >= MAJOR_TRACKS) || main_re.as_ref().is_some_and(|re| re.is_match(s(&props, "name").unwrap_or(""))));
-        let tier: i64 = if major { 1 } else if mainline && hsr { 2 } else { 3 };
+        let tier: i64 = if major {
+            1
+        } else if mainline && hsr {
+            2
+        } else {
+            3
+        };
         // rail types this station belongs to, so hiding a type hides it: nearby construction track of a matching kind, else a default
         let allowed: BTreeSet<&str> = modes.iter().flat_map(|m| mode_types(m).iter().copied()).collect();
         let mut rail_types: BTreeSet<String> = near.iter().filter_map(|&k| tp(k, "type")).filter(|t| allowed.contains(t)).map(String::from).collect();
@@ -218,5 +229,11 @@ pub fn run(slug: &str, inp: &Input, stations: &mut Vec<Value>, complexes: &mut V
         tiers[tier as usize] += 1;
         added += 1;
     }
-    format!("{slug}: {} construction station nodes -> {added} stations added, skipped {{'already open': {skipped}}}, tiers {{1: {}, 2: {}, 3: {}}}", nodes.len(), tiers[1], tiers[2], tiers[3])
+    format!(
+        "{slug}: {} construction station nodes -> {added} stations added, skipped {{'already open': {skipped}}}, tiers {{1: {}, 2: {}, 3: {}}}",
+        nodes.len(),
+        tiers[1],
+        tiers[2],
+        tiers[3]
+    )
 }

@@ -62,7 +62,9 @@ fn txt(b: &[u8]) -> String {
 /// polygons of a GeoJSON geometry, Feature or FeatureCollection, as rings of (lat, lon) in 1e-7 degrees
 fn polys_of(v: &Value) -> Vec<Poly> {
     let ring = |r: &Value| -> Vec<(i32, i32)> {
-        r.as_array().map_or(Vec::new(), |a| a.iter().map(|p| ((p[1].as_f64().unwrap_or(0.0) * 1e7).round() as i32, (p[0].as_f64().unwrap_or(0.0) * 1e7).round() as i32)).collect())
+        r.as_array().map_or(Vec::new(), |a| {
+            a.iter().map(|p| ((p[1].as_f64().unwrap_or(0.0) * 1e7).round() as i32, (p[0].as_f64().unwrap_or(0.0) * 1e7).round() as i32)).collect()
+        })
     };
     let poly = |p: &Value| -> Poly { p.as_array().map_or(Vec::new(), |a| a.iter().map(ring).collect()) };
     match v["type"].as_str() {
@@ -139,17 +141,36 @@ fn population(t: &str) -> Option<u64> {
 
 fn rank(city: bool, pop: Option<u64>, capital: bool) -> i64 {
     const STEPS: [(u64, i64); 11] = [
-        (10_000_000, 1), (5_000_000, 2), (3_000_000, 3), (1_500_000, 4), (1_000_000, 5), (500_000, 6), (250_000, 7), (100_000, 8), (50_000, 9),
-        (20_000, 10), (10_000, 11),
+        (10_000_000, 1),
+        (5_000_000, 2),
+        (3_000_000, 3),
+        (1_500_000, 4),
+        (1_000_000, 5),
+        (500_000, 6),
+        (250_000, 7),
+        (100_000, 8),
+        (50_000, 9),
+        (20_000, 10),
+        (10_000, 11),
     ];
     let mut r = match pop {
         Some(p) => STEPS.iter().find(|(min, _)| p >= *min).map_or(12, |s| s.1),
-        None => if city { 10 } else { 12 },
+        None => {
+            if city {
+                10
+            } else {
+                12
+            }
+        }
     };
     if capital {
         r = (r - 1).max(1);
     }
-    if city { r } else { r.max(8) }
+    if city {
+        r
+    } else {
+        r.max(8)
+    }
 }
 
 struct Place {
@@ -235,7 +256,7 @@ struct Cand {
     capital: bool,
     n: usize,
     outline: Option<(String, [f64; 4])>, // slug, box of a level-5 outline
-    wd: Option<String>,   // Wikidata id of the place (None for a city made from an outline alone)
+    wd: Option<String>,                  // Wikidata id of the place (None for a city made from an outline alone)
 }
 
 /// most important first: rank, then population (larger first, none last), then capital, then n_stations (more first), then name
@@ -363,7 +384,8 @@ impl Stations {
 
     /// a polygon (rings of (lat, lon) in 1e-7 degrees) that holds at least one station complex
     fn in_polygon(&self, p: &Poly) -> bool {
-        let (mut b, rings) = ([i32::MAX, i32::MAX, i32::MIN, i32::MIN], p.iter().map(|r| r.iter().map(|q| (q.1 as i64, q.0 as i64)).collect::<Vec<_>>()).collect::<Vec<_>>());
+        let (mut b, rings) =
+            ([i32::MAX, i32::MAX, i32::MIN, i32::MIN], p.iter().map(|r| r.iter().map(|q| (q.1 as i64, q.0 as i64)).collect::<Vec<_>>()).collect::<Vec<_>>());
         for q in &p[0] {
             b = [b[0].min(q.0), b[1].min(q.1), b[2].max(q.0), b[3].max(q.1)];
         }
@@ -449,11 +471,8 @@ fn wanted_countries(slugs: &[String], outlines: &[Outline], outline_dir: &Path, 
     }
     let others: Vec<&String> = slugs.iter().filter(|s| !is_country(s)).collect();
     if !others.is_empty() {
-        let l2: Vec<(&Outline, Vec<Poly>)> = outlines
-            .par_iter()
-            .filter(|o| o.level == "2")
-            .filter_map(|o| Some((o, polys_of(&load_outline(outline_dir, &o.slug)?))))
-            .collect();
+        let l2: Vec<(&Outline, Vec<Poly>)> =
+            outlines.par_iter().filter(|o| o.level == "2").filter_map(|o| Some((o, polys_of(&load_outline(outline_dir, &o.slug)?)))).collect();
         for s in others {
             let Some(path) = region_dirs.iter().map(|d| d.join(format!("{s}.geojson"))).find(|p| p.exists()) else { continue };
             let reg = Region::load(s, &path);
@@ -503,7 +522,8 @@ fn find_areas(outlines: &[Outline], bbox_of: &BTreeMap<i64, [i32; 4]>, outline_d
             tree.locate_in_envelope(AABB::from_corners(lo, hi)).next()?;
             let v = load_outline(outline_dir, &o.slug)?;
             let reg = Region::new(&o.slug, rings_of(&v));
-            let n = tree.locate_in_envelope(AABB::from_corners(lo, hi)).filter(|s| reg.contains((s[1] * 1e7).round() as i32, (s[0] * 1e7).round() as i32)).count();
+            let n =
+                tree.locate_in_envelope(AABB::from_corners(lo, hi)).filter(|s| reg.contains((s[1] * 1e7).round() as i32, (s[0] * 1e7).round() as i32)).count();
             if n == 0 {
                 return None;
             }
@@ -534,13 +554,29 @@ fn search_cities(
     let mut place_cands: Vec<Cand> = places
         .iter()
         .filter(|p| p.city && metro_near(metro, p.lon, p.lat, METRO_KM))
-        .map(|p| Cand { name: p.name.clone(), en: p.en.clone(), lon: p.lon, lat: p.lat, rank: p.rank, pop: p.pop, capital: p.capital, n: p.n, outline: None, wd: p.wd.clone() })
+        .map(|p| Cand {
+            name: p.name.clone(),
+            en: p.en.clone(),
+            lon: p.lon,
+            lat: p.lat,
+            rank: p.rank,
+            pop: p.pop,
+            capital: p.capital,
+            n: p.n,
+            outline: None,
+            wd: p.wd.clone(),
+        })
         .collect();
     place_cands.sort_by(importance);
     let n_place_metro = place_cands.len();
     // a level-4 province named like one of those places is a city of its own (Hong Kong): its level-5 outlines are districts
     let city_names: HashSet<&str> = place_cands.iter().flat_map(|c| [c.name.as_str(), c.en.as_str()]).collect();
-    let city_provinces: Vec<&Area> = areas.iter().filter(|a| outlines[a.o].level == "4" && [&outlines[a.o].name, &outlines[a.o].name_en].iter().any(|n| n.as_deref().is_some_and(|n| city_names.contains(n)))).collect();
+    let city_provinces: Vec<&Area> = areas
+        .iter()
+        .filter(|a| {
+            outlines[a.o].level == "4" && [&outlines[a.o].name, &outlines[a.o].name_en].iter().any(|n| n.as_deref().is_some_and(|n| city_names.contains(n)))
+        })
+        .collect();
     // per level-5 outline: its candidate and the place it took the name from
     let from_outlines: Vec<(Cand, Vec<usize>)> = areas
         .par_iter()
@@ -567,17 +603,46 @@ fn search_cities(
                 .collect();
             if let Some(&i) = inside.first() {
                 let c = &place_cands[i];
-                return Some((Cand { name: c.name.clone(), en: c.en.clone(), lon: c.lon, lat: c.lat, rank: c.rank, pop: c.pop, capital: c.capital, n: a.n, outline, wd: c.wd.clone() }, inside));
+                return Some((
+                    Cand {
+                        name: c.name.clone(),
+                        en: c.en.clone(),
+                        lon: c.lon,
+                        lat: c.lat,
+                        rank: c.rank,
+                        pop: c.pop,
+                        capital: c.capital,
+                        n: a.n,
+                        outline,
+                        wd: c.wd.clone(),
+                    },
+                    inside,
+                ));
             }
             metro_near(metro, a.pt.0, a.pt.1, METRO_KM).then(|| {
                 let en = display(o);
-                (Cand { name: o.name.clone().unwrap_or(en.clone()), en, lon: a.pt.0, lat: a.pt.1, rank: rank(true, None, false), pop: None, capital: false, n: a.n, outline, wd: None }, Vec::new())
+                (
+                    Cand {
+                        name: o.name.clone().unwrap_or(en.clone()),
+                        en,
+                        lon: a.pt.0,
+                        lat: a.pt.1,
+                        rank: rank(true, None, false),
+                        pop: None,
+                        capital: false,
+                        n: a.n,
+                        outline,
+                        wd: None,
+                    },
+                    Vec::new(),
+                )
             })
         })
         .collect();
     let taken: HashSet<usize> = from_outlines.iter().flat_map(|(_, i)| i.iter().copied()).collect();
     let n_outline = from_outlines.len();
-    let cands: Vec<Cand> = place_cands.into_iter().enumerate().filter(|(i, _)| !taken.contains(i)).map(|(_, c)| c).chain(from_outlines.into_iter().map(|(c, _)| c)).collect();
+    let cands: Vec<Cand> =
+        place_cands.into_iter().enumerate().filter(|(i, _)| !taken.contains(i)).map(|(_, c)| c).chain(from_outlines.into_iter().map(|(c, _)| c)).collect();
     let n_cands = cands.len();
     (one_per_metro_area(cands, MERGE_KM), CityCounts { place_metro: n_place_metro, outline: n_outline, cands: n_cands })
 }
@@ -603,7 +668,7 @@ fn write_wanted_outlines(data: &Path, cities: &[Cand], outlines: &[Outline]) -> 
     let city_outline_slugs: HashSet<&str> = outlines.iter().filter(|o| o.city).map(|o| o.slug.as_str()).collect();
     let wanted_outlines: Vec<Value> = cities
         .iter()
-        .filter(|c| c.outline.as_ref().is_none_or(|(slug, _)| city_outline_slugs.contains(slug.as_str())))   // points, and cities whose outline is a fetched one
+        .filter(|c| c.outline.as_ref().is_none_or(|(slug, _)| city_outline_slugs.contains(slug.as_str()))) // points, and cities whose outline is a fetched one
         .filter_map(|c| Some(json!({ "name": c.name, "name_en": c.en, "wikidata": c.wd.as_ref()?, "lon": r3(c.lon), "lat": r3(c.lat), "stations": c.n })))
         .collect();
     write_json(&data.join("city-outlines-wanted.json"), &Value::Array(wanted_outlines.clone()));
@@ -634,14 +699,43 @@ fn write_search_json(out: &Path, countries: &[Country], areas: &[Area], outlines
     let local = |l: &Option<String>, name: &str| l.clone().filter(|l| l != name);
     for ct in countries {
         // the stations of a country's regions are not counted per country: n is 0 (the map shows no count for a country either)
-        s.push(json!([ct.name, ct.en, local(&ct.local, &ct.name), "country", b3(ct.pt.0), b3(ct.pt.1), b3(ct.bbox[0]), b3(ct.bbox[1]), b3(ct.bbox[2]), b3(ct.bbox[3]), fit_zoom(&ct.bbox), ct.region, 0]));
+        s.push(json!([
+            ct.name,
+            ct.en,
+            local(&ct.local, &ct.name),
+            "country",
+            b3(ct.pt.0),
+            b3(ct.pt.1),
+            b3(ct.bbox[0]),
+            b3(ct.bbox[1]),
+            b3(ct.bbox[2]),
+            b3(ct.bbox[3]),
+            fit_zoom(&ct.bbox),
+            ct.region,
+            0
+        ]));
     }
-    let mut prov: Vec<&Area> = areas.iter().filter(|a| outlines[a.o].level == "4" && !country_only.iter().any(|p| outlines[a.o].slug.starts_with(p.as_str()))).collect();
+    let mut prov: Vec<&Area> =
+        areas.iter().filter(|a| outlines[a.o].level == "4" && !country_only.iter().any(|p| outlines[a.o].slug.starts_with(p.as_str()))).collect();
     prov.sort_by(|a, b| (&outlines[a.o].level, std::cmp::Reverse(a.n)).cmp(&(&outlines[b.o].level, std::cmp::Reverse(b.n))));
     for a in prov {
         let o = &outlines[a.o];
         let name = display(o);
-        s.push(json!([name, o.name_en, local(&o.name, &name), "province", b3(a.pt.0), b3(a.pt.1), b3(a.bbox[0]), b3(a.bbox[1]), b3(a.bbox[2]), b3(a.bbox[3]), fit_zoom(&a.bbox), o.slug, a.n]));
+        s.push(json!([
+            name,
+            o.name_en,
+            local(&o.name, &name),
+            "province",
+            b3(a.pt.0),
+            b3(a.pt.1),
+            b3(a.bbox[0]),
+            b3(a.bbox[1]),
+            b3(a.bbox[2]),
+            b3(a.bbox[3]),
+            fit_zoom(&a.bbox),
+            o.slug,
+            a.n
+        ]));
     }
     for c in cities {
         let en = (c.en != c.name).then(|| c.en.clone());
@@ -649,7 +743,13 @@ fn write_search_json(out: &Path, countries: &[Country], areas: &[Area], outlines
         match &c.outline {
             Some((slug, b)) => s.push(json!([c.en, en, l, "city", r3(c.lon), r3(c.lat), b3(b[0]), b3(b[1]), b3(b[2]), b3(b[3]), fit_zoom(b), slug, c.n])),
             None => {
-                let zoom = if c.rank <= 3 { 10.0 } else if c.rank <= 7 { 11.0 } else { 11.5 };
+                let zoom = if c.rank <= 3 {
+                    10.0
+                } else if c.rank <= 7 {
+                    11.0
+                } else {
+                    11.5
+                };
                 s.push(json!([c.en, en, l, "city", r3(c.lon), r3(c.lat), null, null, null, null, zoom, null, c.n]));
             }
         }
@@ -776,7 +876,8 @@ mod tests {
         assert!(o(&cand("B", 0.0, 0.0, 3, Some(5_000_000), false, 1), &base).is_lt()); // then population
         assert!(o(&cand("B", 0.0, 0.0, 3, None, true, 99), &base).is_gt()); // no population is last
         assert!(o(&cand("B", 0.0, 0.0, 3, Some(4_000_000), true, 1), &base).is_lt()); // then capital
-        assert!(o(&cand("B", 0.0, 0.0, 3, Some(4_000_000), false, 11), &base).is_lt()); // then stations
+        assert!(o(&cand("B", 0.0, 0.0, 3, Some(4_000_000), false, 11), &base).is_lt());
+        // then stations
     }
 
     #[test]

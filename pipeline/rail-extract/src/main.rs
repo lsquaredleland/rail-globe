@@ -26,19 +26,19 @@ mod classify;
 mod config;
 mod construction;
 mod cut;
+mod geomx;
 mod out;
 mod outlines;
-mod places;
-mod geomx;
 mod pbf;
+mod places;
 mod pminfo;
 mod region;
 mod rules;
 mod site;
 mod stations;
 mod stats;
-mod tilewriter;
 mod tiles;
+mod tilewriter;
 mod world_list;
 
 use clap::{Args, Parser, Subcommand};
@@ -222,7 +222,9 @@ enum Cmd {
 impl Cmd {
     fn threads(&self) -> Option<usize> {
         match self {
-            Cmd::Cache { t, .. } | Cmd::Cut { t, .. } | Cmd::Outlines { t, .. } | Cmd::Build { t, .. } | Cmd::World { t, .. } | Cmd::Places { t, .. } => t.threads,
+            Cmd::Cache { t, .. } | Cmd::Cut { t, .. } | Cmd::Outlines { t, .. } | Cmd::Build { t, .. } | Cmd::World { t, .. } | Cmd::Places { t, .. } => {
+                t.threads
+            }
             Cmd::WorldList { .. } | Cmd::Pminfo { .. } => None,
         }
     }
@@ -243,7 +245,8 @@ fn with_slugs_file(mut slugs: Vec<String>, file: Option<&Path>) -> Vec<String> {
 /// the one .railcache in data/cache (the newest when there are several)
 fn default_cache(root: &Path) -> PathBuf {
     let dir = root.join("data/cache");
-    find_cache(root).unwrap_or_else(|| fail(format!("no .railcache in {}: run `rail-extract cache --planet <planet.osm.pbf>` first (or pass --cache)", dir.display())))
+    find_cache(root)
+        .unwrap_or_else(|| fail(format!("no .railcache in {}: run `rail-extract cache --planet <planet.osm.pbf>` first (or pass --cache)", dir.display())))
 }
 
 fn open_cache(path: &Path) -> cache::Cache {
@@ -270,7 +273,9 @@ fn find_cache(root: &Path) -> Option<PathBuf> {
 fn run_places(root: &Path, data: &Path, out: &Path, cache: Option<PathBuf>, slugs: &[String]) {
     match cache.or_else(|| find_cache(root)) {
         Some(c) => places::run(data, out, &c, slugs, &[root.join("pipeline/regions"), root.join("data/regions")], &root.join("data/regions")),
-        None => eprintln!("warning: no .railcache in data/cache: places.json and search.json not written (run `rail-extract cache`, then `rail-extract places`)"),
+        None => {
+            eprintln!("warning: no .railcache in data/cache: places.json and search.json not written (run `rail-extract cache`, then `rail-extract places`)")
+        }
     }
 }
 
@@ -425,14 +430,16 @@ fn main() {
             // not the same dirs as the other commands on purpose: the world cut reads data/regions only, and a hand-made outline in
             // pipeline/regions would change the bounds in world.parts.json
             let dirs = vec![regions.unwrap_or_else(|| root.join("data/regions"))];
-            let parts: Vec<_> = slugs.iter().filter(|s| !no_tile_input(&data, s)).map(|s| serde_json::json!({ "slug": s, "bounds": outline_bounds_in(&dirs, s) })).collect();
+            let parts: Vec<_> =
+                slugs.iter().filter(|s| !no_tile_input(&data, s)).map(|s| serde_json::json!({ "slug": s, "bounds": outline_bounds_in(&dirs, s) })).collect();
             let used: Vec<String> = parts.iter().map(|p| p["slug"].as_str().unwrap().to_string()).collect();
             if used.is_empty() {
                 fail(format!("no slug has tile input in {}: run `rail-extract build <slug>... --no-tiles --data {}` first", data.display(), data.display()));
             }
             let t = Instant::now();
             tilewriter::run_world(&data, &used, &out, &name, deep_zoom);
-            std::fs::write(out.join(format!("{name}.parts.json")), serde_json::to_string_pretty(&parts).unwrap() + "\n").unwrap_or_else(|e| fail(format!("write parts.json: {e}")));
+            std::fs::write(out.join(format!("{name}.parts.json")), serde_json::to_string_pretty(&parts).unwrap() + "\n")
+                .unwrap_or_else(|e| fail(format!("write parts.json: {e}")));
             eprintln!("world {name}: {} slugs, {:.1} s", used.len(), t.elapsed().as_secs_f64());
             run_places(&root, &data, &out, cache, &used);
         }

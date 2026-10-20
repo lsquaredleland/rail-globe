@@ -77,11 +77,9 @@ fn resolve(dir: &Path, name: &str, strict: bool, stack: &mut Vec<String>) -> Res
         return Err(format!("config extends cycle: {} -> {name}", stack.join(" -> ")));
     }
     let path = dir.join(format!("{name}.json"));
-    let text = std::fs::read_to_string(&path).map_err(|e| {
-        match stack.last() {
-            Some(child) => format!("config {child}.json extends \"{name}\", but {} cannot be read: {e}", path.display()),
-            None => format!("read {}: {e}", path.display()),
-        }
+    let text = std::fs::read_to_string(&path).map_err(|e| match stack.last() {
+        Some(child) => format!("config {child}.json extends \"{name}\", but {} cannot be read: {e}", path.display()),
+        None => format!("read {}: {e}", path.display()),
     })?;
     resolve_text(dir, name, &text, strict, stack)
 }
@@ -136,24 +134,14 @@ mod tests {
 
     #[test]
     fn scalars_replace_objects_merge() {
-        let c = load(
-            &[
-                ("a", r#"{"x": 1, "keep": "a", "o": {"p": 1, "q": 2}}"#),
-                ("b", r#"{"extends": "a", "x": 2, "o": {"q": 3, "r": 4}}"#),
-            ],
-            "b",
-        )
-        .unwrap();
+        let c = load(&[("a", r#"{"x": 1, "keep": "a", "o": {"p": 1, "q": 2}}"#), ("b", r#"{"extends": "a", "x": 2, "o": {"q": 3, "r": 4}}"#)], "b").unwrap();
         assert_eq!(Value::Object(c), json!({"x": 2, "keep": "a", "o": {"p": 1, "q": 3, "r": 4}}));
     }
 
     #[test]
     fn arrays_replace_unless_plus_key() {
         let c = load(
-            &[
-                ("a", r#"{"l": [1, 2], "m": [1], "o": {"l": ["a"]}}"#),
-                ("b", r#"{"extends": "a", "l": [9], "+m": [2, 3], "o": {"+l": ["b"]}, "+fresh": [7]}"#),
-            ],
+            &[("a", r#"{"l": [1, 2], "m": [1], "o": {"l": ["a"]}}"#), ("b", r#"{"extends": "a", "l": [9], "+m": [2, 3], "o": {"+l": ["b"]}, "+fresh": [7]}"#)],
             "b",
         )
         .unwrap();
@@ -168,7 +156,9 @@ mod tests {
 
     #[test]
     fn chains_resolve_in_order() {
-        let c = load(&[("a", r#"{"+l": ["a"], "s": "a"}"#), ("b", r#"{"extends": "a", "+l": ["b"]}"#), ("c", r#"{"extends": "b", "+l": ["c"], "s": "c"}"#)], "c").unwrap();
+        let c =
+            load(&[("a", r#"{"+l": ["a"], "s": "a"}"#), ("b", r#"{"extends": "a", "+l": ["b"]}"#), ("c", r#"{"extends": "b", "+l": ["c"], "s": "c"}"#)], "c")
+                .unwrap();
         assert_eq!(Value::Object(c), json!({"l": ["a", "b", "c"], "s": "c"}));
     }
 

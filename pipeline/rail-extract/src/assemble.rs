@@ -238,10 +238,17 @@ fn assemble_gaps(ways: &[&[P]], strict: bool, max_gap_deg: f64) -> Result<(Vec<P
 fn intersects(segs: &[(P, P)]) -> bool {
     type V = (i64, i64);
     let v = |p: P| -> V { (p.1 as i64, p.0 as i64) };
-    let mut s: Vec<(V, V)> = segs.iter().map(|&(a, b)| {
-        let (a, b) = (v(a), v(b));
-        if a <= b { (a, b) } else { (b, a) }
-    }).collect();
+    let mut s: Vec<(V, V)> = segs
+        .iter()
+        .map(|&(a, b)| {
+            let (a, b) = (v(a), v(b));
+            if a <= b {
+                (a, b)
+            } else {
+                (b, a)
+            }
+        })
+        .collect();
     s.sort_unstable();
     let cross = |a: V, b: V| -> i128 { a.0 as i128 * b.1 as i128 - a.1 as i128 * b.0 as i128 };
     let sub = |a: V, b: V| -> V { (a.0 - b.0, a.1 - b.1) };

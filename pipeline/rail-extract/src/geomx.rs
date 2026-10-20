@@ -1,8 +1,8 @@
 //! Geometry for the station model and tile build, on `geo` (shapely/GEOS in the Python version) and `rstar` (shapely's STRtree).
 
 use geo::{
-    Area, BooleanOps, BoundingRect, Centroid, Contains, Coord, Distance, Euclidean, Geometry, InteriorPoint, LineString, MultiLineString,
-    MultiPolygon, Point, Polygon, Rect,
+    Area, BooleanOps, BoundingRect, Centroid, Contains, Coord, Distance, Euclidean, Geometry, InteriorPoint, LineString, MultiLineString, MultiPolygon, Point,
+    Polygon, Rect,
 };
 use rstar::{primitives::GeomWithData, primitives::Rectangle, RTree, AABB};
 use serde_json::Value;
@@ -273,8 +273,7 @@ impl Index {
     }
     /// indices whose box meets [x0, x1] x [y0, y1]
     pub fn query(&self, x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<usize> {
-        let mut v: Vec<usize> =
-            self.tree.locate_in_envelope_intersecting(AABB::from_corners([x0, y0], [x1, y1])).map(|g| g.data).collect();
+        let mut v: Vec<usize> = self.tree.locate_in_envelope_intersecting(AABB::from_corners([x0, y0], [x1, y1])).map(|g| g.data).collect();
         v.sort_unstable();
         v
     }

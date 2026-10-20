@@ -38,7 +38,11 @@ const RADIUS_OTHER: f64 = 100.0;
 const GROUP_RADIUS: f64 = 300.0;
 
 fn radius(m: &str) -> f64 {
-    if m == "train" { RADIUS_TRAIN } else { RADIUS_OTHER }
+    if m == "train" {
+        RADIUS_TRAIN
+    } else {
+        RADIUS_OTHER
+    }
 }
 
 fn max_radius(ms: &BTreeSet<String>) -> f64 {

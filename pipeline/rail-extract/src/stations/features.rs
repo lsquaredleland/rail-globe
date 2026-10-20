@@ -88,8 +88,7 @@ pub(super) fn track_mode(t: &str) -> &'static str {
 impl<'a> Feats<'a> {
     /// sort the features into the lists, project them, build the indexes; stations under construction are left out
     pub fn sort(inp: &'a Input, proj: &Proj) -> Feats<'a> {
-        let (mut tracks, mut platforms, mut buildings, mut lands, mut station_feats): (Vec<It>, Vec<It>, Vec<It>, Vec<It>, Vec<It>) =
-            Default::default();
+        let (mut tracks, mut platforms, mut buildings, mut lands, mut station_feats): (Vec<It>, Vec<It>, Vec<It>, Vec<It>, Vec<It>) = Default::default();
         // nodes and ways that a route relation lists: a station among them is in service
         let route_members: FxHashSet<String> = inp
             .rels
@@ -124,10 +123,9 @@ impl<'a> Feats<'a> {
                 if is_building {
                     buildings.push(It { f: it.f, g: it.g.clone(), modes: BTreeSet::new() });
                 }
-                if is_station && rw != Some("construction") && !con_name(&it.f.p)
-                    && !con_tags(&it.f.p, route_members.contains(it.id())) {
-                        station_feats.push(it);
-                    }
+                if is_station && rw != Some("construction") && !con_name(&it.f.p) && !con_tags(&it.f.p, route_members.contains(it.id())) {
+                    station_feats.push(it);
+                }
             }
         }
         let track_tree = Index::new(tracks.iter().map(|t| geomx::bbox(&t.g)));

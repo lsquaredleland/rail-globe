@@ -15,10 +15,10 @@ const KEY_MERGE_RADIUS_NAMED: f64 = 3000.0; // ... or within this one when their
 
 /// what the second merge pass compares of a station
 struct NameInfo {
-    names: Vec<String>,        // own names of its features and stop areas
-    deco: BTreeSet<String>,    // operator initials, the place its official_name adds in front
+    names: Vec<String>,     // own names of its features and stop areas
+    deco: BTreeSet<String>, // operator initials, the place its official_name adds in front
     wikidata: BTreeSet<String>,
-    plain: bool,               // one or two features, no stop area of its own: a polygon or node that repeats a station's name with a decoration
+    plain: bool, // one or two features, no stop area of its own: a polygon or node that repeats a station's name with a decoration
 }
 
 /// the final stations and the lookups that were kept in step with the merges
@@ -96,8 +96,20 @@ fn platform_modes(feats: &Feats, k: usize) -> BTreeSet<String> {
         let below = platforms[k].p("tunnel").is_some_and(|v| v != "no") || platforms[k].p("layer").is_some_and(|v| v.starts_with('-'));
         if !below && pm.iter().all(|m| m == "subway" || m == "light_rail") {
             let g = &platforms[k].g;
-            let hv = track_tree.near(g, 25.0).into_iter().filter(|&i| matches!(track_mode(tracks[i].p("type").unwrap_or("")), "train") && tracks[i].p("tunnel").is_none_or(|v| v == "no") && geomx::dist(&tracks[i].g, g) <= 25.0).count();
-            let under = track_tree.near(g, 25.0).into_iter().filter(|&i| matches!(track_mode(tracks[i].p("type").unwrap_or("")), "subway" | "light_rail") && geomx::dist(&tracks[i].g, g) <= 25.0).all(|i| tracks[i].p("tunnel").is_some_and(|v| v != "no"));
+            let hv = track_tree
+                .near(g, 25.0)
+                .into_iter()
+                .filter(|&i| {
+                    matches!(track_mode(tracks[i].p("type").unwrap_or("")), "train")
+                        && tracks[i].p("tunnel").is_none_or(|v| v == "no")
+                        && geomx::dist(&tracks[i].g, g) <= 25.0
+                })
+                .count();
+            let under = track_tree
+                .near(g, 25.0)
+                .into_iter()
+                .filter(|&i| matches!(track_mode(tracks[i].p("type").unwrap_or("")), "subway" | "light_rail") && geomx::dist(&tracks[i].g, g) <= 25.0)
+                .all(|i| tracks[i].p("tunnel").is_some_and(|v| v != "no"));
             if hv > 0 && under {
                 pm = BTreeSet::from(["train".to_string()]);
             }
@@ -124,7 +136,8 @@ fn assign_platforms(feats: &mut Feats, st: &mut [Station], by_area_ix: &FxHashMa
     // a station whose mode is only a guess (nearest track, often the tram in front of Basel SBB) takes the modes of its own mapped
     // platforms: a main-line station with train platforms is a train station, not a tram stop
     for s_ in st.iter_mut().filter(|s_| !s_.stated) {
-        let pm: BTreeSet<String> = s_.platforms.iter().flat_map(|&k| platforms[k].modes.iter().cloned()).filter(|m| matches!(m.as_str(), "train" | "subway" | "light_rail")).collect();
+        let pm: BTreeSet<String> =
+            s_.platforms.iter().flat_map(|&k| platforms[k].modes.iter().cloned()).filter(|m| matches!(m.as_str(), "train" | "subway" | "light_rail")).collect();
         if !pm.is_empty() {
             s_.modes = pm;
         }
@@ -169,9 +182,11 @@ fn assign_platforms(feats: &mut Feats, st: &mut [Station], by_area_ix: &FxHashMa
                         .filter(|&i| geomx::contains_pt(&lands[li].g, &st[i].pt) && (pm.is_empty() || !pm.is_disjoint(&st[i].modes)))
                         .collect();
                     if !near.is_empty() {
-                        best = near.into_iter().map(|i| (i, geomx::dist_pt(&cg, &st[i].pt))).fold(None, |a: Option<(usize, f64)>, (i, d)| {
-                            if a.is_none_or(|(_, bd)| d < bd) { Some((i, d)) } else { a }
-                        }).map(|x| x.0);
+                        best = near
+                            .into_iter()
+                            .map(|i| (i, geomx::dist_pt(&cg, &st[i].pt)))
+                            .fold(None, |a: Option<(usize, f64)>, (i, d)| if a.is_none_or(|(_, bd)| d < bd) { Some((i, d)) } else { a })
+                            .map(|x| x.0);
                         break;
                     }
                 }
@@ -190,7 +205,13 @@ fn assign_platforms(feats: &mut Feats, st: &mut [Station], by_area_ix: &FxHashMa
 fn combine(platforms: &[It], ms: &[&Station]) -> Station {
     let all_mapped = ms.iter().all(|m| m.grouping == "mapped");
     let any_mapped = ms.iter().any(|m| m.grouping == "mapped");
-    let grouping = if all_mapped && ms.len() == 1 { "mapped" } else if ms.len() > 1 && !any_mapped { "inferred" } else { "mapped" };
+    let grouping = if all_mapped && ms.len() == 1 {
+        "mapped"
+    } else if ms.len() > 1 && !any_mapped {
+        "inferred"
+    } else {
+        "mapped"
+    };
     let mut seen = FxHashSet::default();
     let plats: Vec<usize> = ms.iter().flat_map(|m| m.platforms.iter().copied()).filter(|&x| seen.insert(platforms[x].id().to_string())).collect();
     let lead = ms.iter().fold(None, |a: Option<&&Station>, m| if a.is_none_or(|b| m.platforms.len() > b.platforms.len()) { Some(m) } else { a }).unwrap();
@@ -298,7 +319,11 @@ fn merge_same_mode(feats: &Feats, st: &mut [Station], s_tree: &Index) -> (Vec<St
         }
         cands.sort_by(|a, b| (a.0, a.1).partial_cmp(&(b.0, b.1)).unwrap());
         let inside: Vec<usize> = cands.iter().filter(|c| !c.0 && geomx::contains_pt(g, &st[c.2].pt)).map(|c| c.2).collect();
-        let pick = cands.iter().find(|c| (st[i].norm.is_empty() && (st[i].platforms.is_empty() || st[c.2].platforms.is_empty())) || st[c.2].norm == st[i].norm).map(|c| c.2).or(if inside.len() == 1 && st[i].platforms.is_empty() { Some(inside[0]) } else { None });
+        let pick = cands
+            .iter()
+            .find(|c| (st[i].norm.is_empty() && (st[i].platforms.is_empty() || st[c.2].platforms.is_empty())) || st[c.2].norm == st[i].norm)
+            .map(|c| c.2)
+            .or(if inside.len() == 1 && st[i].platforms.is_empty() { Some(inside[0]) } else { None });
         if let Some(j) = pick {
             uf.union(i, j);
         }
@@ -384,9 +409,12 @@ fn merge_second_dot(feats: &Feats, rels: &Rels, stn: Vec<Station>, old_to_new: V
                 continue;
             }
             let deco: BTreeSet<String> = a.deco.union(&b.deco).cloned().collect();
-            let (ca, cb): (Vec<String>, Vec<String>) = (a.names.iter().map(|n| core_name(n, &deco)).collect(), b.names.iter().map(|n| core_name(n, &deco)).collect());
+            let (ca, cb): (Vec<String>, Vec<String>) =
+                (a.names.iter().map(|n| core_name(n, &deco)).collect(), b.names.iter().map(|n| core_name(n, &deco)).collect());
             let same = ca.iter().any(|x| !x.is_empty() && cb.contains(x));
-            let weak = |long: &NameInfo, short: &NameInfo| !other_wd && long.plain && long.names.iter().any(|l| short.names.iter().any(|s| decorated(&norm_name(l), &norm_name(s))));
+            let weak = |long: &NameInfo, short: &NameInfo| {
+                !other_wd && long.plain && long.names.iter().any(|l| short.names.iter().any(|s| decorated(&norm_name(l), &norm_name(s))))
+            };
             if same || weak(a, b) || weak(b, a) {
                 uf2.union(i, j);
                 merged_any = true;

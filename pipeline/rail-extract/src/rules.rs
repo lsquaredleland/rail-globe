@@ -34,16 +34,65 @@ pub const ROUTE_MODES: [&[u8]; 6] = [b"train", b"subway", b"light_rail", b"tram"
 
 /// feature properties, in this order, then every name:* tag (filter.cpp KEEP)
 pub const KEEP: [&str; 39] = [
-    "railway", "public_transport", "building", "landuse", "station", "service", "usage", "railway:traffic_mode",
-    "highspeed", "name", "official_name", "int_name", "ref", "wikidata", "uic_ref", "railway:ref",
-    "operator", "operator:short", "network", "gauge", "electrified", "voltage", "frequency", "tracks",
-    "maxspeed", "maxspeed:freight", "construction", "proposed", "bridge", "tunnel", "light_rail", "subway", "train", "start_date",
-    "construction:railway", "construction:public_transport", "construction:station", "operator:wikidata", "brand:wikidata",
+    "railway",
+    "public_transport",
+    "building",
+    "landuse",
+    "station",
+    "service",
+    "usage",
+    "railway:traffic_mode",
+    "highspeed",
+    "name",
+    "official_name",
+    "int_name",
+    "ref",
+    "wikidata",
+    "uic_ref",
+    "railway:ref",
+    "operator",
+    "operator:short",
+    "network",
+    "gauge",
+    "electrified",
+    "voltage",
+    "frequency",
+    "tracks",
+    "maxspeed",
+    "maxspeed:freight",
+    "construction",
+    "proposed",
+    "bridge",
+    "tunnel",
+    "light_rail",
+    "subway",
+    "train",
+    "start_date",
+    "construction:railway",
+    "construction:public_transport",
+    "construction:station",
+    "operator:wikidata",
+    "brand:wikidata",
 ];
 
 /// relation side-table tags, in this order, then every name:* tag (filter.cpp REL_TAGS)
-pub const REL_TAGS: [&str; 15] =
-    ["name", "ref", "colour", "operator", "operator:wikidata", "brand:wikidata", "network", "route", "service", "from", "to", "wikidata", "public_transport", "type", "route_master"];
+pub const REL_TAGS: [&str; 15] = [
+    "name",
+    "ref",
+    "colour",
+    "operator",
+    "operator:wikidata",
+    "brand:wikidata",
+    "network",
+    "route",
+    "service",
+    "from",
+    "to",
+    "wikidata",
+    "public_transport",
+    "type",
+    "route_master",
+];
 
 /// Tags stored in the cache: everything any rule or output reads. Anything else is dropped at cache time, so a new output tag
 /// means rebuilding the cache (one planet read).
@@ -54,14 +103,66 @@ pub fn cache_key(k: &[u8]) -> bool {
     }
     matches!(
         k,
-        b"railway" | b"public_transport" | b"building" | b"landuse" | b"station" | b"service" | b"usage" | b"railway:traffic_mode"
-            | b"highspeed" | b"name" | b"official_name" | b"int_name" | b"ref" | b"wikidata" | b"uic_ref" | b"railway:ref"
-            | b"operator" | b"operator:short" | b"operator:wikidata" | b"brand:wikidata" | b"network" | b"gauge" | b"electrified" | b"voltage" | b"frequency" | b"tracks"
-            | b"maxspeed" | b"maxspeed:freight" | b"construction" | b"proposed" | b"bridge" | b"tunnel" | b"light_rail"
-            | b"subway" | b"train" | b"tram" | b"monorail" | b"funicular" | b"start_date" | b"construction:railway"
-            | b"construction:public_transport" | b"construction:station" | b"entrance" | b"area" | b"aeroway" | b"iata"
-            | b"icao" | b"aerodrome:type" | b"military" | b"type" | b"route" | b"route_master" | b"colour" | b"from" | b"to"
-            | b"boundary" | b"admin_level" | b"ISO3166-1" | b"ISO3166-1:alpha2" | b"ISO3166-2"
+        b"railway"
+            | b"public_transport"
+            | b"building"
+            | b"landuse"
+            | b"station"
+            | b"service"
+            | b"usage"
+            | b"railway:traffic_mode"
+            | b"highspeed"
+            | b"name"
+            | b"official_name"
+            | b"int_name"
+            | b"ref"
+            | b"wikidata"
+            | b"uic_ref"
+            | b"railway:ref"
+            | b"operator"
+            | b"operator:short"
+            | b"operator:wikidata"
+            | b"brand:wikidata"
+            | b"network"
+            | b"gauge"
+            | b"electrified"
+            | b"voltage"
+            | b"frequency"
+            | b"tracks"
+            | b"maxspeed"
+            | b"maxspeed:freight"
+            | b"construction"
+            | b"proposed"
+            | b"bridge"
+            | b"tunnel"
+            | b"light_rail"
+            | b"subway"
+            | b"train"
+            | b"tram"
+            | b"monorail"
+            | b"funicular"
+            | b"start_date"
+            | b"construction:railway"
+            | b"construction:public_transport"
+            | b"construction:station"
+            | b"entrance"
+            | b"area"
+            | b"aeroway"
+            | b"iata"
+            | b"icao"
+            | b"aerodrome:type"
+            | b"military"
+            | b"type"
+            | b"route"
+            | b"route_master"
+            | b"colour"
+            | b"from"
+            | b"to"
+            | b"boundary"
+            | b"admin_level"
+            | b"ISO3166-1"
+            | b"ISO3166-1:alpha2"
+            | b"ISO3166-2"
     )
 }
 
@@ -128,9 +229,8 @@ pub fn node_kind<T: Tags + ?Sized>(t: &T) -> Option<NodeKind> {
     if is(t, b"public_transport", b"stop_position") || is(t, b"railway", b"stop") {
         return if passenger_mode(t) || is(t, b"railway", b"stop") { Some(NodeKind::Stop) } else { None };
     }
-    let station = is(t, b"railway", b"station")
-        || is(t, b"railway", b"halt")
-        || (is(t, b"public_transport", b"station") && (has(t, b"railway") || passenger_mode(t)));
+    let station =
+        is(t, b"railway", b"station") || is(t, b"railway", b"halt") || (is(t, b"public_transport", b"station") && (has(t, b"railway") || passenger_mode(t)));
     // a public_transport=station that is abandoned, disused or only proposed is not a station (the data spec drops them)
     if !station || matches!(t.get(b"railway"), Some(b"abandoned" | b"disused" | b"proposed")) {
         return None;

@@ -8,9 +8,40 @@ use std::path::Path;
 
 const TYPE_ORDER: [&str; 8] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "other"];
 const SHARD_TARGET_BYTES: usize = 256 * 1024; // side-file shards hold about this much JSON each (the app fetches one per click)
-const CSS_NAMES: [&str; 32] = ["red", "blue", "green", "yellow", "orange", "purple", "pink", "brown", "black", "grey", "gray", "darkblue", "skyblue",
-    "lightblue", "darkgreen", "lightgreen", "cyan", "magenta", "violet", "gold", "navy", "teal", "maroon", "lime", "olive", "silver",
-    "turquoise", "crimson", "indigo", "darkred", "darkorange", "white"];
+const CSS_NAMES: [&str; 32] = [
+    "red",
+    "blue",
+    "green",
+    "yellow",
+    "orange",
+    "purple",
+    "pink",
+    "brown",
+    "black",
+    "grey",
+    "gray",
+    "darkblue",
+    "skyblue",
+    "lightblue",
+    "darkgreen",
+    "lightgreen",
+    "cyan",
+    "magenta",
+    "violet",
+    "gold",
+    "navy",
+    "teal",
+    "maroon",
+    "lime",
+    "olive",
+    "silver",
+    "turquoise",
+    "crimson",
+    "indigo",
+    "darkred",
+    "darkorange",
+    "white",
+];
 
 pub(super) fn rank(t: &str) -> usize {
     TYPE_ORDER.iter().position(|x| *x == t).unwrap_or(9)
@@ -61,7 +92,27 @@ pub(super) fn badge_of(r: Option<&str>) -> Option<String> {
 
 /// true when a #rgb / #rrggbb colour is light enough that a badge needs dark text on it
 pub(super) fn is_light(c: &str) -> bool {
-    if ["white", "yellow", "lime", "cyan", "aqua", "gold", "silver", "lightgreen", "skyblue", "lightblue", "pink", "orange", "beige", "ivory", "khaki", "lightgray", "lightgrey"].contains(&c) {
+    if [
+        "white",
+        "yellow",
+        "lime",
+        "cyan",
+        "aqua",
+        "gold",
+        "silver",
+        "lightgreen",
+        "skyblue",
+        "lightblue",
+        "pink",
+        "orange",
+        "beige",
+        "ivory",
+        "khaki",
+        "lightgray",
+        "lightgrey",
+    ]
+    .contains(&c)
+    {
         return true;
     }
     let h = c.trim_start_matches('#');
@@ -69,7 +120,13 @@ pub(super) fn is_light(c: &str) -> bool {
         return false;
     }
     let v = |i: usize, w: usize| u32::from_str_radix(&h[i..i + w], 16).ok().map(|x| if w == 1 { x * 17 } else { x } as f64);
-    let (r, g, b) = if h.len() == 3 { (v(0, 1), v(1, 1), v(2, 1)) } else if h.len() == 6 { (v(0, 2), v(2, 2), v(4, 2)) } else { return false };
+    let (r, g, b) = if h.len() == 3 {
+        (v(0, 1), v(1, 1), v(2, 1))
+    } else if h.len() == 6 {
+        (v(0, 2), v(2, 2), v(4, 2))
+    } else {
+        return false;
+    };
     match (r, g, b) {
         (Some(r), Some(g), Some(b)) => 0.299 * r + 0.587 * g + 0.114 * b > 160.0,
         _ => false,

@@ -1,16 +1,14 @@
 //! What is tied to the final stations: stop positions, the lines through each station, and the complexes.
 
+use super::names::{english_name, norm_name};
 use super::size::Size;
 use super::{groups, max_radius, members, station_id, station_wikidata, Model, GROUP_RADIUS};
-use super::names::{english_name, norm_name};
 use crate::geomx::{self, UnionFind};
 
 use geo::{Geometry, Point};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
-
-
 
 /// (osm type, id) of a stop position, platform, station feature or other stop-area member -> station index
 pub(super) type NodeStation = FxHashMap<(String, i64), usize>;
@@ -123,7 +121,8 @@ pub(super) fn lines_per_station(m: &Model, node_station: &NodeStation) -> Lines 
         let tags = r["tags"].as_object().cloned().unwrap_or_default();
         for mb in members(r) {
             if let Some(&si) = node_station.get(&mb.key()) {
-                st_rail[si].insert(rid.to_string(), json!({"id": rid, "name": tags.get("name").cloned().unwrap_or(Value::Null), "name_en": english_name(&tags)}));
+                st_rail[si]
+                    .insert(rid.to_string(), json!({"id": rid, "name": tags.get("name").cloned().unwrap_or(Value::Null), "name_en": english_name(&tags)}));
             }
         }
     }
@@ -149,7 +148,9 @@ pub(super) fn complexes(m: &Model, sizes: &[Size]) -> Complexes {
     let (st, buildings) = (&m.st, &m.feats.buildings);
     let mut cuf = UnionFind::new(st.len());
     let mut mapped_pairs = 0;
-    let group_stations = |g: &Value| -> BTreeSet<usize> { members(g).filter_map(|mb| m.area_to_station.get(&format!("{}/{}", mb.kind.unwrap_or(""), mb.id.unwrap_or(0))).copied()).collect() };
+    let group_stations = |g: &Value| -> BTreeSet<usize> {
+        members(g).filter_map(|mb| m.area_to_station.get(&format!("{}/{}", mb.kind.unwrap_or(""), mb.id.unwrap_or(0))).copied()).collect()
+    };
     for g in &m.rels.group_rows {
         let idx: Vec<usize> = group_stations(g).into_iter().collect();
         for &a in idx.iter().skip(1) {
@@ -187,9 +188,17 @@ pub(super) fn complexes(m: &Model, sizes: &[Size]) -> Complexes {
     let mut of = vec![String::new(); st.len()];
     let mut rows: Vec<Complex> = Vec::new();
     for idxs in groups(&mut cuf, st.len()) {
-        let biggest = idxs.iter().copied().fold(None, |a: Option<usize>, i| {
-            if a.is_none_or(|b| (sizes[i].score, sizes[i].mainline_platforms) > (sizes[b].score, sizes[b].mainline_platforms)) { Some(i) } else { a }
-        }).unwrap();
+        let biggest = idxs
+            .iter()
+            .copied()
+            .fold(None, |a: Option<usize>, i| {
+                if a.is_none_or(|b| (sizes[i].score, sizes[i].mainline_platforms) > (sizes[b].score, sizes[b].mainline_platforms)) {
+                    Some(i)
+                } else {
+                    a
+                }
+            })
+            .unwrap();
         let gid = m.rels.group_rows.iter().find(|g| group_stations(g).iter().any(|si| idxs.contains(si))).and_then(|g| g["id"].as_str()).map(String::from);
         let id = gid.clone().unwrap_or_else(|| station_id(&m.feats, &st[biggest]));
         for &i in &idxs {

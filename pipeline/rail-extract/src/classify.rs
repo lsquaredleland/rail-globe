@@ -279,20 +279,25 @@ impl Cfg {
             Value::Null => false,
         };
         let overrides = |k: &str| -> Vec<(Rule, String)> {
-            v.get(k).and_then(Value::as_array).map_or(Vec::new(), |a| {
-                a.iter().map(|o| (Rule::parse(&o["match"]), o["type"].as_str().expect("override type").to_string())).collect()
-            })
+            v.get(k)
+                .and_then(Value::as_array)
+                .map_or(Vec::new(), |a| a.iter().map(|o| (Rule::parse(&o["match"]), o["type"].as_str().expect("override type").to_string())).collect())
         };
         // proposed track is only kept inside this area: a Nominatim dump ([{..., "geojson": geometry}]) in pipeline/regions/
         let proposed = v.get("proposed_region").and_then(Value::as_str).filter(|s| !s.is_empty()).map(|r| {
             let p = regions_dir.join(r);
-            let d: Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display())))
-                .expect("parse proposed_region");
+            let d: Value =
+                serde_json::from_str(&std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))).expect("parse proposed_region");
             Region::new(r, crate::region::rings_of(&d[0]["geojson"]))
         });
         let passenger_names = v.get("passenger_stations_file").and_then(Value::as_str).map(|f| {
             let p = path.parent().unwrap_or(Path::new(".")).join(f);
-            std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display())).lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect()
+            std::fs::read_to_string(&p)
+                .unwrap_or_else(|e| panic!("read {}: {e}", p.display()))
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
         });
         let exemptions: Vec<Exemption> = v.get("exemptions").and_then(Value::as_array).map_or(Vec::new(), |a| a.iter().map(Exemption::parse).collect());
         for (i, x) in exemptions.iter().enumerate() {
@@ -307,9 +312,10 @@ impl Cfg {
             type_overrides: overrides("type_overrides"),
             track_type_overrides: overrides("track_type_overrides"),
             hs_track_overrides: v.get("high_speed_track_overrides").and_then(Value::as_array).map_or(Vec::new(), |a| a.iter().map(Rule::parse).collect()),
-            hs_networks: v.get("high_speed_networks_re").and_then(Value::as_array).map_or(Vec::new(), |a| {
-                a.iter().map(|p| Regex::new(p.as_str().expect("pattern")).expect("high_speed_networks_re")).collect()
-            }),
+            hs_networks: v
+                .get("high_speed_networks_re")
+                .and_then(Value::as_array)
+                .map_or(Vec::new(), |a| a.iter().map(|p| Regex::new(p.as_str().expect("pattern")).expect("high_speed_networks_re")).collect()),
             needs_evidence: match v.get("passenger_needs_evidence") {
                 Some(Value::String(m)) if m == "stations" => Some(Evidence::Stations),
                 Some(Value::String(m)) if m == "routes" => Some(Evidence::Routes),
@@ -317,9 +323,10 @@ impl Cfg {
                 Some(x) if truthy(x) => Some(Evidence::Routes),
                 _ => None,
             },
-            passenger_operators: v.get("passenger_operator_re").and_then(Value::as_array).map_or(Vec::new(), |a| {
-                a.iter().map(|p| Regex::new(p.as_str().expect("pattern")).expect("passenger_operator_re")).collect()
-            }),
+            passenger_operators: v
+                .get("passenger_operator_re")
+                .and_then(Value::as_array)
+                .map_or(Vec::new(), |a| a.iter().map(|p| Regex::new(p.as_str().expect("pattern")).expect("passenger_operator_re")).collect()),
             unrouted_main_type: v.get("unrouted_main_type").and_then(Value::as_str).unwrap_or("intercity").to_string(),
             proposed,
         }
@@ -406,7 +413,8 @@ fn own_tag_type<T: Get + ?Sized>(p: &T, cfg: &Cfg) -> (String, &'static str) {
     let mut rw = p.g("railway").map(str::to_string);
     if matches!(rw.as_deref(), Some("construction" | "proposed")) {
         // the mode lives in construction=* / proposed=*; mappers also put it under the other key
-        let mode = p.g(rw.as_deref().unwrap()).or_else(|| p.g(if rw.as_deref() == Some("construction") { "proposed" } else { "construction" })).map(str::to_string);
+        let mode =
+            p.g(rw.as_deref().unwrap()).or_else(|| p.g(if rw.as_deref() == Some("construction") { "proposed" } else { "construction" })).map(str::to_string);
         rw = match mode {
             Some(m) => Some(m),
             None => {
@@ -435,7 +443,10 @@ fn own_tag_type<T: Get + ?Sized>(p: &T, cfg: &Cfg) -> (String, &'static str) {
             return ("high_speed".into(), "override");
         }
         let lower = name.to_lowercase();
-        let hs_name = name.contains("高速铁路") || name.contains("高速鐵路") || lower.contains("high speed rail") || lower.contains("high-speed rail")
+        let hs_name = name.contains("高速铁路")
+            || name.contains("高速鐵路")
+            || lower.contains("high speed rail")
+            || lower.contains("high-speed rail")
             || lower.contains("express rail link");
         if at_least(ms, 250.0) || name.contains("高速线") || name.contains("客专") || name.contains("客运专线") || hs_name {
             return ("high_speed".into(), "tags");
@@ -545,7 +556,7 @@ fn beside_routed(tracks: &[TrackIn], routed: &[usize], targets: &[usize]) -> FxH
         .par_iter()
         .filter(|&&i| {
             let pts: Vec<[f64; 2]> = tracks[i].ll.iter().filter(|p| p.0 != i32::MIN).map(deg).collect();
-            let (mut n, mut hit) = (0.0f64, 0.0f64);   // metres sampled, metres beside
+            let (mut n, mut hit) = (0.0f64, 0.0f64); // metres sampled, metres beside
             for w in pts.windows(2) {
                 let k = ((w[0][1] + w[1][1]) / 2.0).to_radians().cos();
                 let m = ((w[1][0] - w[0][0]) * 111_320.0 * k).hypot((w[1][1] - w[0][1]) * 110_540.0);
@@ -578,7 +589,7 @@ const JUNCTION_CLEAR_M: f64 = 800.0; // a station this close to where the railwa
 fn freight_by_evidence(tracks: &[TrackIn], cand: &[bool], pax: &[(i32, i32)]) -> rustc_hash::FxHashMap<usize, &'static str> {
     use rustc_hash::FxHashMap;
     let deg = |p: (i32, i32)| (p.1 as f64 / 1e7, p.0 as f64 / 1e7); // (lon, lat)
-    // metres on a plane around `lat0`
+                                                                    // metres on a plane around `lat0`
     let xy = |p: (f64, f64), lat0: f64| ((p.0) * 111_320.0 * lat0.to_radians().cos(), p.1 * 110_540.0);
     let cell = |p: (f64, f64)| ((p.1 / 0.01).floor() as i32, (p.0 / 0.01).floor() as i32);
     let stations: Vec<(f64, f64)> = pax.iter().filter(|p| p.0 != i32::MIN).map(|&p| deg(p)).collect();
@@ -688,7 +699,8 @@ fn freight_by_evidence(tracks: &[TrackIn], cand: &[bool], pax: &[(i32, i32)]) ->
                 *own_ends.entry(*e).or_default() += 1;
             }
         }
-        let chain_ends: Vec<((i32, i32), bool)> = own_ends.iter().filter(|(e, n)| e.0 != i32::MIN && **n == 1).map(|(e, _)| (*e, ends.get(e).copied().unwrap_or(0) > 1)).collect();
+        let chain_ends: Vec<((i32, i32), bool)> =
+            own_ends.iter().filter(|(e, n)| e.0 != i32::MIN && **n == 1).map(|(e, _)| (*e, ends.get(e).copied().unwrap_or(0) > 1)).collect();
         let junctions: Vec<(f64, f64)> = chain_ends.iter().filter(|c| c.1).map(|c| deg(c.0)).collect();
         let group_stations: Vec<usize> = members.iter().flat_map(|i| owned.get(i).into_iter().flatten().copied()).collect();
         let served = group_stations.iter().any(|&si| junctions.iter().all(|&j| dist_m(stations[si], j) > JUNCTION_CLEAR_M));
@@ -730,7 +742,7 @@ pub struct TrackIn<'a> {
     pub pos: usize, // byte position in the features buffer where its properties object closes
     pub props: FeatProps<'a>,
     pub routes: Vec<String>,
-    pub first: (i32, i32), // first point (lat, lon), for the proposed-area test
+    pub first: (i32, i32),   // first point (lat, lon), for the proposed-area test
     pub ll: Vec<(i32, i32)>, // every point (lat, lon, 1e-7 degrees; lat = i32::MIN when the node is missing), for the passenger-station test
 }
 
@@ -831,7 +843,15 @@ fn with_construction_tags<'a>(tracks: &'a [TrackIn], con_mode: &[Option<&'a str>
                 tags.push((b"railway", b"construction"));
                 tags.push((b"construction", rw.as_bytes()));
             }
-            TrackIn { start: tr.start, end: tr.end, pos: tr.pos, props: FeatProps { tags: List(tags), osm_id: tr.props.osm_id.clone() }, routes: tr.routes.clone(), first: tr.first, ll: tr.ll.clone() }
+            TrackIn {
+                start: tr.start,
+                end: tr.end,
+                pos: tr.pos,
+                props: FeatProps { tags: List(tags), osm_id: tr.props.osm_id.clone() },
+                routes: tr.routes.clone(),
+                first: tr.first,
+                ll: tr.ll.clone(),
+            }
         })
         .collect()
 }
@@ -853,7 +873,18 @@ fn high_speed_routes(tracks: &[TrackIn], cfg: &Cfg) -> FxHashMap<String, HsTrack
     }
     len.into_iter()
         .filter(|(_, (_, hs))| *hs > 0.0)
-        .map(|(r, (all, hs))| (r.to_string(), if hs >= HS_TRACK_SHARE * all { HsTrack::Majority } else if all >= LONG_ROUTE_KM { HsTrack::LongPartial } else { HsTrack::No }))
+        .map(|(r, (all, hs))| {
+            (
+                r.to_string(),
+                if hs >= HS_TRACK_SHARE * all {
+                    HsTrack::Majority
+                } else if all >= LONG_ROUTE_KM {
+                    HsTrack::LongPartial
+                } else {
+                    HsTrack::No
+                },
+            )
+        })
         .collect()
 }
 
@@ -1065,7 +1096,9 @@ fn decide_tracks(tracks: &[TrackIn], cfg: &Cfg, pax: &[(i32, i32)], route_lines:
             own = Some(o.clone());
             match best {
                 Some(b) => (b, "route"),
-                None if matches!(rw, "rail" | "narrow_gauge") && matches!(o.as_str(), "intercity" | "regional") && mostly_freight(p.g("name")) => ("freight".into(), "name"),
+                None if matches!(rw, "rail" | "narrow_gauge") && matches!(o.as_str(), "intercity" | "regional") && mostly_freight(p.g("name")) => {
+                    ("freight".into(), "name")
+                }
                 // narrow gauge with no station is as likely a heritage or park railway as a freight one: Other, not Freight
                 None if by_evidence.contains_key(&ti) => ((if rw == "narrow_gauge" { "other" } else { "freight" }).into(), by_evidence[&ti]),
                 None => (o, src),
@@ -1082,7 +1115,11 @@ fn decide_tracks(tracks: &[TrackIn], cfg: &Cfg, pax: &[(i32, i32)], route_lines:
 fn needs_evidence_pass(tracks: &[TrackIn], cfg: &Cfg, pax: &[(i32, i32)], mode: Evidence, decided: &mut [Option<Decided>]) {
     let passenger = |t: &str| matches!(t, "intercity" | "regional" | "high_speed");
     let routed: Vec<usize> = (0..tracks.len())
-        .filter(|&i| matches!(tracks[i].props.g("railway"), Some("rail" | "narrow_gauge")) && tracks[i].ll.len() >= 2 && decided[i].as_ref().is_some_and(|d| d.s == "route" && passenger(&d.t)))
+        .filter(|&i| {
+            matches!(tracks[i].props.g("railway"), Some("rail" | "narrow_gauge"))
+                && tracks[i].ll.len() >= 2
+                && decided[i].as_ref().is_some_and(|d| d.s == "route" && passenger(&d.t))
+        })
         .collect();
     let targets: Vec<usize> = (0..tracks.len())
         .filter(|&i| {
@@ -1126,7 +1163,13 @@ fn smooth_short_pieces(tracks: &[TrackIn], at_end: &FxHashMap<(i32, i32), Vec<us
             let mut around: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
             let mut both_ends = true;
             for e in [tr.ll.first().unwrap(), tr.ll.last().unwrap()] {
-                let n: Vec<&str> = at_end.get(e).into_iter().flatten().filter(|&&j| j != i).filter_map(|&j| decided[j].as_ref().filter(|x| x.t != "yard").map(|x| x.t.as_str())).collect();   // a siding or yard track at a junction is no vote
+                let n: Vec<&str> = at_end
+                    .get(e)
+                    .into_iter()
+                    .flatten()
+                    .filter(|&&j| j != i)
+                    .filter_map(|&j| decided[j].as_ref().filter(|x| x.t != "yard").map(|x| x.t.as_str()))
+                    .collect(); // a siding or yard track at a junction is no vote
                 both_ends &= !n.is_empty();
                 around.extend(n);
             }
@@ -1186,7 +1229,13 @@ fn smooth_chains(tracks: &[TrackIn], at_end: &FxHashMap<(i32, i32), Vec<usize>>,
         let mut attach = 0;
         for &i in &members {
             for e in [tracks[i].ll.first().unwrap(), tracks[i].ll.last().unwrap()] {
-                let n: Vec<&str> = at_end.get(e).into_iter().flatten().filter(|&&j| !inside.contains(&j)).filter_map(|&j| decided[j].as_ref().filter(|x| x.t != "yard").map(|x| x.t.as_str())).collect();
+                let n: Vec<&str> = at_end
+                    .get(e)
+                    .into_iter()
+                    .flatten()
+                    .filter(|&&j| !inside.contains(&j))
+                    .filter_map(|&j| decided[j].as_ref().filter(|x| x.t != "yard").map(|x| x.t.as_str()))
+                    .collect();
                 if !n.is_empty() {
                     attach += 1;
                     around.extend(n);
@@ -1242,7 +1291,13 @@ fn apply_exemptions(tracks: &[TrackIn], cfg: &Cfg, decided: &mut [Option<Decided
 
 /// features.typed.geojsonl: the copy of features.geojsonl where each track gets its type fields at the end of its properties.
 /// Also the track counts by type and by type and source.
-fn write_typed(feats: &[u8], tracks: &[TrackIn], decided: &mut [Option<Decided>], dropped: &[bool], con_mode: &[Option<&str>]) -> (Vec<u8>, Vec<(String, i64)>, std::collections::BTreeMap<(String, String), i64>) {
+fn write_typed(
+    feats: &[u8],
+    tracks: &[TrackIn],
+    decided: &mut [Option<Decided>],
+    dropped: &[bool],
+    con_mode: &[Option<&str>],
+) -> (Vec<u8>, Vec<(String, i64)>, std::collections::BTreeMap<(String, String), i64>) {
     let mut typed = Vec::with_capacity(feats.len() + tracks.len() * 64);
     let mut at = 0;
     let (mut counts, mut sources): (Vec<(String, i64)>, std::collections::BTreeMap<(String, String), i64>) = (Vec::new(), Default::default());

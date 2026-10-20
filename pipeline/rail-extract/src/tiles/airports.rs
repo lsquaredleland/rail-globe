@@ -1,7 +1,7 @@
 //! Step 2 of `run`: the airport layers (outline + terminals, one icon point per commercial airport) and which airport a station serves.
 
-use super::props::{AirportProps, AirportPtProps};
 use super::dashes::geojson_value;
+use super::props::{AirportProps, AirportPtProps};
 use super::util::{area_ha, feat, nonempty};
 use crate::geomx::{self, Index};
 use crate::site::{s, Input};
@@ -33,8 +33,16 @@ impl<'a> Airports<'a> {
             let lb = s(p, "iata").filter(|v| !v.is_empty()).or(s(p, "name").filter(|v| !v.is_empty())).unwrap_or("");
             let ha = area_ha(&a.g);
             let mut props = AirportProps {
-                id: p.get("id").cloned().unwrap_or(Value::Null), k: p.get("k").cloned().unwrap_or(Value::Null), lb: lb.to_string(), ha,
-                n: nonempty(p, "name"), ne: nonempty(p, "name_en"), iata: nonempty(p, "iata"), icao: nonempty(p, "icao"), op: nonempty(p, "operator"), com: false,
+                id: p.get("id").cloned().unwrap_or(Value::Null),
+                k: p.get("k").cloned().unwrap_or(Value::Null),
+                lb: lb.to_string(),
+                ha,
+                n: nonempty(p, "name"),
+                ne: nonempty(p, "name_en"),
+                iata: nonempty(p, "iata"),
+                icao: nonempty(p, "icao"),
+                op: nonempty(p, "operator"),
+                com: false,
             };
             if s(p, "k") == Some("aerodrome") {
                 let mil = s(p, "military").is_some_and(|v| !v.is_empty()) || s(p, "atype").unwrap_or("").contains("military");

@@ -9,8 +9,8 @@
 //! - a tagged node is in when it is inside, or is a node of a way that is in, or a node member of such a multipolygon.
 
 use crate::assemble::{self, Fail, Poly, P};
-use crate::classify;
 use crate::cache::*;
+use crate::classify;
 use crate::out::*;
 use crate::region::Region;
 use crate::rules::{self, is, List, NodeKind, RelKind, Tags};
@@ -441,7 +441,8 @@ fn tagged_nodes(c: &Cache, reg: &Region, ways: &[Way], mp_nodes: &FxHashSet<i64>
 /// The relations side table, in id order: the rows and the lookups the features use.
 fn relation_rows(c: &Cache, rels: &[(u32, Rel)], incl: &[bool]) -> (Ctx, Vec<Row>) {
     let ri = c.rel_idx();
-    let mut ctx = Ctx { way_routes: FxHashMap::default(), route_operator: FxHashMap::default(), way_railway: FxHashMap::default(), member_area: FxHashMap::default() };
+    let mut ctx =
+        Ctx { way_routes: FxHashMap::default(), route_operator: FxHashMap::default(), way_railway: FxHashMap::default(), member_area: FxHashMap::default() };
     let mut rows: Vec<Row> = Vec::new();
     for (k, (i, r)) in rels.iter().enumerate() {
         if !incl[k] {
@@ -579,7 +580,9 @@ fn node_results(c: &Cache, nodes: &[u32], ctx: &Ctx, cfg: Option<&classify::Cfg>
                         && (is(&t, b"railway", b"station") || is(&t, b"railway", b"halt") || is(&t, b"public_transport", b"station"));
                     // a passenger station for the freight test of classify: not one tagged freight only
                     let pax = (is(&t, b"railway", b"station") || is(&t, b"railway", b"halt") || is(&t, b"public_transport", b"station"))
-                        && !is(&t, b"railway:traffic_mode", b"freight") && !is(&t, b"station", b"freight") && passenger_station(&t, cfg);
+                        && !is(&t, b"railway:traffic_mode", b"freight")
+                        && !is(&t, b"station", b"freight")
+                        && passenger_station(&t, cfg);
                     NodeRes::Feat(f, Some((format!("node/{}", n.id), t.get(b"name").map(txt), has_area)), pax.then_some((n.lat, n.lon)))
                 }
                 None => NodeRes::Skip,
@@ -681,14 +684,20 @@ impl<'a> Emit<'a> {
         }
         for (k, r) in way_res.into_iter().enumerate() {
             match r {
-                WayRes::Feat(_, true) if cfg.is_some() && ctx.way_routes.get(&wi[ext[k] as usize].id).is_none_or(|s| s.is_empty()) && is_stray(&ways[k].ll, &track_ends) => {
+                WayRes::Feat(_, true)
+                    if cfg.is_some() && ctx.way_routes.get(&wi[ext[k] as usize].id).is_none_or(|s| s.is_empty()) && is_stray(&ways[k].ll, &track_ends) =>
+                {
                     self.count("dropped:stray_track".into()); // under STRAY_M long, touching no other track, on no route
                 }
                 WayRes::Feat(f, is_track) => {
                     let id = wi[ext[k] as usize].id;
                     let routes: Vec<String> = ctx.way_routes.get(&id).map(|s| s.iter().cloned().collect()).unwrap_or_default();
                     let tl = List(ways[k].tags.clone());
-                    if !is_track && (is(&tl, b"railway", b"station") || is(&tl, b"railway", b"halt") || is(&tl, b"public_transport", b"station")) && !is(&tl, b"railway:traffic_mode", b"freight") && passenger_station(&tl, cfg) {
+                    if !is_track
+                        && (is(&tl, b"railway", b"station") || is(&tl, b"railway", b"halt") || is(&tl, b"public_transport", b"station"))
+                        && !is(&tl, b"railway:traffic_mode", b"freight")
+                        && passenger_station(&tl, cfg)
+                    {
                         // a station mapped as an area or a line: a point in its middle
                         if let Some(&q) = ways[k].ll.get(ways[k].ll.len() / 2) {
                             if q.0 != i32::MIN {
@@ -788,10 +797,8 @@ fn keep_relations<'a>(rows: &'a [Row], e: &Emit) -> Kept<'a> {
         Some(x) => x.1 += 1,
         None => kinds.push((k, 1)),
     };
-    let mut kept: Vec<&Row> = rows
-        .iter()
-        .filter(|r| matches!(r.kind, RelKind::Route | RelKind::RouteMaster | RelKind::RailwayLine) || e.used_areas.contains(&r.id))
-        .collect();
+    let mut kept: Vec<&Row> =
+        rows.iter().filter(|r| matches!(r.kind, RelKind::Route | RelKind::RouteMaster | RelKind::RailwayLine) || e.used_areas.contains(&r.id)).collect();
     kept.extend(rows.iter().filter(|r| r.kind == RelKind::StopAreaGroup && r.group_members.iter().any(|m| e.used_areas.contains(m))));
     let mut broken: Vec<(String, Option<String>, usize, usize)> = Vec::new();
     for r in &kept {

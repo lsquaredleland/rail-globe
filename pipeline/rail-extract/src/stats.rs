@@ -98,7 +98,13 @@ struct Area {
 fn outline(slug: &str, dirs: &[PathBuf]) -> Option<(MultiPolygon<f64>, [f64; 4])> {
     let text = dirs.iter().find_map(|d| fs::read_to_string(d.join(format!("{slug}.geojson"))).ok())?;
     let v: Value = serde_json::from_str(&text).ok()?;
-    let g = if v["type"] == "Feature" { v["geometry"].clone() } else if v["type"] == "FeatureCollection" { v["features"][0]["geometry"].clone() } else { v };
+    let g = if v["type"] == "Feature" {
+        v["geometry"].clone()
+    } else if v["type"] == "FeatureCollection" {
+        v["features"][0]["geometry"].clone()
+    } else {
+        v
+    };
     let mp = geomx::polys(&geomx::from_geojson(&g, geomx::id)?);
     let r = geomx::bbox(&geo::Geometry::MultiPolygon(mp.clone()))?;
     Some((mp, [r.min().x, r.min().y, r.max().x, r.max().y]))
@@ -155,23 +161,51 @@ fn shape(mp: &MultiPolygon<f64>) -> Value {
     let simple = mp.simplify(SHAPE_EPS);
     let r3 = |v: f64| (v * 1000.0).round() / 1000.0;
     Value::Array(
-        simple.0.iter().filter(|p| p.exterior().0.len() >= 4).map(|p| {
-            Value::Array(std::iter::once(p.exterior()).chain(p.interiors().iter()).map(|r| {
-                Value::Array(r.0.iter().map(|c| json!([r3(c.x), r3(c.y)])).collect())
-            }).collect())
-        }).collect(),
+        simple
+            .0
+            .iter()
+            .filter(|p| p.exterior().0.len() >= 4)
+            .map(|p| {
+                Value::Array(
+                    std::iter::once(p.exterior())
+                        .chain(p.interiors().iter())
+                        .map(|r| Value::Array(r.0.iter().map(|c| json!([r3(c.x), r3(c.y)])).collect()))
+                        .collect(),
+                )
+            })
+            .collect(),
     )
 }
 
 pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &Path) -> String {
     let new = |slug: &str, name: String, local: Option<String>, kind: &'static str, poly: Option<MultiPolygon<f64>>, bbox: [f64; 4], min_metro: i64| Area {
-        slug: slug.to_string(), name, local, kind, pip: poly.as_ref().map(|p| Pip::new(p, bbox)), poly, bbox, min_metro,
-        km: BTreeMap::new(), speed: BTreeMap::new(), speed_con: BTreeMap::new(), speed_prop: BTreeMap::new(), km_prop: BTreeMap::new(), lines: BTreeMap::new(), st: BTreeMap::new(),
+        slug: slug.to_string(),
+        name,
+        local,
+        kind,
+        pip: poly.as_ref().map(|p| Pip::new(p, bbox)),
+        poly,
+        bbox,
+        min_metro,
+        km: BTreeMap::new(),
+        speed: BTreeMap::new(),
+        speed_con: BTreeMap::new(),
+        speed_prop: BTreeMap::new(),
+        km_prop: BTreeMap::new(),
+        lines: BTreeMap::new(),
+        st: BTreeMap::new(),
     };
     let mut areas: Vec<Area> = Vec::new();
     let own = outline(slug, dirs);
-    areas.push(new(slug, inp.cfg.get("stat_name").and_then(Value::as_str).unwrap_or(slug).to_string(),
-        inp.cfg.get("stat_local").and_then(Value::as_str).map(String::from), "region", None, own.map_or([-180.0, -90.0, 180.0, 90.0], |o| o.1), 0));
+    areas.push(new(
+        slug,
+        inp.cfg.get("stat_name").and_then(Value::as_str).unwrap_or(slug).to_string(),
+        inp.cfg.get("stat_local").and_then(Value::as_str).map(String::from),
+        "region",
+        None,
+        own.map_or([-180.0, -90.0, 180.0, 90.0], |o| o.1),
+        0,
+    ));
     for a in inp.cfg.get("stat_areas").and_then(Value::as_array).into_iter().flatten() {
         let aslug = a["slug"].as_str().unwrap_or("");
         let Some((poly, bbox)) = outline(aslug, dirs) else { panic!("stats: no outline for {aslug} (pipeline/regions or data/regions)") };
@@ -182,16 +216,35 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         let levels: Vec<&str> = auto["levels"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
         let min_metro = auto["min_metro"].as_i64().unwrap_or(0);
         let exclude: BTreeSet<&str> = auto["exclude"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-        let index: Map<String, Value> = dirs.iter().find_map(|d| fs::read_to_string(d.join("index.json")).ok()).and_then(|t| serde_json::from_str(&t).ok())
+        let index: Map<String, Value> = dirs
+            .iter()
+            .find_map(|d| fs::read_to_string(d.join("index.json")).ok())
+            .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_else(|| panic!("stats: stat_auto needs data/regions/index.json (rail-extract outlines --level 4 --country {country})"));
         let have: BTreeSet<String> = areas.iter().map(|a| a.slug.clone()).collect();
-        let mut picked: Vec<(&String, &Value)> = index.iter().filter(|(k, v)| v["country"] == country && (levels.contains(&v["admin_level"].as_str().unwrap_or("")) || v["city"] == true) && !have.contains(*k) && !exclude.contains(k.as_str())).collect();
+        let mut picked: Vec<(&String, &Value)> = index
+            .iter()
+            .filter(|(k, v)| {
+                v["country"] == country
+                    && (levels.contains(&v["admin_level"].as_str().unwrap_or("")) || v["city"] == true)
+                    && !have.contains(*k)
+                    && !exclude.contains(k.as_str())
+            })
+            .collect();
         picked.sort_by_key(|(k, _)| k.to_string());
         for (k, v) in picked {
             let Some((poly, bbox)) = outline(k, dirs) else { continue };
-            let lvl5 = v["admin_level"] == "5" || v["city"] == true;   // `city: true`: an outline from `outlines --cities` (any admin level)
+            let lvl5 = v["admin_level"] == "5" || v["city"] == true; // `city: true`: an outline from `outlines --cities` (any admin level)
             let en = v["name_en"].as_str().or(v["name"].as_str()).unwrap_or(k).trim_end_matches(" City").trim_end_matches(" Prefecture").to_string();
-            areas.push(new(k, en.clone(), v["name"].as_str().filter(|n| *n != en).map(String::from), if lvl5 { "city" } else { "province" }, Some(poly), bbox, if lvl5 { min_metro } else { 0 }));
+            areas.push(new(
+                k,
+                en.clone(),
+                v["name"].as_str().filter(|n| *n != en).map(String::from),
+                if lvl5 { "city" } else { "province" },
+                Some(poly),
+                bbox,
+                if lvl5 { min_metro } else { 0 },
+            ));
         }
     }
 
@@ -229,7 +282,8 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
             continue;
         }
         if !con && !prop {
-            let lids: Vec<&str> = p.get("_routes").and_then(Value::as_array).into_iter().flatten().filter_map(|r| route_line.get(r.as_str().unwrap_or("")).copied()).collect();
+            let lids: Vec<&str> =
+                p.get("_routes").and_then(Value::as_array).into_iter().flatten().filter_map(|r| route_line.get(r.as_str().unwrap_or("")).copied()).collect();
             if !lids.is_empty() {
                 let m = c[c.len() / 2];
                 let mut in_areas = vec![0usize];
@@ -244,7 +298,11 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
             });
             speed_groups.entry((band, if prop { 2 } else { con as u8 })).or_default().push(c.clone());
         }
-        if prop { prop_groups.entry(t.to_string()).or_default().push(c); } else { groups.entry((t.to_string(), con)).or_default().push(c); }
+        if prop {
+            prop_groups.entry(t.to_string()).or_default().push(c);
+        } else {
+            groups.entry((t.to_string(), con)).or_default().push(c);
+        }
     }
     for (ix, lids) in &line_hits {
         for &i in ix {
@@ -255,10 +313,13 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
             }
         }
     }
-    let results: Vec<((String, bool), Vec<f64>)> = groups.par_iter().map(|(k, ways)| {
-        let refs: Vec<&Vec<(f64, f64)>> = ways.iter().collect();
-        (k.clone(), group_km(&refs, n_areas, &tree, &pips))
-    }).collect();
+    let results: Vec<((String, bool), Vec<f64>)> = groups
+        .par_iter()
+        .map(|(k, ways)| {
+            let refs: Vec<&Vec<(f64, f64)>> = ways.iter().collect();
+            (k.clone(), group_km(&refs, n_areas, &tree, &pips))
+        })
+        .collect();
     for (k, km) in results {
         for (i, v) in km.into_iter().enumerate() {
             if v > 0.0 {
@@ -267,10 +328,13 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         }
     }
 
-    let prop_results: Vec<(String, Vec<f64>)> = prop_groups.par_iter().map(|(k, ways)| {
-        let refs: Vec<&Vec<(f64, f64)>> = ways.iter().collect();
-        (k.clone(), group_km(&refs, n_areas, &tree, &pips))
-    }).collect();
+    let prop_results: Vec<(String, Vec<f64>)> = prop_groups
+        .par_iter()
+        .map(|(k, ways)| {
+            let refs: Vec<&Vec<(f64, f64)>> = ways.iter().collect();
+            (k.clone(), group_km(&refs, n_areas, &tree, &pips))
+        })
+        .collect();
     for (k, km) in prop_results {
         for (i, v) in km.into_iter().enumerate() {
             if v > 0.0 {
@@ -279,14 +343,21 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         }
     }
 
-    let speed_results: Vec<((i64, u8), Vec<f64>)> = speed_groups.par_iter().map(|(k, ways)| {
-        let refs: Vec<&Vec<(f64, f64)>> = ways.iter().collect();
-        (*k, group_km(&refs, n_areas, &tree, &pips))
-    }).collect();
+    let speed_results: Vec<((i64, u8), Vec<f64>)> = speed_groups
+        .par_iter()
+        .map(|(k, ways)| {
+            let refs: Vec<&Vec<(f64, f64)>> = ways.iter().collect();
+            (*k, group_km(&refs, n_areas, &tree, &pips))
+        })
+        .collect();
     for ((k, kind), km) in speed_results {
         for (i, v) in km.into_iter().enumerate() {
             if v > 0.0 {
-                match kind { 2 => areas[i].speed_prop.insert(k, v), 1 => areas[i].speed_con.insert(k, v), _ => areas[i].speed.insert(k, v) };
+                match kind {
+                    2 => areas[i].speed_prop.insert(k, v),
+                    1 => areas[i].speed_con.insert(k, v),
+                    _ => areas[i].speed.insert(k, v),
+                };
             }
         }
     }
@@ -305,10 +376,22 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
                 continue;
             }
             *a.st.entry("open").or_default() += 1;
-            *a.st.entry(match p["tier"].as_i64() { Some(1) => "tier1", Some(2) => "tier2", _ => "tier3" }).or_default() += 1;
-            if modes.contains("subway") { *a.st.entry("metro").or_default() += 1; }
-            if modes.contains("light_rail") || modes.contains("tram") { *a.st.entry("light_rail").or_default() += 1; }
-            if p["hsr"].as_bool() == Some(true) || p["line_counts"]["high_speed"].as_i64().unwrap_or(0) > 0 { *a.st.entry("hsr").or_default() += 1; }
+            *a.st
+                .entry(match p["tier"].as_i64() {
+                    Some(1) => "tier1",
+                    Some(2) => "tier2",
+                    _ => "tier3",
+                })
+                .or_default() += 1;
+            if modes.contains("subway") {
+                *a.st.entry("metro").or_default() += 1;
+            }
+            if modes.contains("light_rail") || modes.contains("tram") {
+                *a.st.entry("light_rail").or_default() += 1;
+            }
+            if p["hsr"].as_bool() == Some(true) || p["line_counts"]["high_speed"].as_i64().unwrap_or(0) > 0 {
+                *a.st.entry("hsr").or_default() += 1;
+            }
         }
     }
 
@@ -332,7 +415,9 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
             }
         }
         let lines: Map<String, Value> = TYPES.iter().filter_map(|t| a.lines.get(*t).map(|s| (t.to_string(), json!(s.len())))).collect();
-        let band = |m: &BTreeMap<i64, f64>| -> Map<String, Value> { m.iter().map(|(b, v)| ((if *b < 0 { "none".to_string() } else { b.to_string() }), json!(r1(*v)))).collect() };
+        let band = |m: &BTreeMap<i64, f64>| -> Map<String, Value> {
+            m.iter().map(|(b, v)| ((if *b < 0 { "none".to_string() } else { b.to_string() }), json!(r1(*v)))).collect()
+        };
         let (speed, speed_con, speed_prop) = (band(&a.speed), band(&a.speed_con), band(&a.speed_prop));
         let st: Map<String, Value> = a.st.iter().map(|(k, v)| (k.to_string(), json!(v))).collect();
         let open: f64 = a.km.iter().filter(|((_, c), _)| !c).map(|(_, v)| v).sum();

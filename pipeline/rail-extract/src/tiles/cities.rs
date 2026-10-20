@@ -90,7 +90,11 @@ pub(super) fn city_dots(samples: &[(f64, f64, f64, u8)]) -> String {
         let n = members.len() as f64;
         let mid = (members.iter().map(|&j| samples[j].0).sum::<f64>() / n, members.iter().map(|&j| samples[j].1).sum::<f64>() / n);
         // the dot sits on the sample nearest the middle, so it is never off the network (a city can be long and thin)
-        let at = members.iter().copied().min_by(|&a, &b| km((samples[a].0, samples[a].1), mid).partial_cmp(&km((samples[b].0, samples[b].1), mid)).unwrap_or(std::cmp::Ordering::Equal)).unwrap();
+        let at = members
+            .iter()
+            .copied()
+            .min_by(|&a, &b| km((samples[a].0, samples[a].1), mid).partial_cmp(&km((samples[b].0, samples[b].1), mid)).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap();
         let pr = CityProps { m: by(0).round() as i64, l: by(1).round() as i64, r: by(2).round() as i64, n: total.round() as i64 }.to_map();
         feat(&mut out, &pr, &format!("{{\"type\":\"Point\",\"coordinates\":[{:.5},{:.5}]}}", samples[at].0, samples[at].1), Some(2), Some(7));
     }
