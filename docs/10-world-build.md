@@ -28,7 +28,7 @@ $RE pminfo app/public/data/world/world.pmtiles [--tsv FILE] [--top N]
 
 Measured 2026-10-15 (14-core Mac, planet-260928): cut of 216 countries 7 s (7.2 GB peak); `build --no-tiles` for 146 countries (142 since 2026-10-16) 37 s (12 GB peak RSS, 18 GB footprint with 5 threads); `world` 55 to 59 s, 10.5 GB peak RSS (7.9 GB footprint), 1,701,830 tiles, 1,150.5 MB. Result: 146 kept, 70 dropped (`data/world/kept.txt`, `dropped.txt`).
 
-`world` writes `world.parts.json` (slug and outline bounds of every country with tile input, as `pilot.parts.json`) from `data/regions` outlines. Boundary files for the app (`<slug>.boundary.geojson`) are written by `build` next to the side files.
+`world` writes `world.parts.json` (slug and outline bounds of every country with tile input) from `data/regions` outlines. Boundary files for the app (`<slug>.boundary.geojson`) are written by `build` next to the side files.
 
 Not in the repo (git-ignored or generated): `data/` (cache, outlines, cut, tile input), the planet, `app/public/data/` (tiles and side files, the world folder is 2.8 GB). Everything above is reproducible from the planet with these commands, except as listed under "Choices and limits".
 
@@ -58,7 +58,7 @@ VITE_TILE_SOURCE=world npm --prefix app run build    # a build that shows the wo
 
 ## The memory-bounded writer (`tilewriter::run_world`)
 
-`run` (the pilot path, unchanged) holds a region's features and all pieces of all tiles in memory. `run_world` instead:
+`run` (the per-region path of `build`, unchanged) holds a region's features and all pieces of all tiles in memory. `run_world` instead:
 
 1. Memory-maps every `tiles_tmp/*.geojsonl` and indexes each feature: file, byte range, zoom range, bounding box (Web Mercator unit square, f32). One parallel parse also collects the whole input's column types (MLT allows one type per column), layer zoom ranges and bounds. Nothing but the index stays in memory (about 4 GB resident for 8.5 million features, mostly the mapped files).
 2. Makes the tiles in passes. A pass handles zooms zmin..=zmax inside one partition tile: it parses only features whose bounding box (plus the 3% clip buffer) meets the tile and whose zoom range meets zmin..=zmax, slices them with the same `slice_group` (per layer, zoom range, tiny flag, runs of 8,000), keeps tiles inside the partition, encodes (same seq order, coalescing, line joining, MLT, gzip) and appends to a spool file, then frees everything. Passes: A the world z0-3; B each populated z4 tile, z4 to deep-1; C each populated tile at zoom `--deep-zoom` (default 6), deep to z14. Passes run one after another, each parallel inside; biggest first.
@@ -66,8 +66,8 @@ VITE_TILE_SOURCE=world npm --prefix app run build    # a build that shows the wo
 
 The input order of a feature in a layer (slug order, file order, line order) decides its draw order within a tile, as in `run`.
 
-Verification:
-- `rail-extract tiles` (old path) on the pilot sources after the change: `cmp` identical to the build before the change (298,819,502 bytes).
+Verification (2026-10-15; the `tiles` subcommand and the pilot join were removed later, the numbers stay as evidence):
+- `rail-extract tiles` (old path, removed) on the pilot sources after the change: `cmp` identical to the build before the change (298,819,502 bytes).
 - `rail-extract world` on the same six pilot sources: `cmp` identical to `run`'s `pilot.pmtiles`, 344,928 tiles; 15 s and 5.3 GB peak against 12.7 s and 9.4 GB.
 - World with `--deep-zoom 5` and `6`: `cmp` identical (partition does not matter).
 - Known edge: features share a slicer, and a slicer does not descend into a tile with no points, so grouping can in theory change pieces smaller than the simplification tolerance. It did not show in any comparison.

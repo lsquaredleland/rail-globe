@@ -11,7 +11,7 @@
 # app
 app/node_modules/
 app/dist/
-# generated tiles and side files from pipeline/build_tiles.py
+# generated tiles and side files (rail-extract build / world)
 app/public/data/
 # old generated label glyphs (no longer used: the app is glyph-free)
 app/public/glyphs/
@@ -20,9 +20,6 @@ app/public/glyphs-v2/
 # python
 __pycache__/
 *.pyc
-
-# generated prototype viewer (built from station_viewer.template.html)
-/station_viewer.html
 
 # Rust extractor build output
 pipeline/rail-extract/target/
@@ -37,4 +34,6 @@ app/bench/results/
 .env
 .env.local
 r2/.env
-.claude/worktrees/
+# local agent state (Claude Code settings, worktrees, oh-my-claudecode)
+.claude/
+.omc/

@@ -1,6 +1,6 @@
-# Open action items (rewritten 2026-10-17)
+# Open action items (the one to-do home; merged 2026-10-20)
 
-Everything fixed in the 2026-10-16/17 session has been removed from this list; what was done is in `docs/18-changelog-2026-10-17.md`. What is left needs a decision from the user, a check, or follow-up work. Reply under each `Your call:`.
+Everything fixed in the 2026-10-16/17 session has been removed from this list; what was done is in `/CHANGELOG.md` (root). What is left needs a decision from the user, a check, or follow-up work. Reply under each `Your call:`.
 
 Decided and closed (no action left): the app is glyph-free, all text drawn locally from system fonts (docs/00-overview.md 2026-10-17); 朔黄线 stays Freight; The Ghan and Indian Pacific both Intercity; Uruguay none; Peru, Bolivia, Cuba left alone; China tier-1 override stays narrowed; Berlin and Hamburg S-Bahn and Copenhagen S-tog stay Light rail; ICE, Frecciarossa, Railjet name overrides left out; the 150 km Intercity cut-off stays; the world build is the default (CLAUDE.md); stale country folders deleted and pruned.
 
@@ -60,7 +60,48 @@ Nothing below has been run.
 
 ## 5. Follow-ups, none blocking
 
-- Repeat the P2 measurements on an idle machine (docs/11): highlight filter cost on very long lines, Chengdu settle time at 150 ms latency, zoom out to z2, hover and click sweeps, first-zoom hitch (roughly doubled by the glyph-free decision: Chengdu East max frame 75 to 125 ms, one noisy pair).
+- Repeat the P2 measurements on an idle machine (`archive/performance-todos-2026-10-17.md`): highlight filter cost on very long lines, Chengdu settle time at 150 ms latency, zoom out to z2, hover and click sweeps, first-zoom hitch (roughly doubled by the glyph-free decision: Chengdu East max frame 75 to 125 ms, one noisy pair).
 - Not covered by QA: Iceland and the micro-states, operator and speed colour modes in the Americas and Africa views, hover and click on rebuilt tiles.
 - More independent answer-list entries; the 29 known failures are judgements from Wikipedia rankings and the size score, not confirmed OSM bugs.
 - Pipeline robustness: `build` with no prior `cut` panics (`write route_stations.json: NotFound`); the `type_source` of a route master comes from its first member, not the winning member.
+
+## 6. Performance, hosting and research (moved from the old 06 and 11, 2026-10-20)
+
+Evidence and numbers for each item: `archive/performance-todos-2026-10-17.md` (old file 11) and `archive/open-questions-2026-10-20.md` (old file 06).
+
+### Blocks a release
+- **Low-zoom tile weight over the 600 KB view budget.** Plan, measurements and the ordered steps: `16-low-zoom-tile-weight-plan.md` (steps 1 to 3 built; Europe z5 laptop is the only failing zoom, see 1.1 above). Done when no laptop or phone view is over 600 KB in the listed views (Europe z4 to z7, world z3, Moscow, Cairo, Delhi, Mumbai, Seoul, Beijing, Shanghai), `rail-extract world` is still byte-identical for `--deep-zoom 5` and `6`, and the zoom bench is no worse. Measure with `python3 pipeline/measure_views.py` or `rail-extract pminfo --tsv`.
+- **Custom domain for R2 (needs the user's go).** Live on `r2.dev`: HTTP/1.1, no compression, tiles `max-age=3600`, no edge cache. Done when a custom domain is attached (`VITE_DATA_BASE`, `connect-src` in `app/vercel.json` and `r2/cors.json` changed together, `r2.dev` disabled), `curl -I` shows HTTP/2 or 3, a shard file has `content-encoding`, a second tile range shows `cf-cache-status: HIT`, and a cold load of Paris and Chengdu matches the localhost request counts. Option if edge misses hurt: split the 1.18 GB world file by zoom. Keep `dedupedPmtiles` in `MapView.tsx` (range requests are billed per operation). Checklist: `r2/README.md`.
+- **Freight spot check (US, Canada, Mexico).** The rule is built (`passenger_needs_evidence`, `13-freight-north-america.md`). Still to do: a spot check of the US Midwest and Mexico against the answer lists; freight must show as freight, the pilots unchanged.
+
+### Search and app wiring
+- Compare mode is disabled (phase 4 skipped), so "results target the focused map" is not built.
+- Two cities with the same name (Tokyo city and province) both list; the city has no outline. No search-as-you-type for stations or lines. Countries have `stations` 0 in `search.json`, so ties follow file order (rail size).
+- The "Done when" renders (z3, Cairo z9, Tokyo z9) were not re-run as a set.
+
+### Measurements to repeat on an idle machine (3 runs, ABAB; method in `09-performance-playbook.md`)
+- Highlight filter cost on very long lines: `setFilter` on `pilot:hl-fs` (source `pilot:hls`, minzoom 9) with a long way-id list. Not traced. Done when worker time per highlight is known and under 20 ms or reduced (a Set instead of a literal list).
+- Chengdu settle time at 150 ms latency (6,462 ms against 6,066 ms for the original, one run each).
+- Zoom out to the world (z2): a tie with 120 to 170% spread; repeat against the world file.
+- Headed hover and click sweeps (rail at z3 to z12, count frames over 25 ms).
+- First-zoom hitch (glyph-free app, Chengdu East max frame 75 to 125 ms). Accepted for now.
+- Headed measurement on the user's 120 Hz display of the slowdown the user reported after the themes, place labels and the Europe countries (2026-10-14); A/B each change.
+- Cold-load numbers, gzipped shard sizes and click latency from the real host; a full `r2/sync.sh` into an empty bucket in under 5 minutes.
+
+### Research lists never finished (details in `archive/open-questions-2026-10-20.md`)
+- Faster "HSR only" toggle: eight ideas (constants not expressions, no filter change on a toggle, a high-speed tile layer, skip validation, a veil), nothing measured. First step: a trace of the toggle at z4 to z6.
+- Smooth rendering and zoom, items 4 to 10 and 13 to 16: trim basemap layers (biggest measured cost: 18 to 6.5 missed frames with the basemap hidden), hide the `hl-fs` layers when nothing is highlighted, align tile and style `minzoom`, stop tiles at z13, corridor merging, pre-rendered z0 to z5 raster, CSS-transform tooltip, per-layer `minzoom` and `maxzoom`.
+- Highlight performance ideas not tried: fewer or merged layers, `renderWorldCopies: false`, a deck.gl path layer for the hovered line, delivery tuning.
+- China high-speed rule beyond Chengdu (check on Beijing-Tianjin or the Pearl River Delta). Parked: a flag to apply the non-China rule (`highspeed=yes` or 200 km/h and above) in China; 200 km/h lines are promoted one by one with `high_speed_track_overrides`.
+
+### Choices waiting for the user's confirmation (from `06-open-questions.md`)
+- Major station rule for high-speed termini: "mainline station within 80 m of high-speed track and (terminus or 8+ mainline platforms)" replaces the prototype's route-relation test. Confirm.
+- Tier names against the design: the UI shows "Major HSR station", "Major station", "Minor station"; the design has no Terminus badge. Confirm.
+
+### Reminders (not tasks)
+- `vite dev` is not a performance reference; bench `vite preview` on a production build. `npm run build` copies `app/public/data/` (several GB with the world files) into `app/dist/`: move the world folder away before building for deployment, or point `VITE_DATA_BASE` at the host.
+- Method: keep a baseline worktree on its own port; alternate A/B/A/B; headed Chrome on the 120 Hz display; CPU throttle 4; wheel delta 127; latency 50 and 150 ms; one warm-up; note the load average and repeat when runs differ by more than 25%.
+
+## 7. Parked (not in v1)
+
+GTFS of any kind (frequencies, timetables, Portolan, train animation); live train positions; history timeline (`start_date` is kept in the data); comparing custom drawn areas (H3 grid or DuckDB in the browser); routing, accounts, saved views; signalling and owner themes (would need train protection and `owner` tags).

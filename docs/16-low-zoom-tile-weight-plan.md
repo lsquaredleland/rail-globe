@@ -1,6 +1,6 @@
 # Low-zoom tile weight: findings and plan (2026-10-17)
 
-Scope: z2 to z8 tiles of `app/public/data/world/world.pmtiles` (built 2026-10-15) against the 600 KB per view budget. Replaces the open P0 in `11-performance-todos.md` and "Must fix: Europe low-zoom tile weight" in `06-open-questions.md` with a measured plan. Nothing in the pipeline was changed; `world.pmtiles` was only read. "KB" here is KiB (1,024 bytes), as in `measure_views.py`; the file sizes quoted from `pminfo` in MB (and the 1,150 MB world file) are decimal megabytes, so the two are not directly comparable.
+Scope: z2 to z8 tiles of `app/public/data/world/world.pmtiles` (built 2026-10-15) against the 600 KB per view budget. Replaces the open P0 in `archive/performance-todos-2026-10-17.md` and "Must fix: Europe low-zoom tile weight" in `archive/open-questions-2026-10-20.md` with a measured plan. Nothing in the pipeline was changed; `world.pmtiles` was only read. "KB" here is KiB (1,024 bytes), as in `measure_views.py`; the file sizes quoted from `pminfo` in MB (and the 1,150 MB world file) are decimal megabytes, so the two are not directly comparable.
 
 Labels used below: **measured** = read from the real file; **encoder-exact** = the real tile was decoded, changed in Python, and re-encoded with the same `mlt-core` 0.20.4 code and settings as `tilewriter.rs` (an unchanged tile re-encodes to the identical byte count, 511,028 gzipped bytes for 3/4/2); **built** = implemented in a scratch copy of the Rust writer and run; **estimate** = reasoning or a rough proxy.
 

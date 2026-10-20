@@ -17,7 +17,7 @@
 #
 # Credentials: r2/.env (gitignored, see r2/.env.example) or the environment. Nothing here reads or prints them.
 # --dry-run prints each command and runs only the read-only stages; upload and prune run rclone with --dry-run (that also proves the credentials).
-# Never run a world build unless you mean to: CLAUDE.md. A data-only refresh needs no --push (the app reads the data from R2); push when the
+# The build stage is a full world build (about 2 min, 12 GB); it needs the user's go to publish (CLAUDE.md). A data-only refresh needs no --push (the app reads the data from R2); push when the
 # app code changed, or when the data layout did (then upload, push, prune is the order that keeps the site working).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -107,7 +107,7 @@ if want verify; then
     [ -z "$(find "$d/stations" -name '*-*' -print -quit)" ] || { echo "old per-station files in $d"; bad=$((bad + 1)); }
   done
   [ "$n" -gt 0 ] || fail "no region folders under $root"
-  [ "$bad" = 0 ] || fail "$bad region folders are not in the shard layout (node pipeline/repack_side_files.mjs $root converts them)"
+  [ "$bad" = 0 ] || fail "$bad region folders are not in the shard layout (rebuild with the build stage; pipeline/archive/repack_side_files.mjs converted the old layout in place)"
   files=$(find "$DATA" -type f | wc -l | tr -d ' ')
   echo "ok: $n regions, $files files, $(basename "$tiles") $((size / 1000000)) MB"
   [ "$files" -le 30000 ] || fail "$files files under $DATA: too many (the shard layout has about 11,000)"

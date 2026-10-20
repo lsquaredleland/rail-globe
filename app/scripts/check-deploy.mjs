@@ -14,5 +14,5 @@ if (u.hostname.endsWith('.r2.dev')) {
 }
 const csp = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')).headers[0].headers.find((h) => h.key === 'Content-Security-Policy').value
 const connect = csp.split(';').map((d) => d.trim()).find((d) => d.startsWith('connect-src ')) ?? ''
-if (!connect.split(' ').includes(u.origin)) fail(`${u.origin} is not in connect-src of vercel.json (replace data.example.com)`)
+if (!connect.split(' ').includes(u.origin)) fail(`${u.origin} is not in connect-src of vercel.json (add the data origin there)`)
 console.log(`check-deploy: ok (${u.origin})`)

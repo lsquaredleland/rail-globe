@@ -1,9 +1,13 @@
 # Operator logos (one-time pull)
 
-Logos of the railway operators named in OSM (`operator:wikidata`, else `brand:wikidata`), for station and line labels. Run once; the PNGs are committed-size small (672 files, 4.4 MB) and are not rebuilt with the tiles. No licence check was made: logos are trademarks and some Commons files are non-free.
+Logos of the railway operators named in OSM (`operator:wikidata`, else `brand:wikidata`), for station and line labels.
+
+**How `app/public/logos/` is made.** The 672 PNGs and `logos.json` there are committed (4.4 MB). They are NOT rebuilt by `rail-extract`, `publish.sh` or the world build; only the three steps below make them, by hand (needs the `osmium` CLI, Python 3, Node 20+ and network; about 10 minutes). Re-run only to add new operators. The pipeline only reads `logos.json`, to decide which stations get a logo (`tiles.rs`). `squarer.mjs` edits the committed PNGs in place: run it after step 3 and commit the result.
+
+No licence check was made: logos are trademarks and some Commons files are non-free.
 
 ```bash
-# 1. Features that carry an operator Wikidata id, from the world rail extract (7 s)
+# 1. (needs osmium and a rail-only world extract; not part of the Rust pipeline) Features that carry an operator Wikidata id, from the world rail extract (7 s)
 osmium tags-filter railways-world.osm.pbf nwr/operator:wikidata nwr/brand:wikidata -f opl -o ops.opl --overwrite
 # 2. Distinct ids with counts on stations (st) and lines/routes (ln) -> operators.json (names come out percent-garbled; only the ids matter)
 python3 -I pipeline/logos/operators.py ops.opl operators.json

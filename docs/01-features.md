@@ -32,7 +32,7 @@ Every track and every line gets one type from a fixed list, so the legend means 
 
 - Track with no mapped service falls back to its own tags: `highspeed` and maxspeed for high-speed, `usage=main` for intercity, `usage=branch` for regional.
 - Hybrid systems take the route's `service` tag, else an entry in a small per-region override file (BART is Metro).
-- The per-region commuter network lists (`commuter_networks` in the configs) are kept but unused while Commuter is merged into Regional.
+- The per-region commuter network lists (`commuter_networks`) were removed from the configs while Commuter is merged into Regional.
 - Construction lines are drawn dashed in their type's colour at every zoom from z4, with a toggle to hide them. The dashes are real geometry cut in the pipeline from merged ways (double track is one line), not MapLibre's dash pattern: the rhythm runs unbroken along a stretch of track, across tile edges and bends, and is about 12 px dash and 8 px gap for every rail type (0.84 to 1.19 times within a half-zoom band). Freight and industrial track has its own toggle. Proposed lines (Hong Kong only, for now) are in the data and shown dashed and fainter (60% opacity) when the Proposed switch is on.
 
 ## 3. Minimal basemap
