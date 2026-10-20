@@ -1,6 +1,7 @@
 {
   "_comment": "Shared by cn, china, chengdu, greater-bay-area and cn-beijing (\"extends\": \"_china\"): the China rules (china flag, 市域铁路 as Regional, 旅游|观光 as Other, the passenger-station list). Deliberately does not extend _default (that would add stat_auto).",
   "china": true,
+  "high_speed_min_kmh": 250,
   "type_overrides": [
     {
       "match": {

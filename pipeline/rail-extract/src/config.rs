@@ -16,9 +16,9 @@ use std::path::Path;
 /// nothing reads must not be added here; remove it from the config instead. `extends` is consumed by `resolve_text`, never merged.
 const KNOWN_KEYS: &[&str] = &[
     "_comment",                   // free text, read by nobody
-    "china",                      // classify.rs, tiles.rs: China rules (250 km/h high-speed floor) and the China-only app styling
+    "china",                      // classify.rs, tiles.rs: China rules (train-number and 高速线/客专 name rules, intercity tier at 200 km/h) and the China-only app styling
     "exemptions",                 // classify.rs: named, justified exceptions to the generic rules
-    "high_speed_min_kmh",         // stats.rs: the region's high-speed floor in km/h, written to stats.json as hs_min_kmh (default 200)
+    "high_speed_min_kmh",         // classify.rs, stats.rs: the region's one high-speed floor in km/h (default 200; China 250): classify types maxspeed at or above it High-speed, stats.json carries it as hs_min_kmh
     "high_speed_networks_re",     // classify.rs: route network/name patterns that make a route High-speed
     "high_speed_track_overrides", // classify.rs: tracks promoted to High-speed by match rule (name_re, osm_id)
     "main_station_re",            // stations.rs, construction.rs: station names that are always major stations

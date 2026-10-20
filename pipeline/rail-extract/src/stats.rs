@@ -177,8 +177,10 @@ fn shape(mp: &MultiPolygon<f64>) -> Value {
     )
 }
 
-pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &Path) -> String {
-    let new = |slug: &str, name: String, local: Option<String>, kind: &'static str, poly: Option<MultiPolygon<f64>>, bbox: [f64; 4], min_metro: i64| Area {
+type Ways = Vec<Vec<(f64, f64)>>;
+
+fn new_area(slug: &str, name: String, local: Option<String>, kind: &'static str, poly: Option<MultiPolygon<f64>>, bbox: [f64; 4], min_metro: i64) -> Area {
+    Area {
         slug: slug.to_string(),
         name,
         local,
@@ -194,10 +196,14 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         km_prop: BTreeMap::new(),
         lines: BTreeMap::new(),
         st: BTreeMap::new(),
-    };
+    }
+}
+
+/// The region itself (area 0), its `stat_areas`, and the `stat_auto` provinces and cities from data/regions/index.json.
+fn build_areas(slug: &str, inp: &Input, dirs: &[PathBuf]) -> Vec<Area> {
     let mut areas: Vec<Area> = Vec::new();
     let own = outline(slug, dirs);
-    areas.push(new(
+    areas.push(new_area(
         slug,
         inp.cfg.get("stat_name").and_then(Value::as_str).unwrap_or(slug).to_string(),
         inp.cfg.get("stat_local").and_then(Value::as_str).map(String::from),
@@ -209,7 +215,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
     for a in inp.cfg.get("stat_areas").and_then(Value::as_array).into_iter().flatten() {
         let aslug = a["slug"].as_str().unwrap_or("");
         let Some((poly, bbox)) = outline(aslug, dirs) else { panic!("stats: no outline for {aslug} (pipeline/regions or data/regions)") };
-        areas.push(new(aslug, a["name"].as_str().unwrap_or(aslug).to_string(), a["local"].as_str().map(String::from), "area", Some(poly), bbox, 0));
+        areas.push(new_area(aslug, a["name"].as_str().unwrap_or(aslug).to_string(), a["local"].as_str().map(String::from), "area", Some(poly), bbox, 0));
     }
     if let Some(auto) = inp.cfg.get("stat_auto") {
         let country = auto["country"].as_str().unwrap_or("");
@@ -236,7 +242,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
             let Some((poly, bbox)) = outline(k, dirs) else { continue };
             let lvl5 = v["admin_level"] == "5" || v["city"] == true; // `city: true`: an outline from `outlines --cities` (any admin level)
             let en = v["name_en"].as_str().or(v["name"].as_str()).unwrap_or(k).trim_end_matches(" City").trim_end_matches(" Prefecture").to_string();
-            areas.push(new(
+            areas.push(new_area(
                 k,
                 en.clone(),
                 v["name"].as_str().filter(|n| *n != en).map(String::from),
@@ -247,28 +253,23 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
             ));
         }
     }
+    areas
+}
 
-    let tree = Index::new(areas.iter().enumerate().map(|(i, a)| (i > 0).then(|| geo::Rect::new((a.bbox[0], a.bbox[1]), (a.bbox[2], a.bbox[3])))));
-    let pip_own: Vec<Option<Pip>> = areas.iter_mut().map(|a| a.pip.take()).collect(); // apart from `areas`, which is filled in below
-    let pips: Vec<Option<&Pip>> = pip_own.iter().map(|p| p.as_ref()).collect();
-    let n_areas = areas.len();
+/// What the typed ways add up to, before they are measured per area.
+struct WayGroups<'a> {
+    /// ways by (type, under construction)
+    groups: BTreeMap<(String, bool), Ways>,
+    /// proposed ways by type
+    prop_groups: BTreeMap<String, Ways>,
+    /// ways by (speed band, 0 open / 1 construction / 2 proposed)
+    speed_groups: BTreeMap<(i64, u8), Ways>,
+    /// for each running way: the areas its middle vertex is in, and the lines it is on
+    line_hits: Vec<(Vec<usize>, Vec<&'a str>)>,
+}
 
-    // line id for each route, and each line's type
-    let mut route_line: FxHashMap<&str, &str> = FxHashMap::default();
-    let mut line_type: FxHashMap<&str, &str> = FxHashMap::default();
-    for l in &inp.lines {
-        let id = l["id"].as_str().unwrap_or("");
-        line_type.insert(id, l["type"].as_str().unwrap_or(""));
-        for r in l["routes"].as_array().into_iter().flatten() {
-            route_line.insert(r.as_str().unwrap_or(""), id);
-        }
-    }
-
-    // ways by (type, under construction); lines per area from each way's middle vertex
-    let mut groups: BTreeMap<(String, bool), Vec<Vec<(f64, f64)>>> = BTreeMap::new();
-    let mut prop_groups: BTreeMap<String, Vec<Vec<(f64, f64)>>> = BTreeMap::new();
-    let mut speed_groups: BTreeMap<(i64, u8), Vec<Vec<(f64, f64)>>> = BTreeMap::new();
-    let mut line_hits: Vec<(Vec<usize>, Vec<&str>)> = Vec::new();
+fn collect_ways<'a>(inp: &'a Input, route_line: &FxHashMap<&str, &'a str>, tree: &Index, pips: &[Option<&Pip>]) -> WayGroups<'a> {
+    let mut w = WayGroups { groups: BTreeMap::new(), prop_groups: BTreeMap::new(), speed_groups: BTreeMap::new(), line_hits: Vec::new() };
     for fe in &inp.feats {
         let p = &fe.p;
         let Some(t) = s(p, "type").filter(|t| TYPES.contains(t)) else { continue };
@@ -288,7 +289,7 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
                 let m = c[c.len() / 2];
                 let mut in_areas = vec![0usize];
                 in_areas.extend(tree.at(&Point::new(m.0, m.1)).into_iter().filter(|&i| pips[i].is_some_and(|pp| pp.contains(m.0, m.1))));
-                line_hits.push((in_areas, lids));
+                w.line_hits.push((in_areas, lids));
             }
         }
         if t != "freight" || prop {
@@ -296,72 +297,38 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
                 let k = k.round_ties_even() as i64;
                 speed_band_min(k)
             });
-            speed_groups.entry((band, if prop { 2 } else { con as u8 })).or_default().push(c.clone());
+            w.speed_groups.entry((band, if prop { 2 } else { con as u8 })).or_default().push(c.clone());
         }
         if prop {
-            prop_groups.entry(t.to_string()).or_default().push(c);
+            w.prop_groups.entry(t.to_string()).or_default().push(c);
         } else {
-            groups.entry((t.to_string(), con)).or_default().push(c);
+            w.groups.entry((t.to_string(), con)).or_default().push(c);
         }
     }
-    for (ix, lids) in &line_hits {
-        for &i in ix {
-            for l in lids {
-                if let Some(lt) = line_type.get(l).filter(|lt| !lt.is_empty()) {
-                    areas[i].lines.entry(lt.to_string()).or_default().insert(l.to_string());
-                }
-            }
-        }
-    }
-    let results: Vec<((String, bool), Vec<f64>)> = groups
+    w
+}
+
+/// Measure each group of ways per area (in parallel) and hand every non-zero length to `put`.
+fn add_km<K: Ord + Clone + Send + Sync>(areas: &mut [Area], groups: &BTreeMap<K, Ways>, tree: &Index, pips: &[Option<&Pip>], put: impl Fn(&mut Area, K, f64)) {
+    let n_areas = areas.len();
+    let results: Vec<(K, Vec<f64>)> = groups
         .par_iter()
         .map(|(k, ways)| {
             let refs: Vec<&Vec<(f64, f64)>> = ways.iter().collect();
-            (k.clone(), group_km(&refs, n_areas, &tree, &pips))
+            (k.clone(), group_km(&refs, n_areas, tree, pips))
         })
         .collect();
     for (k, km) in results {
         for (i, v) in km.into_iter().enumerate() {
             if v > 0.0 {
-                areas[i].km.insert(k.clone(), v);
+                put(&mut areas[i], k.clone(), v);
             }
         }
     }
+}
 
-    let prop_results: Vec<(String, Vec<f64>)> = prop_groups
-        .par_iter()
-        .map(|(k, ways)| {
-            let refs: Vec<&Vec<(f64, f64)>> = ways.iter().collect();
-            (k.clone(), group_km(&refs, n_areas, &tree, &pips))
-        })
-        .collect();
-    for (k, km) in prop_results {
-        for (i, v) in km.into_iter().enumerate() {
-            if v > 0.0 {
-                areas[i].km_prop.insert(k.clone(), v);
-            }
-        }
-    }
-
-    let speed_results: Vec<((i64, u8), Vec<f64>)> = speed_groups
-        .par_iter()
-        .map(|(k, ways)| {
-            let refs: Vec<&Vec<(f64, f64)>> = ways.iter().collect();
-            (*k, group_km(&refs, n_areas, &tree, &pips))
-        })
-        .collect();
-    for ((k, kind), km) in speed_results {
-        for (i, v) in km.into_iter().enumerate() {
-            if v > 0.0 {
-                match kind {
-                    2 => areas[i].speed_prop.insert(k, v),
-                    1 => areas[i].speed_con.insert(k, v),
-                    _ => areas[i].speed.insert(k, v),
-                };
-            }
-        }
-    }
-
+/// Station counts per area: open / construction, tier, metro, light rail, high-speed.
+fn count_stations(areas: &mut [Area], stations: &[Value], tree: &Index, pips: &[Option<&Pip>]) {
     for st in stations {
         let p = &st["properties"];
         let xy = &st["geometry"]["coordinates"];
@@ -394,16 +361,15 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
             }
         }
     }
+}
 
-    // the speed (km/h) from which a rail type is called high-speed in this region (config `high_speed_min_kmh`, default 200); the app reads it from every row
-    // China's floor is 250 (classify.rs, `"china": true`), whatever high_speed_min_kmh says
-    let china = inp.cfg.get("china").is_some_and(crate::config::truthy);
-    let hs_min_kmh = if china { json!(250) } else { inp.cfg.get("high_speed_min_kmh").filter(|v| v.is_number()).cloned().unwrap_or(json!(200)) };
+/// The stats.json rows (areas with too little metro or no track are left out), the shapes.json map, the count left out and a log of the first rows.
+fn area_rows(areas: &[Area], hs_min_kmh: &Value) -> (Vec<Value>, Map<String, Value>, usize, Vec<String>) {
     let mut rows = Vec::new();
     let mut shapes = Map::new();
     let mut log = Vec::new();
     let mut dropped = 0;
-    for a in &areas {
+    for a in areas {
         if a.st.get("metro").copied().unwrap_or(0) < a.min_metro || (a.kind != "region" && a.km.is_empty()) {
             dropped += 1;
             continue;
@@ -431,6 +397,55 @@ pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &
         }
         rows.push(json!({ "slug": a.slug, "name": a.name, "local": a.local, "kind": a.kind, "bbox": a.bbox, "km": km, "lines": lines, "speed": speed, "speed_con": speed_con, "speed_prop": speed_prop, "stations": st, "hs_min_kmh": hs_min_kmh }));
     }
+    (rows, shapes, dropped, log)
+}
+
+pub fn run(slug: &str, inp: &Input, stations: &[Value], dirs: &[PathBuf], out: &Path) -> String {
+    let mut areas = build_areas(slug, inp, dirs);
+    let tree = Index::new(areas.iter().enumerate().map(|(i, a)| (i > 0).then(|| geo::Rect::new((a.bbox[0], a.bbox[1]), (a.bbox[2], a.bbox[3])))));
+    let pip_own: Vec<Option<Pip>> = areas.iter_mut().map(|a| a.pip.take()).collect(); // apart from `areas`, which is filled in below
+    let pips: Vec<Option<&Pip>> = pip_own.iter().map(|p| p.as_ref()).collect();
+
+    // line id for each route, and each line's type
+    let mut route_line: FxHashMap<&str, &str> = FxHashMap::default();
+    let mut line_type: FxHashMap<&str, &str> = FxHashMap::default();
+    for l in &inp.lines {
+        let id = l["id"].as_str().unwrap_or("");
+        line_type.insert(id, l["type"].as_str().unwrap_or(""));
+        for r in l["routes"].as_array().into_iter().flatten() {
+            route_line.insert(r.as_str().unwrap_or(""), id);
+        }
+    }
+
+    // lines per area from each way's middle vertex
+    let ways = collect_ways(inp, &route_line, &tree, &pips);
+    for (ix, lids) in &ways.line_hits {
+        for &i in ix {
+            for l in lids {
+                if let Some(lt) = line_type.get(l).filter(|lt| !lt.is_empty()) {
+                    areas[i].lines.entry(lt.to_string()).or_default().insert(l.to_string());
+                }
+            }
+        }
+    }
+    add_km(&mut areas, &ways.groups, &tree, &pips, |a, k, v| {
+        a.km.insert(k, v);
+    });
+    add_km(&mut areas, &ways.prop_groups, &tree, &pips, |a, k, v| {
+        a.km_prop.insert(k, v);
+    });
+    add_km(&mut areas, &ways.speed_groups, &tree, &pips, |a, (k, kind), v| {
+        match kind {
+            2 => a.speed_prop.insert(k, v),
+            1 => a.speed_con.insert(k, v),
+            _ => a.speed.insert(k, v),
+        };
+    });
+    count_stations(&mut areas, stations, &tree, &pips);
+
+    // the speed (km/h) from which a rail type is called high-speed in this region (config `high_speed_min_kmh`, default 200); the app reads it from every row
+    let hs_min_kmh = inp.cfg.get("high_speed_min_kmh").filter(|v| v.is_number()).cloned().unwrap_or(json!(200));
+    let (rows, shapes, dropped, log) = area_rows(&areas, &hs_min_kmh);
     let dir = out.join(slug);
     fs::create_dir_all(&dir).expect("create output folder");
     fs::write(dir.join("stats.json"), serde_json::to_string(&json!({ "areas": rows })).unwrap()).expect("write stats.json");
