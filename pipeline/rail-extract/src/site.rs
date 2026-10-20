@@ -190,7 +190,7 @@ pub fn build(slug: &str, paths: &Paths) -> Vec<String> {
     let dir = paths.data.join(slug);
     let (cfg_path, is_default) = config_path(&paths.config, slug);
     let mut inp = load(&dir, &cfg_path);
-    // a file of its own that says "extends" gets the same fill for the keys it leaves out; the hand-written pilot configs (no extends) stay as written
+    // a file of its own that says "extends" gets the same fill for the keys it leaves out; a hand-written config without extends (sf-bay-area, paris, de, fr, ...) stays as written; chengdu, cn-beijing and greater-bay-area extend _china, china extends cn
     if is_default || extends_template(&cfg_path) {
         let outline = paths.regions.iter().map(|d| d.join(format!("{slug}.geojson"))).find(|p| p.exists());
         let props = outline.and_then(|p| serde_json::from_str::<Value>(&fs::read_to_string(p).ok()?).ok()).map_or(Value::Null, |v| v["properties"].clone());

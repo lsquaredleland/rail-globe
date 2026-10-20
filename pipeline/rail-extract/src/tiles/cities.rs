@@ -1,6 +1,6 @@
 //! City dots: one point per city with a metro, tram or monorail system, from the track itself.
 
-use super::props::CityProps;
+use super::props::{CityProps, ToMap};
 use super::util::feat;
 use crate::geomx::UnionFind;
 use rustc_hash::FxHashMap;

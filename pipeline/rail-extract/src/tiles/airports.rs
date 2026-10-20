@@ -1,7 +1,7 @@
 //! Step 2 of `run`: the airport layers (outline + terminals, one icon point per commercial airport) and which airport a station serves.
 
 use super::dashes::geojson_value;
-use super::props::{AirportProps, AirportPtProps};
+use super::props::{AirportProps, AirportPtProps, ToMap};
 use super::util::{area_ha, feat, nonempty};
 use crate::geomx::{self, Index};
 use crate::site::{s, Input};

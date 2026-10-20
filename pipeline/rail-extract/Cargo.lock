@@ -990,6 +990,7 @@ dependencies = [
  "regex",
  "rstar 0.13.0",
  "rustc-hash",
+ "serde",
  "serde_json",
  "unicode-normalization",
 ]
