@@ -16,24 +16,24 @@ use std::path::Path;
 /// nothing reads must not be added here; remove it from the config instead. `extends` is consumed by `resolve_text`, never merged.
 const KNOWN_KEYS: &[&str] = &[
     "_comment",                   // free text, read by nobody
-    "china",                      // classify.rs, tiles.rs: China rules (train-number and 高速线/客专 name rules, intercity tier at 200 km/h) and the China-only app styling
-    "exemptions",                 // classify.rs: named, justified exceptions to the generic rules
-    "high_speed_min_kmh",         // classify.rs, stats.rs: the region's one high-speed floor in km/h (default 200; China 250): classify types maxspeed at or above it High-speed, stats.json carries it as hs_min_kmh
-    "high_speed_networks_re",     // classify.rs: route network/name patterns that make a route High-speed
+    "china", // classify.rs, tiles.rs: China rules (train-number and 高速线/客专 name rules, intercity tier at 200 km/h) and the China-only app styling
+    "exemptions", // classify.rs: named, justified exceptions to the generic rules
+    "high_speed_min_kmh", // classify.rs, stats.rs: the region's one high-speed floor in km/h (default 200; China 250): classify types maxspeed at or above it High-speed, stats.json carries it as hs_min_kmh
+    "high_speed_networks_re", // classify.rs: route network/name patterns that make a route High-speed
     "high_speed_track_overrides", // classify.rs: tracks promoted to High-speed by match rule (name_re, osm_id)
-    "main_station_re",            // stations.rs, construction.rs: station names that are always major stations
-    "main_terminals",             // stations.rs: terminal station names that count as major
-    "passenger_needs_evidence",   // classify.rs: true / "routes" / "stations": passenger rail needs evidence (docs/15)
-    "passenger_operator_re",      // classify.rs: operator patterns that count as passenger evidence
-    "passenger_stations_file",    // classify.rs: a text file (beside the config) of passenger station names, one per line
-    "proposed_region",            // classify.rs: outline file in pipeline/regions inside which proposed track is kept
-    "stat_areas",                 // stats.rs: extra areas (slug, name, local) for the region card
-    "stat_auto",                  // stats.rs, site.rs: areas picked automatically from data/regions/index.json
-    "stat_local",                 // stats.rs, site.rs: the region's name in its own language
-    "stat_name",                  // stats.rs, site.rs: the region's English name
-    "track_type_overrides",       // classify.rs: retype track (not routes) by match rule
-    "type_overrides",             // classify.rs: retype route lines by match rule
-    "unrouted_main_type",         // classify.rs: type of main track on no route (default intercity)
+    "main_station_re",    // stations.rs, construction.rs: station names that are always major stations
+    "main_terminals",     // stations.rs: terminal station names that count as major
+    "passenger_needs_evidence", // classify.rs: true / "routes" / "stations": passenger rail needs evidence (docs/15)
+    "passenger_operator_re", // classify.rs: operator patterns that count as passenger evidence
+    "passenger_stations_file", // classify.rs: a text file (beside the config) of passenger station names, one per line
+    "proposed_region",    // classify.rs: outline file in pipeline/regions inside which proposed track is kept
+    "stat_areas",         // stats.rs: extra areas (slug, name, local) for the region card
+    "stat_auto",          // stats.rs, site.rs: areas picked automatically from data/regions/index.json
+    "stat_local",         // stats.rs, site.rs: the region's name in its own language
+    "stat_name",          // stats.rs, site.rs: the region's English name
+    "track_type_overrides", // classify.rs: retype track (not routes) by match rule
+    "type_overrides",     // classify.rs: retype route lines by match rule
+    "unrouted_main_type", // classify.rs: type of main track on no route (default intercity)
 ];
 
 /// The first key of `own` (one config file, before merging) that is not in KNOWN_KEYS, as an error message.
