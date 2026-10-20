@@ -10,7 +10,7 @@ Ongoing, multi-pass (started 2026-10-14). Goal: a consistent way to tell passeng
 1. **Views.** `pipeline/qa/views.json` lists named map views (US metros and corridors, Canada, Mexico, South America). Each view is shot twice by `pipeline/qa/shoot.mjs`: the default (passenger only) and `fr=1` (freight shown), as PNGs in `data/qa/pass-N/` (git-ignored, regenerated).
 2. **Judge.** Each screenshot pair is looked at and every drawn line is classed from real-world knowledge as: real passenger service, passenger only in part, not passenger (freight, industrial, tourist-only, abandoned-but-mapped). Findings go in the pass table below: view, line or area, what the map shows, what is true, evidence, action.
 3. **Reference data.** Findings are checked against independent passenger data where it exists (see "Ground truth"), not only memory.
-4. **Fix by rule, not by line.** A finding that repeats becomes a rule or a config setting in `classify.rs` / `config/<cc>.json`; a one-off becomes a `track_type_overrides` entry. After each fix: rebuild the Americas (`cut` the 26 slugs, `rail-extract build <slugs> --no-tiles --data data/world --out app/public/data/world`, then `rail-extract world --name americas --slugs-file <file>`), confirm the pilot regions' outputs are byte-identical, re-shoot the same views, and compare.
+4. **Fix by rule, not by line.** A finding that repeats becomes a rule or a config setting in `classify/` / `config/<cc>.json`; a one-off becomes a `track_type_overrides` entry. After each fix: rebuild the Americas (`cut` the 26 slugs, `rail-extract build <slugs> --no-tiles --data data/world --out app/public/data/world`, then `rail-extract world --name americas --slugs-file <file>`), confirm the pilot regions' outputs are byte-identical, re-shoot the same views, and compare.
 5. **Never lose a pass.** The pass table records what was changed and the km by type before and after, so a later pass can see what moved.
 
 ## Ground truth (what "passenger" means here)
@@ -77,7 +77,7 @@ Next (pass 2): make "evidence of passenger service" required for unrouted track,
 ### Pass 2 (started 2026-10-15, STOPPED before any measurement)
 
 Stopped on request while the MLT tile conversion is finished in another session. State left in the fork (`/Users/leland/Downloads/osm-rail-qa`, branch `americas-qa`, nothing committed):
-- Code written, compiles (`cargo check`), default off, never run and never measured: `freight_unrouted_no_station` (E1), `freight_isolated_km` (E2), `passenger_station_level` = strict | operator | any (`cut.rs`, `classify.rs`), and an env override `RAIL_CFG_SET='{"freight_isolated_km":10}'` that replaces config keys for every region loaded, so options can be measured without editing configs.
+- Code written, compiles (`cargo check`), default off, never run and never measured: `freight_unrouted_no_station` (E1), `freight_isolated_km` (E2), `passenger_station_level` = strict | operator | any (`cut.rs`, `classify/`), and an env override `RAIL_CFG_SET='{"freight_isolated_km":10}'` that replaces config keys for every region loaded, so options can be measured without editing configs.
 - Not verified: that the 9 pilot regions' outputs (classify_report.json, features.typed.geojsonl, lines.json) are still byte-identical with the pass-2 code in. Check this first.
 - No pass-2 numbers, no rebuilt tiles, no pass-2 screenshots.
 

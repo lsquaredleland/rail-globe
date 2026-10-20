@@ -1,6 +1,6 @@
 # Freight or passenger in the US, Canada and Mexico (study, 2026-10-16)
 
-Question (user): in the US passenger rail is probably well labelled, so should anything without passenger service be freight? This file holds the measurement, the rule that came out of it and what it costs. **Implemented 2026-10-16** (user decisions: yes for US, Canada and Mexico; Canada's suspended services stay passenger): config key `passenger_needs_evidence` in `_north-america.json` and `mx.json`, code in `classify.rs` (`beside_routed`). The same key, with a `"stations"` mode, is used for Argentina and Africa: `docs/15-argentina-africa-freight.md`. Background and the older, reverted attempt: `docs/07-freight-detection.md` ("Americas: correct freight labelling"), `docs/08-americas-passenger-qa.md`.
+Question (user): in the US passenger rail is probably well labelled, so should anything without passenger service be freight? This file holds the measurement, the rule that came out of it and what it costs. **Implemented 2026-10-16** (user decisions: yes for US, Canada and Mexico; Canada's suspended services stay passenger): config key `passenger_needs_evidence` in `_north-america.json` and `mx.json`, code in `classify/` (`beside_routed`). The same key, with a `"stations"` mode, is used for Argentina and Africa: `docs/15-argentina-africa-freight.md`. Background and the older, reverted attempt: `docs/07-freight-detection.md` ("Americas: correct freight labelling"), `docs/08-americas-passenger-qa.md`.
 
 ## Answer
 
@@ -58,7 +58,7 @@ OSM mappers in the US, Canada and Mexico map passenger services as route relatio
 
 ## Implementation (done)
 
-In `classify.rs`, after the per-track rules (tags, service track, route relations, name share, station evidence) and before neighbour smoothing, behind `"passenger_needs_evidence": true` (off elsewhere, so the pilot regions are byte-identical; checked):
+In `classify/`, after the per-track rules (tags, service track, route relations, name share, station evidence) and before neighbour smoothing, behind `"passenger_needs_evidence": true` (off elsewhere, so the pilot regions are byte-identical; checked):
 
 - A rail way whose type came from its own tags alone (`type_source` tags or default: `usage=main|branch`, or no `usage` at all), typed Intercity or Regional, becomes **Freight** (`type_source = no-evidence`) unless (a) at least 50% of its length is within 25 m of a `railway=rail` way that is on a passenger route and typed Intercity, Regional or High-speed (metro, light rail and the others do not count as evidence: the study counted them, so a freight track beside a tram is now freight), or (b) its `operator` tag matches `passenger_operator_re`, or (c) its tags say `railway:traffic_mode=passenger|mixed`.
 - Tagged High-speed, construction and proposed track are not touched. Short `no-evidence` pieces between agreeing neighbours are smoothed like the other freight rules.

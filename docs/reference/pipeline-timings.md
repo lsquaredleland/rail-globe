@@ -15,7 +15,7 @@ rail-extract/target/release/rail-extract cut sf-bay-area china de fr ch it paris
 #   rules in config/<slug>.json: ten regions including all of China in 2.4 s (4.8 GB peak)
 #   writes ../data/<slug>/{features.geojsonl, relations.jsonl, stop_positions.jsonl, qa.json, airports.geojsonl,
 #                          features.typed.geojsonl, lines.json, classify_report.json}
-#   rail type rules: rail-extract/src/classify.rs (ported from classify.py 2026-10-12, same output byte for byte)
+#   rail type rules: rail-extract/src/classify/ (ported from classify.py 2026-10-12, same output byte for byte)
 rail-extract/target/release/rail-extract build sf-bay-area china de fr ch it
 #   per region, in parallel: station model (stations, complexes, size tiers), stations under construction, tile input and side files
 #   into ../app/public/data; then the Rust MLT tile writer (tilewriter/) for each region in turn -> <slug>.pmtiles (it holds a whole region in memory); skipped for the pilot sources when the pilot join runs (the app reads only pilot.pmtiles)

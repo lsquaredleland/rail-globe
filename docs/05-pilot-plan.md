@@ -35,7 +35,7 @@ The China high-speed vs intercity rule is decided (see `00-overview.md`). Phase 
 
 ## Automatic data check (Claude runs this, unasked)
 
-After any change that can alter the data (a new region, a rule in `classify.rs` or `stations/`, a config, a rebuild of tiles or side files), Claude runs a checker before reporting the work as done, and reports what failed. It does not wait to be asked, and a region is not "done" until it passes.
+After any change that can alter the data (a new region, a rule in `classify/` or `stations/`, a config, a rebuild of tiles or side files), Claude runs a checker before reporting the work as done, and reports what failed. It does not wait to be asked, and a region is not "done" until it passes.
 
 What the checker covers, per region touched:
 

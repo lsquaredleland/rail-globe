@@ -1,6 +1,6 @@
 # Config layering and exemptions
 
-Added 2026-10-15. Per-region rules live in `pipeline/config/<slug>.json`. This page says how config files build on each other (`extends`) and how a region records a justified exception to the generic rules (`exemptions`). Code: `pipeline/rail-extract/src/config.rs` (layers), `classify.rs` (exemptions).
+Added 2026-10-15. Per-region rules live in `pipeline/config/<slug>.json`. This page says how config files build on each other (`extends`) and how a region records a justified exception to the generic rules (`exemptions`). Code: `pipeline/rail-extract/src/config.rs` (layers), `classify/` (exemptions).
 
 ## Layers
 
@@ -43,28 +43,28 @@ Top-level keys a region config may use (after merging; a `+key` counts as `key`)
 | Key | Type | Read by | Example |
 | --- | --- | --- | --- |
 | `_comment` | string | nothing (notes for people) | `"All of Mexico ..."` |
-| `china` | bool | `classify.rs` (250 km/h high-speed floor), `tiles/` (China-only styling) | `true` |
-| `exemptions` | list of objects | `classify.rs` (see Exemptions below) | `[{"id": "tren-maya-one-class", ...}]` |
-| `high_speed_min_kmh` | number | `stats.rs` writes it to `stats.json` as `hs_min_kmh`; default 200 | `200` |
-| `high_speed_networks_re` | list of regex | `classify.rs`: route network or name makes the route High-speed | `["^TGV", "^Eurostar"]` |
-| `high_speed_track_overrides` | list of match rules | `classify.rs`: promote tracks to High-speed (match rules as in `type_overrides`, without `type`) | `[{"osm_id": "way/123"}]` |
+| `china` | bool | `classify/` (China name rules, intercity tier, C-train numbers), `tiles/` (12306 logo fallback); not the threshold | `true` |
+| `exemptions` | list of objects | `classify/` (see Exemptions below) | `[{"id": "tren-maya-one-class", ...}]` |
+| `high_speed_min_kmh` | number | `classify/` high-speed floor (track typing) and `stats.rs` (`hs_min_kmh` in `stats.json`); default 200, 250 in `_china.json` | `200` |
+| `high_speed_networks_re` | list of regex | `classify/`: route network or name makes the route High-speed | `["^TGV", "^Eurostar"]` |
+| `high_speed_track_overrides` | list of match rules | `classify/`: promote tracks to High-speed (match rules as in `type_overrides`, without `type`) | `[{"osm_id": "way/123"}]` |
 | `main_station_re` | regex | `stations/`, `construction.rs`: names that are always major stations | `"^北京(东\|西\|南\|北)?站?$"` |
 | `main_terminals` | list of names | `stations/`: terminals that count as major | `["Gare de Bercy"]` |
-| `passenger_needs_evidence` | `true`, `"routes"` or `"stations"` | `classify.rs` (docs/15) | `"routes"` |
-| `passenger_operator_re` | list of regex | `classify.rs`: operators that count as passenger evidence | `["(?i)Amtrak\|Metra"]` |
-| `passenger_stations_file` | file name | `classify.rs`: text file beside the config, one passenger station name per line; with it the list decides what is a passenger station | `"cn-passenger-stations.txt"` |
-| `proposed_region` | file name | `classify.rs`: outline in `pipeline/regions` inside which proposed track is kept | `"cn/hk.json"` |
+| `passenger_needs_evidence` | `true`, `"routes"` or `"stations"` | `classify/` (docs/15) | `"routes"` |
+| `passenger_operator_re` | list of regex | `classify/`: operators that count as passenger evidence | `["(?i)Amtrak\|Metra"]` |
+| `passenger_stations_file` | file name | `classify/`: text file beside the config, one passenger station name per line; with it the list decides what is a passenger station | `"cn-passenger-stations.txt"` |
+| `proposed_region` | file name | `classify/`: outline in `pipeline/regions` inside which proposed track is kept | `"cn/hk.json"` |
 | `stat_areas` | list of `{slug, name, local}` | `stats.rs`: extra areas for the region card (each needs an outline) | `[{"slug": "guangzhou", "name": "Guangzhou"}]` |
 | `stat_auto` | object (`country`, `levels`, `min_metro`, `exclude`) | `stats.rs`, `site.rs` (fills `country`): areas picked from `data/regions/index.json` | `{"country": "CN", "levels": ["4", "5"]}` |
 | `stat_local` | string | `stats.rs`, `site.rs`: region name in its own language | `"中国"` |
 | `stat_name` | string | `stats.rs`, `site.rs`: region name | `"China"` |
-| `track_type_overrides` | list of match rules + `type` | `classify.rs`: retype track | `[{"match": {"name_re": "^朔黄线$"}, "type": "freight"}]` |
-| `type_overrides` | list of match rules + `type` | `classify.rs`: retype route lines | `[{"match": {"name_re": "市域铁路"}, "type": "regional"}]` |
-| `unrouted_main_type` | type name | `classify.rs`: type of main track on no route, default `intercity` | `"regional"` |
+| `track_type_overrides` | list of match rules + `type` | `classify/`: retype track | `[{"match": {"name_re": "^朔黄线$"}, "type": "freight"}]` |
+| `type_overrides` | list of match rules + `type` | `classify/`: retype route lines | `[{"match": {"name_re": "市域铁路"}, "type": "regional"}]` |
+| `unrouted_main_type` | type name | `classify/`: type of main track on no route, default `intercity` | `"regional"` |
 
 ### China configs
 
-`_china.json` holds the China rules (`china`, 市域铁路 as Regional, 旅游|观光 as Other, the passenger-station list). It does not extend `_default` (that would add `stat_auto` to the pilots). `cn.json` (world build) extends it and adds the long `main_station_re`, the freight `track_type_overrides`, `proposed_region` and the statistics keys; `china.json` (the pilot on the hand-made outline) is just `"extends": "cn"`, so the two cannot drift apart again. `chengdu`, `greater-bay-area` and `cn-beijing` extend `_china` and keep only their own `stat_name`, `main_station_re` and (Greater Bay Area) `proposed_region`.
+`_china.json` holds the China rules (`china`, `high_speed_min_kmh` 250, 市域铁路 as Regional, 旅游|观光 as Other, the passenger-station list). It does not extend `_default` (that would add `stat_auto` to the pilots). `cn.json` (world build) extends it and adds the long `main_station_re`, the freight `track_type_overrides`, `proposed_region` and the statistics keys; `china.json` (the pilot on the hand-made outline) is just `"extends": "cn"`, so the two cannot drift apart again. `chengdu`, `greater-bay-area` and `cn-beijing` extend `_china` and keep only their own `stat_name`, `main_station_re` and (Greater Bay Area) `proposed_region`.
 
 ## Exemptions
 
