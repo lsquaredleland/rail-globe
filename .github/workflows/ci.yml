@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pipeline/rail-extract
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: pipeline/rail-extract
+      # .cargo/config.toml builds with target-cpu=native: fine here, the runner builds and runs on the same machine
+      - run: cargo test --release
+      - run: cargo clippy --release --all-targets -- -D warnings
+      - run: cargo fmt --check
+
+  app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm test
+      # VITE_DATA_BASE is left unset: the app falls back to its local data path. The Vercel build runs scripts/check-deploy.mjs separately.
+      - run: npm run build
+
+  data-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # the exemption list checks need no data; the answer-list checks (pipeline/check.py without --exemptions) do
+      - run: python3 pipeline/check.py --exemptions
