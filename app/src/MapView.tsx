@@ -3,7 +3,7 @@ import * as maplibregl from 'maplibre-gl'   // MapLibre 6 is ESM-only: no defaul
 import type { GeoJSONSource, Map as MLMap, MapGeoJSONFeature } from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { addAirportIcon, addBadgeImages, addPlaceLabels, placesGeoJSON, addOutline, setOutline, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayers, prefetchHighlights, setFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
+import { addAirportIcon, addBadgeImages, addPlaceLabels, placesGeoJSON, addOutline, setOutline, addRailSource, applyState, areaLayers, baseStyle, highlightLine, hitLayers, prefetchHighlights, refreshStationFocus, setFocus, setStationFocus, stationLayers, strandLayer, yardHitLayer, type MapState } from './mapStyle'
 import { loadParts, regionOf, warmParts, TILES } from './regions'
 import { DATA_BASE } from './config'
 
@@ -33,6 +33,7 @@ interface Props {
    *  render in between. null when hovering must not highlight (a line is selected, touch screens). */
   hoverHighlight: ((hit: Hit | null) => { slug: string; line: number | null; name: string | null } | null) | null
   focusSlug: string | null   // a line or railway is selected (clicked): the region whose lines stay, all others fade
+  focusStations: string[] | null   // the stations of the focused lines: every other station fades (null: none)
   selectedStation: [number, number] | null
   outline: GeoJSON.Geometry | null   // the area in view, outlined faintly (null: switch off)
   touch: boolean
@@ -157,6 +158,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       applyState(map, p.current.state)
       highlightLine(map, p.current.highlightSlug, p.current.selectedLine, p.current.selectedTrackName)
       setFocus(map, p.current.focusSlug)
+      setStationFocus(map, p.current.focusStations)
       updateSelection(map, p.current.selectedStation)
       setOutline(map, p.current.outline)
     })
@@ -223,6 +225,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
     // when the map settles in a view it has not prefetched yet (also the first one), load the highlight data of the lines on screen
     let prefetched = ''
     map.on('idle', () => {
+      if (loaded.current) refreshStationFocus(map)
       const c = map.getCenter()
       const key = `${c.lng.toFixed(3)}/${c.lat.toFixed(3)}/${map.getZoom().toFixed(2)}`
       if (!loaded.current || key === prefetched) return
@@ -247,6 +250,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) applyState(m, props.state) }, [props.state])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) highlightLine(m, props.highlightSlug, props.selectedLine, props.selectedTrackName) }, [props.highlightSlug, Array.isArray(props.selectedLine) ? props.selectedLine.join(',') : props.selectedLine, props.selectedTrackName])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) setFocus(m, props.focusSlug) }, [props.focusSlug])
+  useEffect(() => { const m = mapRef.current; if (m && loaded.current) setStationFocus(m, props.focusStations) }, [props.focusStations])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) updateSelection(m, props.selectedStation) }, [props.selectedStation])
   useEffect(() => { const m = mapRef.current; if (m && loaded.current) setOutline(m, props.outline) }, [props.outline])
   useEffect(() => {

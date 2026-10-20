@@ -5,7 +5,7 @@ import type { Theme } from './palette'
 import { regionBySlug, registerSearch, isChina, hsMinKmh, isKnownRegion, partAt, onPartsChange, DEFAULT_REGION } from './regions'
 import { featured, itemInView, useSearch, type SearchItem } from './search'
 import { TYPE_ORDER } from './palette'
-import { loadBoundary, loadLineIndex, loadNamedLines, loadRailways, loadStation, railwayOf, type LineIndex, type NamedLine, type Railways } from './data'
+import { loadBoundary, loadLine, loadLineIndex, loadNamedLines, loadRailways, loadStation, railwayOf, type LineIndex, type NamedLine, type Railways } from './data'
 import { readHash, writeHash } from './urlState'
 import { Toolbar, RegionPicker, type Controls } from './components/Toolbar'
 import { Legend } from './components/Legend'
@@ -300,6 +300,22 @@ export default function App() {
     const name = railwayOf(railwaysRef.current[hit.slug], hit.props)?.[0] ?? (hit.props.n ? String(hit.props.n) : null)
     return name ? { slug: hit.slug, line: null, name } : null
   }, [])
+  // stations: only those on the focused lines (the selected line, the services on a clicked track, a station's lines, or the row hovered in a panel) stay at full strength
+  const focusLines = selectedLine ?? listHoverLine ?? groupLines
+  const focusKey = focusLines == null || hlSlug == null ? '' : `${hlSlug}|${Array.isArray(focusLines) ? focusLines.join(',') : focusLines}|${selected?.kind === 'station' ? selected.id : ''}`
+  const [focusStations, setFocusStations] = useState<string[] | null>(null)
+  useEffect(() => {
+    if (!focusKey) { setFocusStations(null); return }
+    const [slug, ids, own] = focusKey.split('|')
+    let live = true
+    Promise.all(ids.split(',').map((id) => loadLine(slug, Number(id)).catch(() => null))).then((ls) => {
+      if (!live) return
+      const set = new Set<string>(own ? [own] : [])
+      for (const l of ls) for (const r of l?.routes ?? []) for (const s of r.stations) set.add(s)
+      setFocusStations(set.size ? [...set] : null)
+    })
+    return () => { live = false }   // the previous set stays on the map until the new one is in: no flash between rows
+  }, [focusKey])
   const tip = !touch && hover && !selected ? hover : null
   const W = wrap.current?.clientWidth ?? 1200
   const tipLeft = tip ? (tip.x + 330 > W ? tip.x - 322 : tip.x + 16) : 0
@@ -308,7 +324,7 @@ export default function App() {
     <LangContext.Provider value={lang}>
     <div className={`app${compact ? ' compact' : ''}`} ref={wrap}>
       <MapView ref={map} state={mapState} units={units} initial={init.view ?? { center: region.center, zoom: compact ? region.zoomPhone : region.zoom }}
-        highlightSlug={hlLine != null || hlName != null ? hlSlug : null} selectedLine={hlLine} selectedTrackName={hlName} hoverHighlight={touch || selected || listHoverLine != null || listHoverName != null ? null : hoverHighlight} focusSlug={selected?.kind === 'line' || (groupLines && selected?.kind === 'station') || selected?.kind === 'services' ? selected.slug : selTrackName != null ? (selTrackSlug ?? region.slug) : null} selectedStation={selPt} outline={outlineGeo} touch={touch}
+        highlightSlug={hlLine != null || hlName != null ? hlSlug : null} selectedLine={hlLine} selectedTrackName={hlName} hoverHighlight={touch || selected || listHoverLine != null || listHoverName != null ? null : hoverHighlight} focusSlug={selected?.kind === 'line' || (groupLines && selected?.kind === 'station') || selected?.kind === 'services' ? selected.slug : selTrackName != null ? (selTrackSlug ?? region.slug) : null} focusStations={focusStations} selectedStation={selPt} outline={outlineGeo} touch={touch}
         onHover={onHover} onClick={onClick} onMoveEnd={(v) => { view.current = v; setViewNow(v); sync() }} />
 
       {compact && (

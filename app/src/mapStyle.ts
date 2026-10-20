@@ -485,6 +485,44 @@ export function applyState(map: MLMap, s: MapState) {
 
 /** Fade every line but the highlighted one (a line or railway is selected); null: no focus. One source, so the veil covers
  *  all regions on screen (it used to cover only the selected region's source and those below it). */
+/** While lines are focused (a line, the services on a track, a station's lines), fade every station that is not on them. `ids` are station ids
+ *  (the `id` property of the station tiles); labels carry the complex's id, which differs for a multi-station complex (Zürich HB), so the
+ *  `cx` of the station dots that are on screen and listed is added to the set (refreshStationFocus, on every idle). null: no focus. */
+const STATION_FADE = 0.22
+let stationFocus: Set<string> | null = null
+let stationFocusKey = ''
+const FOCUS_DOT_LAYERS = ['st1', 'st2', 'st3', 'stcon1', 'stcon2', 'stcon3']
+const FOCUS_LABEL_LAYERS = ['lbl1', 'lbl2', 'lbl1t', 'lbl2t', 'lbl3', 'lblcon1', 'lblcon2', 'lblcon3']
+function paintStationFocus(map: MLMap, ids: Set<string> | null) {
+  const on = (key: string): Expr => ['in', ['get', key], ['literal', [...ids!].sort()]] as Expr
+  const fade = (key: string, ...vals: [number, number]): Expr => ['case', on(key), vals[0], vals[1]] as Expr
+  const put = (id: string, prop: string, v: unknown) => map.getLayer(L(TILES, id)) && map.setPaintProperty(L(TILES, id), prop as never, v as never)
+  for (const n of FOCUS_DOT_LAYERS) {
+    const con = n.startsWith('stcon')
+    put(n, 'circle-opacity', ids ? fade('id', 1, STATION_FADE) : 1)
+    put(n, 'circle-stroke-opacity', ids ? fade('id', con ? 0.95 : 1, STATION_FADE) : con ? 0.95 : 1)
+  }
+  for (const n of FOCUS_LABEL_LAYERS) {
+    put(n, 'text-opacity', ids ? fade('id', 1, STATION_FADE) : 1)
+  }
+  put('logo', 'icon-opacity', ids ? fade('id', 1, STATION_FADE) : 1)
+}
+export function setStationFocus(map: MLMap, ids: string[] | null) {
+  stationFocus = ids ? new Set(ids) : null
+  stationFocusKey = ''
+  refreshStationFocus(map)
+}
+export function refreshStationFocus(map: MLMap) {
+  if (!stationFocus) { if (stationFocusKey !== 'off') { paintStationFocus(map, null); stationFocusKey = 'off' } return }
+  const layers = [...FOCUS_DOT_LAYERS, 'logo'].map((n) => L(TILES, n)).filter((l) => map.getLayer(l))
+  const set = new Set(stationFocus)
+  for (const f of map.queryRenderedFeatures({ layers })) if (stationFocus.has(String(f.properties.id)) && f.properties.cx) set.add(String(f.properties.cx))
+  const key = `${stationFocus.size}|${set.size}`
+  if (key === stationFocusKey) return
+  stationFocusKey = key
+  paintStationFocus(map, set)
+}
+
 export function setFocus(map: MLMap, slug: string | null) {
   if (map.getLayer(L(TILES, 'veil'))) map.setPaintProperty(L(TILES, 'veil'), 'background-opacity', slug ? FOCUS_VEIL : 0)
 }
