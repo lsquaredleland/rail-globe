@@ -1,4 +1,4 @@
-//! Tests of exemptions (config `exemptions`, docs/12-config-and-exemptions.md); a child module of classify.rs.
+//! Tests of exemptions (config `exemptions`, docs/12-config-and-exemptions.md); a child module of classify/.
 
 use super::*;
 use serde_json::json;
@@ -497,4 +497,20 @@ fn construction_tag_on_an_open_railway_is_construction() {
     // the mode may sit under proposed=* on a railway=construction way
     let p = FeatProps { tags: List(vec![(b"railway", b"construction"), (b"proposed", b"monorail")]), osm_id: "way/1".into() };
     assert_eq!(own_tag_type(&p, &cfg_json(json!({}))).0, "monorail");
+}
+
+/// the own-tag type of a main-line track with this maxspeed under a config
+fn type_at(cfg: Value, maxspeed: &str) -> String {
+    let tags: Vec<(&[u8], &[u8])> = vec![(b"railway", b"rail"), (b"usage", b"main"), (b"maxspeed", maxspeed.as_bytes())];
+    own_tag_type(&FeatProps { tags: List(tags), osm_id: "way/1".into() }, &cfg_json(cfg)).0
+}
+
+/// `high_speed_min_kmh` is the one high-speed floor: China at 250 keeps 200 to 249 km/h Intercity, other regions use 200
+#[test]
+fn high_speed_floor_from_config() {
+    let china = json!({"china": true, "high_speed_min_kmh": 250});
+    assert_eq!(type_at(china.clone(), "220"), "intercity");
+    assert_eq!(type_at(china, "250"), "high_speed");
+    assert_eq!(type_at(json!({"high_speed_min_kmh": 200}), "200"), "high_speed");
+    assert_eq!(type_at(json!({}), "200"), "high_speed");
 }

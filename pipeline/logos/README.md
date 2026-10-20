@@ -20,7 +20,7 @@ Then `node pipeline/logos/squarer.mjs` (2 min): for the 381 logos wider than 2:1
 
 ## Where the logos are used
 
-- Station model (`stations.rs`) keeps `operator_wd`, the station's own `operator:wikidata` (else `brand:wikidata`); lines.json (`classify.rs`) keeps the same per line. Both tags are in the cache (`rules.rs`), so the cache was rebuilt once.
+- Station model (`stations.rs`) keeps `operator_wd`, the station's own `operator:wikidata` (else `brand:wikidata`); lines.json (`classify/`) keeps the same per line. Both tags are in the cache (`rules.rs`), so the cache was rebuilt once.
 - `tiles.rs` picks a logo per station, only from operators that have a file in `app/static/logos/logos.json`: the station's own operator, else the commonest operator of the lines serving it, else China Railway (Q1073489) for a train station in a region whose config has `"china": true`. It writes `lg` on the station tiles and `logo` in the station side file.
 - App: the station card shows the logo before the name; a `logo` layer draws it above tier 1 and 2 stations from z9 (image fetched on first use, `addBadgeImages` in `mapStyle.ts`).
 - Pilot result: 10,822 of 18,899 China stations, 359 of 876 Paris, 84 of 274 SF Bay Area, 3,386 of 8,911 Germany have a logo.

@@ -172,7 +172,7 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
     let plan = plan_passes(&ents, deep);
     eprintln!("[{:6.2}s] {} passes planned", t0.elapsed().as_secs_f64(), plan.len());
     let spool = run_passes(&files, &ents, &layer_names, &acc.kinds, &plan, &spool_path, t0);
-    write_world_pmtiles(out, name, &layer_names, &acc, &spool, &spool_path, t0);
+    write_world_pmtiles(out, name, &layer_names, &acc, spool, &spool_path, t0);
 }
 
 /// Open and map every tile input file of every slug (missing or empty files are skipped).
@@ -362,9 +362,10 @@ fn run_passes(
 }
 
 /// The spooled tiles in tile-id order -> <out>/<name>.pmtiles; removes the spool file.
-fn write_world_pmtiles(out: &Path, name: &str, layer_names: &[&str], acc: &Acc, spool: &Spool, spool_path: &Path, t0: Instant) {
+fn write_world_pmtiles(out: &Path, name: &str, layer_names: &[&str], acc: &Acc, spool: Spool, spool_path: &Path, t0: Instant) {
     use std::os::unix::fs::FileExt;
-    let mut index = spool.index.clone();
+    let Spool { w, mut index, .. } = spool;
+    drop(w); // closes the spool file before it is reopened for reading
     index.sort_unstable();
     assert!(index.windows(2).all(|w| w[0].0 != w[1].0), "a tile came out of two passes");
     let meta = tile_metadata(name, layer_names, &acc.kinds, &acc.count, &acc.zooms);

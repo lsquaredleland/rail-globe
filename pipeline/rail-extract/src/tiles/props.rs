@@ -33,6 +33,7 @@ fn as_int<S: Serializer>(b: &bool, s: S) -> Result<S::Ok, S::Error> {
 }
 
 /// Layer `track` (one feature per OSM way at track_minzoom and deeper).
+/// `n` and `n_rwy` both serialise as `n`: only `to_map()` (the later one wins) may serialise a `TrackProps`, never `serde_json::to_string`.
 #[derive(Serialize)]
 pub(super) struct TrackProps {
     /// `id`: OSM id (`way/123`). The key of feature state (hover, selection), of the Inspect lookup and of the line highlights.

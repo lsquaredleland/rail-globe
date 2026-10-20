@@ -5,7 +5,7 @@
 //!   cache      read the planet once (about a minute) -> data/cache/<planet>.railcache: every rail candidate of the world with its coordinates
 //!   outlines   country (`--level 2`), province / state (`--level 4`, 5) or city (`--cities WANTED.json`) outlines from the cache -> data/regions
 //!   cut        per region outline (pipeline/regions/<slug>.geojson, else data/regions/<slug>.geojson): data/<slug>/{features.geojsonl,
-//!              features.typed.geojsonl (rail types, classify.rs), relations.jsonl, stop_positions.jsonl, qa.json, airports.geojsonl, ...}, in about a second
+//!              features.typed.geojsonl (rail types, classify/), relations.jsonl, stop_positions.jsonl, qa.json, airports.geojsonl, ...}, in about a second
 //!   build      from a cut: station model, stations under construction, tile input, region statistics and side files, then
 //!              `<out>/<slug>.pmtiles` through the Rust MLT writer (tilewriter.rs) unless `--no-tiles`; `cut ... --build` builds straight after the cut
 //!   world      one PMTiles file (`world.pmtiles`) and `world.parts.json` over the tile input of many slugs, in memory-bounded passes, then `places`

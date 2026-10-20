@@ -234,8 +234,9 @@ impl<'a> Side<'a> {
                 });
             }
             let n_stations = |r: &RouteRecord| r.stations.as_array().map_or(0, |v| v.len());
-            routes.sort_by(|a, b| n_stations(b).cmp(&n_stations(a)).then(b.km.partial_cmp(&a.km).unwrap_or(std::cmp::Ordering::Equal)));
-            let km = routes.iter().map(|r| r.km).fold(None, |a: Option<f64>, x| Some(a.map_or(x, |a| a.max(x))));
+            let key = |r: &RouteRecord| if r.km.is_nan() { 0.0 } else { r.km }; // NaN counts as 0 so the order is total
+            routes.sort_by(|a, b| n_stations(b).cmp(&n_stations(a)).then(key(b).total_cmp(&key(a))));
+            let km = routes.iter().map(|r| r.km).filter(|k| k.is_finite()).fold(None, |a: Option<f64>, x| Some(a.map_or(x, |a| a.max(x))));
             let routes = &routes[..routes.len().min(8)];
             let used: BTreeSet<&str> = routes.iter().flat_map(|r| r.stations.as_array().into_iter().flatten().filter_map(Value::as_str)).collect();
             let names: BTreeMap<&str, StationName> =

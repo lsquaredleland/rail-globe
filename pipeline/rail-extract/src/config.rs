@@ -14,33 +14,37 @@ use std::path::Path;
 
 /// Every top-level key a region config may use, with what reads it (details: docs/12-config-and-exemptions.md, "Config keys"). A key
 /// nothing reads must not be added here; remove it from the config instead. `extends` is consumed by `resolve_text`, never merged.
+#[rustfmt::skip]
 const KNOWN_KEYS: &[&str] = &[
     "_comment",                   // free text, read by nobody
-    "china", // classify.rs, tiles.rs: China rules (train-number and 高速线/客专 name rules, intercity tier at 200 km/h) and the China-only app styling
-    "exemptions", // classify.rs: named, justified exceptions to the generic rules
-    "high_speed_min_kmh", // classify.rs, stats.rs: the region's one high-speed floor in km/h (default 200; China 250): classify types maxspeed at or above it High-speed, stats.json carries it as hs_min_kmh
-    "high_speed_networks_re", // classify.rs: route network/name patterns that make a route High-speed
-    "high_speed_track_overrides", // classify.rs: tracks promoted to High-speed by match rule (name_re, osm_id)
+    "china", // classify/, tiles.rs: China rules (train-number and 高速线/客专 name rules, intercity tier at 200 km/h) and the China-only app styling
+    "exemptions", // classify/: named, justified exceptions to the generic rules
+    "high_speed_min_kmh", // classify/, stats.rs: the region's one high-speed floor in km/h (default 200; China 250): classify types maxspeed at or above it High-speed, stats.json carries it as hs_min_kmh
+    "high_speed_networks_re", // classify/: route network/name patterns that make a route High-speed
+    "high_speed_track_overrides", // classify/: tracks promoted to High-speed by match rule (name_re, osm_id)
     "main_station_re",    // stations.rs, construction.rs: station names that are always major stations
     "main_terminals",     // stations.rs: terminal station names that count as major
-    "passenger_needs_evidence", // classify.rs: true / "routes" / "stations": passenger rail needs evidence (docs/15)
-    "passenger_operator_re", // classify.rs: operator patterns that count as passenger evidence
-    "passenger_stations_file", // classify.rs: a text file (beside the config) of passenger station names, one per line
-    "proposed_region",    // classify.rs: outline file in pipeline/regions inside which proposed track is kept
+    "passenger_needs_evidence", // classify/: true / "routes" / "stations": passenger rail needs evidence (docs/15)
+    "passenger_operator_re", // classify/: operator patterns that count as passenger evidence
+    "passenger_stations_file", // classify/: a text file (beside the config) of passenger station names, one per line
+    "proposed_region",    // classify/: outline file in pipeline/regions inside which proposed track is kept
     "stat_areas",         // stats.rs: extra areas (slug, name, local) for the region card
     "stat_auto",          // stats.rs, site.rs: areas picked automatically from data/regions/index.json
     "stat_local",         // stats.rs, site.rs: the region's name in its own language
     "stat_name",          // stats.rs, site.rs: the region's English name
-    "track_type_overrides", // classify.rs: retype track (not routes) by match rule
-    "type_overrides",     // classify.rs: retype route lines by match rule
-    "unrouted_main_type", // classify.rs: type of main track on no route (default intercity)
+    "track_type_overrides", // classify/: retype track (not routes) by match rule
+    "type_overrides",     // classify/: retype route lines by match rule
+    "unrouted_main_type", // classify/: type of main track on no route (default intercity)
 ];
 
 /// The first key of `own` (one config file, before merging) that is not in KNOWN_KEYS, as an error message.
 fn check_keys(name: &str, own: &Map<String, Value>) -> Result<(), String> {
     match own.keys().find(|k| !KNOWN_KEYS.contains(&k.strip_prefix('+').unwrap_or(k))) {
         Some(k) => Err(format!("{name}.json: unknown key \"{k}\" (a typo, or a key nothing reads any more; the known keys are in config.rs KNOWN_KEYS)")),
-        None => Ok(()),
+        None => match own.get("high_speed_min_kmh") {
+            Some(v) if !v.is_number() => Err(format!("{name}.json: \"high_speed_min_kmh\" must be a number (km/h), not {v}")),
+            _ => Ok(()),
+        },
     }
 }
 
@@ -217,6 +221,31 @@ mod tests {
             }
         }
         assert!(n > 50, "{n}");
+    }
+
+    #[test]
+    fn china_configs_use_the_250_high_speed_floor() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../config");
+        let mut n = 0;
+        for e in std::fs::read_dir(&dir).unwrap() {
+            let p = e.unwrap().path();
+            let f = p.file_name().unwrap().to_string_lossy().into_owned();
+            if f.ends_with(".json") && f != "_groups.json" && f != "_station-names.json" {
+                let c = load_file(&p);
+                if c.get("china").is_some_and(truthy) {
+                    assert_eq!(c["high_speed_min_kmh"], 250, "{f}");
+                    n += 1;
+                }
+            }
+        }
+        assert!(n > 0, "no China config found");
+    }
+
+    #[test]
+    fn non_numeric_high_speed_floor_is_an_error() {
+        let d = tmp(&[("a", r#"{"high_speed_min_kmh": "250"}"#)]);
+        let e = resolve(&d, "a", true, &mut Vec::new()).unwrap_err();
+        assert!(e.contains("a.json") && e.contains("high_speed_min_kmh") && e.contains("number"), "{e}");
     }
 
     #[test]

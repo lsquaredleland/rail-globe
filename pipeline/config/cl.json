@@ -1,6 +1,6 @@
 {
   "extends": "_evidence-routes",
-  "_comment": "Chile: the routes-mode evidence template (docs/15-argentina-africa-freight.md, applied 2026-10-17 on the user's decision). No exemptions: the Alameda-Melipilla branch is handled by the generic construction-route rule (classify.rs), see docs/qa/americas-africa-asia.md.",
+  "_comment": "Chile: the routes-mode evidence template (docs/15-argentina-africa-freight.md, applied 2026-10-17 on the user's decision). No exemptions: the Alameda-Melipilla branch is handled by the generic construction-route rule (classify/), see docs/qa/americas-africa-asia.md.",
   "stat_name": "Chile",
   "stat_local": "Chile",
   "stat_auto": {
