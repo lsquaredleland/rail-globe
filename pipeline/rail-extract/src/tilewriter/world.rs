@@ -150,18 +150,35 @@ fn world_pass(
     (cand.len(), encoded.iter().filter(|b| !b.is_empty()).count())
 }
 
+/// A mapped tile input file: its slug, file name and layer index.
+type FileInfo = (String, &'static str, usize);
+
 /// The tile input of every slug -> <out>/<name>.pmtiles in memory-bounded passes (see above). `deep` is the zoom whose tiles are the
 /// partition of pass C (4..=14; the default 6 is a tile of about 5.6 x 5 degrees at the equator).
 pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8) {
-    use memmap2::Mmap;
-    use std::io::Write;
-    use std::os::unix::fs::FileExt;
     assert!((4..=MAX_ZOOM).contains(&deep), "--deep-zoom must be 4..={MAX_ZOOM}");
     let t0 = Instant::now();
     let layer_names = layer_names();
-    // ---- index: map every tile input file, find its lines
-    let mut files: Vec<Mmap> = Vec::new();
-    let mut file_info: Vec<(String, &str, usize)> = Vec::new(); // slug, file name, layer index
+    let (files, file_info) = map_inputs(data, slugs, &layer_names);
+    let all = line_offsets(&files);
+    check_not_stale(&files, &file_info, &all);
+    eprintln!("[{:6.2}s] {} files, {} features indexed by line; parsing for the index", t0.elapsed().as_secs_f64(), files.len(), all.len());
+    let (ents, acc) = index_features(&files, &file_info, all, layer_names.len());
+    assert!(!ents.is_empty(), "world tile writer {name}: no features read for {} slugs under {}/<slug>/tiles_tmp", slugs.len(), data.display());
+    eprintln!("[{:6.2}s] indexed {} features; rss {} MB", t0.elapsed().as_secs_f64(), ents.len(), rss_mb());
+
+    std::fs::create_dir_all(out).expect("create out dir");
+    let spool_path = data.join(format!("{name}.spool"));
+    let plan = plan_passes(&ents, deep);
+    eprintln!("[{:6.2}s] {} passes planned", t0.elapsed().as_secs_f64(), plan.len());
+    let spool = run_passes(&files, &ents, &layer_names, &acc.kinds, &plan, &spool_path, t0);
+    write_world_pmtiles(out, name, &layer_names, &acc, &spool, &spool_path, t0);
+}
+
+/// Open and map every tile input file of every slug (missing or empty files are skipped).
+fn map_inputs(data: &Path, slugs: &[String], layer_names: &[&str]) -> (Vec<memmap2::Mmap>, Vec<FileInfo>) {
+    let mut files: Vec<memmap2::Mmap> = Vec::new();
+    let mut file_info: Vec<FileInfo> = Vec::new();
     for slug in slugs {
         for (layer, file) in TILE_LAYERS {
             let path = data.join(slug).join("tiles_tmp").join(file);
@@ -174,10 +191,15 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
                 continue;
             }
             assert!(f.metadata().unwrap().len() < u64::from(u32::MAX), "{} is over 4 GB", path.display());
-            files.push(unsafe { Mmap::map(&f) }.unwrap_or_else(|e| panic!("map {}: {e}", path.display())));
+            files.push(unsafe { memmap2::Mmap::map(&f) }.unwrap_or_else(|e| panic!("map {}: {e}", path.display())));
             file_info.push((slug.clone(), file, layer_names.iter().position(|l| *l == layer).unwrap()));
         }
     }
+    (files, file_info)
+}
+
+/// (file index, offset, length) of every non-empty line of every mapped file.
+fn line_offsets(files: &[memmap2::Mmap]) -> Vec<(u32, u32, u32)> {
     let lines: Vec<Vec<(u32, u32)>> = files
         .par_iter()
         .map(|m| {
@@ -197,10 +219,12 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
             v
         })
         .collect();
-    let all: Vec<(u32, u32, u32)> = lines.iter().enumerate().flat_map(|(fi, v)| v.iter().map(move |&(o, l)| (fi as u32, o, l))).collect();
-    drop(lines);
+    lines.iter().enumerate().flat_map(|(fi, v)| v.iter().map(move |&(o, l)| (fi as u32, o, l))).collect()
+}
+
+/// Panic on a tile input written before the zoom-range rename (the overview always carries a zoom range).
+fn check_not_stale(files: &[memmap2::Mmap], file_info: &[FileInfo], all: &[(u32, u32, u32)]) {
     for (fi, (slug, file, _)) in file_info.iter().enumerate() {
-        // the overview always carries a zoom range: without one the file is from before the rename
         if *file == "track_overview.geojsonl" {
             let first = all.iter().find(|a| a.0 as usize == fi).map(|a| &files[fi][a.1 as usize..(a.1 + a.2) as usize]);
             assert!(
@@ -209,12 +233,19 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
             );
         }
     }
-    eprintln!("[{:6.2}s] {} files, {} features indexed by line; parsing for the index", t0.elapsed().as_secs_f64(), files.len(), all.len());
-    let nl = layer_names.len();
+}
+
+fn empty_acc(nl: usize) -> Acc {
+    Acc { kinds: vec![BTreeMap::new(); nl], bounds: [180.0, 90.0, -180.0, -90.0], zooms: vec![(u8::MAX, 0); nl], count: vec![0; nl] }
+}
+
+/// Parse every feature once for the index: its byte range, zoom range and bounding box, plus the column types, layer zoom ranges,
+/// feature counts and bounds of the whole input (`Acc::count` is the number of features per layer).
+fn index_features(files: &[memmap2::Mmap], file_info: &[FileInfo], all: Vec<(u32, u32, u32)>, nl: usize) -> (Vec<Ent>, Acc) {
     let chunks: Vec<(Vec<Ent>, Acc)> = all
         .par_chunks(4096)
         .map(|ch| {
-            let mut acc = Acc { kinds: vec![BTreeMap::new(); nl], bounds: [180.0, 90.0, -180.0, -90.0], zooms: vec![(u8::MAX, 0); nl], count: vec![0; nl] };
+            let mut acc = empty_acc(nl);
             let mut ents = Vec::with_capacity(ch.len());
             for &(fi, off, len) in ch {
                 let li = file_info[fi as usize].2;
@@ -254,30 +285,25 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
         .collect();
     drop(all);
     let mut ents: Vec<Ent> = Vec::new();
-    let mut kinds: Vec<BTreeMap<String, Kind>> = vec![BTreeMap::new(); nl];
-    let mut bounds = [180.0f64, 90.0, -180.0, -90.0];
-    let mut zooms: Vec<(u8, u8)> = vec![(u8::MAX, 0); nl];
-    let mut seq = vec![0u64; nl];
+    let mut total = empty_acc(nl);
     for (e, a) in chunks {
         ents.extend(e);
         for li in 0..nl {
             for (k, v) in a.kinds[li].iter() {
-                kinds[li].entry(k.clone()).and_modify(|x| *x = x.merge(*v)).or_insert(*v);
+                total.kinds[li].entry(k.clone()).and_modify(|x| *x = x.merge(*v)).or_insert(*v);
             }
-            zooms[li] = (zooms[li].0.min(a.zooms[li].0), zooms[li].1.max(a.zooms[li].1));
-            seq[li] += a.count[li];
+            total.zooms[li] = (total.zooms[li].0.min(a.zooms[li].0), total.zooms[li].1.max(a.zooms[li].1));
+            total.count[li] += a.count[li];
         }
-        bounds = [bounds[0].min(a.bounds[0]), bounds[1].min(a.bounds[1]), bounds[2].max(a.bounds[2]), bounds[3].max(a.bounds[3])];
+        let b = total.bounds;
+        total.bounds = [b[0].min(a.bounds[0]), b[1].min(a.bounds[1]), b[2].max(a.bounds[2]), b[3].max(a.bounds[3])];
     }
-    assert!(!ents.is_empty(), "world tile writer {name}: no features read for {} slugs under {}/<slug>/tiles_tmp", slugs.len(), data.display());
-    eprintln!("[{:6.2}s] indexed {} features; rss {} MB", t0.elapsed().as_secs_f64(), ents.len(), rss_mb());
+    (ents, total)
+}
 
-    // ---- passes
-    std::fs::create_dir_all(out).expect("create out dir");
-    let spool_path = data.join(format!("{name}.spool"));
-    let mut spool =
-        Spool { w: std::io::BufWriter::with_capacity(1 << 22, std::fs::File::create(&spool_path).expect("create spool")), pos: 0, index: Vec::new() };
-    // populated partition tiles (by bounding box with the clip buffer), biggest first
+/// The passes: A (world, z0..=3), B (each populated z4 tile, z4..=deep-1), C (each populated tile at `deep`, deep..=14). Populated
+/// partition tiles are found by bounding box with the clip buffer, biggest first.
+fn plan_passes(ents: &[Ent], deep: u8) -> Vec<(TileKey, u8, u8)> {
     let populated = |pz: u8, zmin: u8, zmax: u8| -> Vec<(u32, u32)> {
         let mut m: HashMap<(u32, u32), u32> = HashMap::new();
         for e in ents.iter().filter(|e| e.lo <= zmax && e.hi >= zmin && e.bb[0] <= e.bb[2]) {
@@ -292,11 +318,26 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
         plan.extend(populated(4, 4, deep - 1).into_iter().map(|(x, y)| ((4, x, y), 4, deep - 1)));
     }
     plan.extend(populated(deep, deep, MAX_ZOOM).into_iter().map(|(x, y)| ((deep, x, y), deep, MAX_ZOOM)));
-    eprintln!("[{:6.2}s] {} passes planned", t0.elapsed().as_secs_f64(), plan.len());
+    plan
+}
+
+/// Run every planned pass into a spool file at `spool_path`; returns the finished (flushed) spool.
+fn run_passes(
+    files: &[memmap2::Mmap],
+    ents: &[Ent],
+    layer_names: &[&str],
+    kinds: &[BTreeMap<String, Kind>],
+    plan: &[(TileKey, u8, u8)],
+    spool_path: &Path,
+    t0: Instant,
+) -> Spool {
+    use std::io::Write;
+    let mut spool =
+        Spool { w: std::io::BufWriter::with_capacity(1 << 22, std::fs::File::create(spool_path).expect("create spool")), pos: 0, index: Vec::new() };
     let mut peak_cand = 0usize;
     for (i, (part, zmin, zmax)) in plan.iter().enumerate() {
         let t = Instant::now();
-        let (n, tiles) = world_pass(&files, &ents, &layer_names, &kinds, *part, *zmin, *zmax, &mut spool);
+        let (n, tiles) = world_pass(files, ents, layer_names, kinds, *part, *zmin, *zmax, &mut spool);
         peak_cand = peak_cand.max(n);
         eprintln!(
             "[{:6.2}s] pass {}/{} z{}..{} in {:?}: {n} features, {tiles} tiles, {:.1}s, rss {} MB",
@@ -311,28 +352,32 @@ pub fn run_world(data: &Path, slugs: &[String], out: &Path, name: &str, deep: u8
         );
     }
     spool.w.flush().expect("flush spool");
-    drop(spool.w);
     eprintln!(
         "[{:6.2}s] {} tiles spooled ({:.1} MB); biggest pass {peak_cand} features",
         t0.elapsed().as_secs_f64(),
         spool.index.len(),
         spool.pos as f64 / 1e6
     );
+    spool
+}
 
-    // ---- PMTiles in tile-id order
-    spool.index.sort_unstable();
-    assert!(spool.index.windows(2).all(|w| w[0].0 != w[1].0), "a tile came out of two passes");
-    let meta = tile_metadata(name, &layer_names, &kinds, &seq, &zooms);
-    let sp = std::fs::File::open(&spool_path).expect("open spool");
-    let done = write_pmtiles(out, name, bounds, &meta, |w| {
+/// The spooled tiles in tile-id order -> <out>/<name>.pmtiles; removes the spool file.
+fn write_world_pmtiles(out: &Path, name: &str, layer_names: &[&str], acc: &Acc, spool: &Spool, spool_path: &Path, t0: Instant) {
+    use std::os::unix::fs::FileExt;
+    let mut index = spool.index.clone();
+    index.sort_unstable();
+    assert!(index.windows(2).all(|w| w[0].0 != w[1].0), "a tile came out of two passes");
+    let meta = tile_metadata(name, layer_names, &acc.kinds, &acc.count, &acc.zooms);
+    let sp = std::fs::File::open(spool_path).expect("open spool");
+    let done = write_pmtiles(out, name, acc.bounds, &meta, |w| {
         let mut buf = Vec::new();
-        for &(id, off, len) in &spool.index {
+        for &(id, off, len) in &index {
             buf.resize(len as usize, 0);
             sp.read_exact_at(&mut buf, off).expect("read spool");
             w.add_raw_tile(TileCoord::from(TileId::new(id).expect("tile id")), &buf).expect("add tile");
         }
     });
-    let _ = std::fs::remove_file(&spool_path);
+    let _ = std::fs::remove_file(spool_path);
     let mb = std::fs::metadata(&done).map_or(0.0, |m| m.len() as f64 / 1e6);
-    eprintln!("[{:6.2}s] {} : {} tiles, {mb:.1} MB", t0.elapsed().as_secs_f64(), done.display(), spool.index.len());
+    eprintln!("[{:6.2}s] {} : {} tiles, {mb:.1} MB", t0.elapsed().as_secs_f64(), done.display(), index.len());
 }
