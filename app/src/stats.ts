@@ -3,7 +3,7 @@ import { loadShapes, loadStats, type Shapes, type StatsArea } from './data'
 import type { SearchItem } from './search'
 import type { View } from './MapView'
 
-export interface StatsData {
+interface StatsData {
   /** every loaded region's own totals (its bounds say where the region is) */
   regions: StatsArea[]
   /** areas inside the regions: provinces, cities, Hong Kong */

@@ -39,7 +39,7 @@ type Row = [
 
 const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
-export function parseSearch(rows: Row[]): SearchItem[] {
+function parseSearch(rows: Row[]): SearchItem[] {
   return rows.map((r) => ({
     name: r[0],
     nameEn: r[1],
@@ -56,7 +56,7 @@ export function parseSearch(rows: Row[]): SearchItem[] {
 
 let loading: Promise<SearchItem[] | null> | null = null
 /** search.json, fetched once; null when it could not be loaded */
-export function loadSearch(): Promise<SearchItem[] | null> {
+function loadSearch(): Promise<SearchItem[] | null> {
   loading ??= fetch(`${DATA_BASE}search.json`)
     .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
     .then(parseSearch)

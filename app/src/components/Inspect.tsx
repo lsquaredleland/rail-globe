@@ -5,7 +5,7 @@ import { ignoreError } from '../dev'
 import { Icon } from './ui'
 import { PanelFrame } from './Panels'
 
-export interface Inspected {
+interface Inspected {
   title: string
   osm: string | null
   tags: [string, string][]

@@ -126,7 +126,7 @@ export const loadNamedLines = (slug: string) => get<NamedLine[]>(`${slug}/named-
 
 /** Every railway name of a region, numbered (track pieces of the zoomed-out overview carry the number `nk`):
  *  [name, English name, most prominent rail type, length in km] */
-export type RailwayEntry = [string, string | null, RailType, number]
+type RailwayEntry = [string, string | null, RailType, number]
 export interface Railways {
   list: RailwayEntry[]
   byName: Map<string, RailwayEntry>
@@ -154,7 +154,7 @@ export function fnv1a(s: string): number {
 export const loadLineHighlight = async (slug: string, id: number) => (await loadLine(slug, id)).hl ?? null
 export const loadNameHighlight = async (slug: string, name: string) => (await fromShard<Highlight>(slug, 'name-hl', name)) ?? null
 
-export type Tags = Record<string, string | string[]>
+type Tags = Record<string, string | string[]>
 /** Raw (filtered) OSM tags plus Rail Globe derived fields for one feature, from the id-sharded side files. */
 export async function loadFeatureTags(slug: string, osmId: string): Promise<Tags | null> {
   if (!Number.isFinite(Number(osmId.split('/')[1]))) return null

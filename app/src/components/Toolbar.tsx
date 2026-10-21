@@ -209,7 +209,7 @@ export function RegionPicker({ c, block }: { c: Controls; block?: boolean }) {
   )
 }
 
-export function MoreMenu({ c }: { c: Controls }) {
+function MoreMenu({ c }: { c: Controls }) {
   const [open, setOpen] = useState(false)
   const ref = useOutside(open, () => setOpen(false))
   return (

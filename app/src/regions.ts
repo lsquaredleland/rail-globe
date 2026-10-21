@@ -123,12 +123,10 @@ export function regionOf(f: { geometry: GeoJSON.Geometry }, fallback?: [number, 
   return pt ? partAt(pt) : parts[0].slug
 }
 
-/** Fallback for `hsMinKmh` before stats.json is in: China (a region or an area in it) starts high-speed at 250 km/h, everywhere else 200 km/h (UIC) */
-export const isChina = (slug: string) => slug === 'china' || slug === 'cn' || slug === 'greater-bay-area' || slug === 'chengdu' || slug.startsWith('cn-')
 /** high-speed threshold per region, from the region row of its stats.json (`hs_min_kmh`, the config's `high_speed_min_kmh`) */
 const hsMins = new Map<string, number>()
 export const setHsMin = (slug: string, kmh: number) => {
   hsMins.set(slug, kmh)
 }
-/** where high-speed starts in a region or area: the stats.json value once loaded, else China's 250 / the UIC 200 (isChina) */
-export const hsMinKmh = (slug: string) => hsMins.get(slug) ?? (isChina(slug) ? 250 : 200)
+/** where high-speed starts in a region or area: the stats.json value once loaded, else the UIC 200 */
+export const hsMinKmh = (slug: string) => hsMins.get(slug) ?? 200

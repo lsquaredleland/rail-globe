@@ -11,7 +11,7 @@ export type Selected =
   | null
 
 /** Everything about what the user has picked or is pointing at. These fields were reset together in many places, so they live in one reducer. */
-export interface SelectionState {
+interface SelectionState {
   selected: Selected
   selPt: [number, number] | null
   /** the pointer position and the feature under it (desktop tooltip) */
