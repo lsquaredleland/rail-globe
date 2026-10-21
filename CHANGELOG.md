@@ -2,6 +2,16 @@
 
 Newest first. Decisions are in `docs/00-overview.md`; open items in `docs/17-action-items.md`.
 
+## 2026-10-20 (pass 3): publish, R2 world only, checks
+
+- World data published to R2 (`pipeline/publish.sh`): 195 files updated, prune deleted nothing; R2 `cn/stats.json` has `hs_min_kmh` 250; `shards.json` is `no-cache`.
+- 3,424 stale objects (1.35 GB) outside `world/` were deleted from the bucket and the same leftovers locally: the bucket and `app/public/data` now hold only `world/`.
+- `r2/sync.sh` uploads and prunes only `app/public/data/world` -> bucket `world/`, so nothing else under `app/public/data` can reach the public bucket. A dry run in copy and sync mode transfers nothing except the 142 `shards.json` no-cache re-uploads, which are intended.
+- `pipeline/publish.sh` `live` stage: `rclone check --one-way --size-only` of the bucket `world/` against `app/public/data/world` (hidden files excluded), and a check that the bucket has nothing outside `world/`; it fails with a message otherwise.
+- Docs: `docs/17-action-items.md` section 4 (items 1 and 2 done), README status, `r2/README.md`.
+- `scripts/check-docs.py` (stdlib only) with `scripts/check-docs-allow.txt`: relative links and anchors resolve, backtick paths exist, every `rail-extract <cmd> --flag` in the current docs exists in the built binary. CI: a `docs` job, plus the flag check in the `rust` job. It found `places --parts` in `docs/10-world-build.md` and stale file names in `pipeline/logos/README.md` (fixed).
+- Code, no output change (pilots byte-identical): `places.rs` doc lists the current flags; Python-era comments reworded; the dead `tippecanoe` stale-input guards removed from `tilewriter/`; the app's `isChina` fallback removed (`hsMinKmh` defaults to 200); exports used only in their own file dropped.
+
 ## 2026-10-20 (pass 2): docs
 
 - `docs/00-overview.md`: decision anchors renamed from `d33`..`d111` to `YYYY-MM-DD-topic` ids. Detail cells cut to about 60 words; the removed measurements are verbatim in `docs/archive/decision-evidence.md`, one heading per id.

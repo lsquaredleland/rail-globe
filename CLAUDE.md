@@ -34,6 +34,7 @@ A static web map of passenger rail built from OpenStreetMap, made for comparing 
 
 - Work on the open phases of `docs/05-pilot-plan.md` (0 to 2 are done, 3 and 5 are not met, 4 Compare was skipped) and on `docs/17-action-items.md` (the one to-do list). A phase is done only when its "Done when" column passes.
 - `docs/00-overview.md` (Decisions) wins over every other doc if they disagree. Flag the conflict instead of guessing.
+- After any doc or path change, run `python3 scripts/check-docs.py` (links, anchors, backtick paths, and `rail-extract` flags against the built binary). Names that are generated or historical go in `scripts/check-docs-allow.txt`; CI runs it.
 - Anything not covered by the docs: check `docs/17-action-items.md` (open items and provisional choices); if it is not there, ask before deciding.
 - Do not add GTFS, live data, or any server component. v1 is fully static.
 - After any change that can alter the data, run the data checker and report the result before saying it is done: see "Automatic data check" in `docs/05-pilot-plan.md` (answer lists, major stations, random city spot checks, aggregates, diff against the last build).

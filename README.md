@@ -93,4 +93,4 @@ Research notes (line number badges, interlining, station markers) are in `docs/1
 
 ## Status
 
-World build deployed 2026-10-16 (R2 r2.dev + Vercel, `pipeline/publish.sh`); custom domain and the low-zoom tile budget (`docs/16-low-zoom-tile-weight-plan.md`) are open. The pilot regions remain the data-check regions. Phases and their "Done when" tests are in `docs/05-pilot-plan.md`; open items are in `docs/17-action-items.md`. The world build is the default after data-changing work (since 2026-10-17); use the pilot extracts for specific testing; publishing still needs the user's go.
+World build deployed 2026-10-16 (R2 r2.dev + Vercel, `pipeline/publish.sh`); data last published 2026-10-20; custom domain and the low-zoom tile budget (`docs/16-low-zoom-tile-weight-plan.md`) are open. The pilot regions remain the data-check regions. Phases and their "Done when" tests are in `docs/05-pilot-plan.md`; open items are in `docs/17-action-items.md`. The world build is the default after data-changing work (since 2026-10-17); use the pilot extracts for specific testing; publishing still needs the user's go.

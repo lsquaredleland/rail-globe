@@ -30,6 +30,16 @@ jobs:
       - run: cargo test --release
       - run: cargo clippy --release --all-targets -- -D warnings
       - run: cargo fmt --check
+      # the docs' `rail-extract <cmd> --flag` examples exist in the built binary (check c of scripts/check-docs.py)
+      - run: cargo build --release
+      - run: python3 ../../scripts/check-docs.py
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # links, anchors and backtick paths; the command flag check runs in the rust job, which builds the binary
+      - run: python3 scripts/check-docs.py --no-binary
 
   app:
     runs-on: ubuntu-latest

@@ -54,9 +54,8 @@ In HSR-only mode the station label layers (`lbl1`-`lbl3`, `lblcon1`-`lblcon3`) f
 
 ## 4. Hosting and publishing (needs the user's go)
 
-Nothing below has been run.
-1. Publishing deploys the live site: `pipeline/publish.sh` (build, verify, upload, push, prune, live checks) after the checks in the changelog. Never run without a go.
-2. `r2/sync.sh` has not run since 16 Oct, so `shards.json` still has `max-age=3600` where `no-cache` was intended; one run fixes it. New: it prunes dropped slugs through `r2/dropped-slugs.sh` (guards: kept/dropped overlap, `world.parts.json`).
+1. Publishing deploys the live site: `pipeline/publish.sh` (build, verify, upload, push, prune, live checks) after the checks in the changelog. Never run without a go. Done 2026-10-20 for the world data (195 files updated, prune deleted nothing).
+2. Done 2026-10-20: `r2/sync.sh` ran, so `shards.json` is `no-cache`; it prunes dropped slugs through `r2/dropped-slugs.sh` (guards: kept/dropped overlap, `world.parts.json`). It now uploads and prunes only `world/`, and the bucket holds nothing else (3,424 stale objects, 1.35 GB, deleted).
 3. r2.dev is HTTP/1.1, uncompressed, tiles `max-age=3600`: custom domain checklist is in `r2/README.md` (compression rules for `.json` and `.pbf`, build-dated tile file names for immutability, then disable the r2.dev URL).
 
 ## 5. Follow-ups, none blocking
