@@ -87,6 +87,25 @@ def check_links(f, text, errs):
             errs.append(f'{f}: anchor missing: {u}')
 
 
+_TRACKED = None
+
+
+def known_path(p):
+    """`p` (repo-relative) is a tracked file, a folder holding tracked files, or a path git ignores (build output)."""
+    global _TRACKED
+    if _TRACKED is None:
+        files = sh('git', '-C', ROOT, 'ls-files').split('\n')
+        _TRACKED = set(files)
+        for x in files:
+            d = os.path.dirname(x)
+            while d:
+                _TRACKED.add(d)
+                d = os.path.dirname(d)
+    if p.rstrip('/') in _TRACKED:
+        return True
+    return subprocess.run(['git', '-C', ROOT, 'check-ignore', '-q', '--no-index', p], capture_output=True).returncode == 0
+
+
 def check_paths(f, text, files, basenames, allow, errs):
     exact, prefix = allow
     for t in sorted(set(re.findall(r'`([^`\s]+)`', strip_code_fences(text)))):
@@ -96,8 +115,10 @@ def check_paths(f, text, files, basenames, allow, errs):
         if any(c in t for c in '<>*{}$|=()[]') or t in exact or any(t.startswith(p) for p in prefix):
             continue
         t = t.split(':')[0] if re.search(r':\d+(-\d+)?$', t) else t
-        cands = [os.path.join(b, t) for b in [os.path.dirname(f), ''] + BASES]
-        if any(os.path.exists(os.path.join(ROOT, c)) for c in cands):
+        # normpath drops a trailing slash, which git needs to match a folder-only ignore rule (app/dist/)
+        cands = [os.path.normpath(os.path.join(b, t)) + ('/' if t.endswith('/') else '') for b in [os.path.dirname(f), ''] + BASES]
+        # tracked by git, or a generated path git ignores: the same answer on a fresh clone (CI) as locally
+        if any(known_path(c) for c in cands):
             continue
         if '/' not in t and t in basenames:  # a bare file name: any tracked file of that name
             continue
