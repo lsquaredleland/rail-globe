@@ -1,6 +1,6 @@
 //! City, town and country labels for the map, and the search index, from the place nodes in the cache (no network).
 //!
-//!     rail-extract places [--data DIR] [--out DIR] [--cache FILE] (--parts FILE | <slug>...)
+//!     rail-extract places [--data DIR] [--out DIR] [--cache FILE] [--threads N] <slug>...
 //!
 //! Reads the station complexes of each region (<data>/<slug>/complexes.geojsonl) and writes to <out>:
 //!   places.json  [[lon, lat, class, rank, name, name_en, n_stations], ...], class country | city | town (what the app draws)

@@ -60,7 +60,7 @@ pub fn num(out: &mut Vec<u8>, v: i32) {
     }
 }
 
-/// a coordinate as Python's json writes round(x, 5): like `num`, but a whole number keeps ".0"
+/// a coordinate rounded to 5 decimals: like `num`, but a whole number keeps ".0"
 pub fn pynum(out: &mut Vec<u8>, v: i32) {
     let start = out.len();
     num(out, v);
@@ -114,7 +114,7 @@ pub fn js_opt(out: &mut Vec<u8>, s: Option<&[u8]>) {
     }
 }
 
-// ---------------------------------------------------------------- a small ordered JSON value, written like Python's json.dump(indent=2)
+// ---------------------------------------------------------------- a small ordered JSON value, written as JSON with a 2-space indent
 
 pub enum J {
     Null,
@@ -173,7 +173,7 @@ impl J {
     }
 }
 
-/// a string as Python's json writes it with ensure_ascii=False
+/// a string as JSON, non-ASCII characters written as they are
 pub fn py_str(out: &mut Vec<u8>, s: &str) {
     out.push(b'"');
     for c in s.chars() {

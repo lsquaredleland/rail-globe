@@ -251,12 +251,6 @@ fn index_features(files: &[memmap2::Mmap], file_info: &[FileInfo], all: Vec<(u32
                 let li = file_info[fi as usize].2;
                 let bytes = &files[fi as usize][off as usize..(off + len) as usize];
                 let mut f: Feature = serde_json::from_slice(bytes).unwrap_or_else(|e| panic!("{}: bad feature: {e}", file_info[fi as usize].0));
-                assert!(
-                    f.foreign_members.as_ref().is_none_or(|m| !m.contains_key("tippecanoe")),
-                    "{}: stale tile input (\"tippecanoe\" member); run `rail-extract build {}` again",
-                    file_info[fi as usize].0,
-                    file_info[fi as usize].0
-                );
                 let tp = f.foreign_members.take().and_then(|m| m.get("zoom").cloned()).unwrap_or(Value::Null);
                 let lo = u8::try_from(tp["minzoom"].as_u64().unwrap_or(0)).unwrap_or(u8::MAX).min(MAX_ZOOM);
                 let hi = u8::try_from(tp["maxzoom"].as_u64().unwrap_or(u64::from(MAX_ZOOM))).unwrap_or(u8::MAX).min(MAX_ZOOM);

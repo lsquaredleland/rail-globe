@@ -201,7 +201,7 @@ fn assign_platforms(feats: &mut Feats, st: &mut [Station], by_area_ix: &FxHashMa
     plat_station
 }
 
-/// a group of stations becomes one: the member with the most platforms gives the point and the name (the first such, as Python's max)
+/// a group of stations becomes one: the member with the most platforms gives the point and the name (the first such)
 fn combine(platforms: &[It], ms: &[&Station]) -> Station {
     let all_mapped = ms.iter().all(|m| m.grouping == "mapped");
     let any_mapped = ms.iter().any(|m| m.grouping == "mapped");

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 /// one GeoJSON feature line: properties (in file order), geometry, and the geometry's text as written (passed through to the
-/// tile input unchanged, as Python's json round trip left it)
+/// tile input unchanged)
 pub struct Feat {
     pub p: Map<String, Value>,
     pub g: Value,

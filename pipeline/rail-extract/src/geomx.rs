@@ -1,4 +1,4 @@
-//! Geometry for the station model and tile build, on `geo` (shapely/GEOS in the Python version) and `rstar` (shapely's STRtree).
+//! Geometry for the station model and tile build, on `geo` and `rstar`.
 
 use geo::{
     Area, BooleanOps, BoundingRect, Centroid, Contains, Coord, Distance, Euclidean, Geometry, InteriorPoint, LineString, MultiLineString, MultiPolygon, Point,

@@ -34,7 +34,7 @@ pub(super) fn norm_name(name: &str) -> String {
     thread_local! {
         static RE: (Regex, Regex, Regex, Regex) = (
             Regex::new(r"\(.*?\)").unwrap(),
-            Regex::new(r"[^\p{L}\p{N}_一-鿿]+").unwrap(),   // Python's \w: letters, numbers, underscore
+            Regex::new(r"[^\p{L}\p{N}_一-鿿]+").unwrap(),   // word characters: letters, numbers, underscore
             Regex::new(r"(地铁站|火车站|客站|站|駅)$").unwrap(),
             Regex::new(r"^jr([぀-ヿ一-鿿])").unwrap(), // "JR宝塚駅" is 宝塚
         );
