@@ -57,6 +57,13 @@ RE=pipeline/rail-extract/target/release/rail-extract
 - City, town and country labels and the search index, from the cache's place nodes and the stations of each region. No network. Run by `world`; for pilots run it by hand after `build`.
 - Writes `<out>/places.json` and `<out>/search.json` (one file for the whole index). Rules: `src/places.rs` header and `docs/00-overview.md` (search index row, 2026-10-16).
 
+### cn12306
+`$RE cn12306 [--data DIR] [--slug SLUG] [--input DIR] [--out DIR] [--threads N]`
+- Routes every consecutive stop pair of the China 12306 timetable over the world cut's China track (`<data>/<slug>/features.geojsonl`, every `railway=rail` way, service track included at 3x cost), so a station can list the cities its trains go to and the paths they use. Needs the world cut of `cn` (step 1 of `docs/10-world-build.md`).
+- Inputs: `pipeline/config/cn-12306/timetable.json` and `pipeline/config/cn-12306/stations.tsv` (how they are made and refreshed: `pipeline/config/cn-12306/README.md`). Defaults: `--data data/world`, `--slug cn`, `--input pipeline/config/cn-12306`, `--out data/cn12306`.
+- Per pair: A* with up to three alternatives, the path picked by the minimum run time from way `maxspeed` against the fastest scheduled time, a gap of 10 km or less bridged, else a chord; ways within 70 m and 20 degrees of the path count too. Then stretches: maximal runs of ways with the same legs, with a stable id.
+- Writes `<out>/pairs.json` (status, km, minimum minutes, way ids, gaps), `stretches.json` (id, km, way ids, parallel way ids, legs as indexes into `pairs.json`) and `report.json`. Identical for any thread count. About 20 s and 2 GB on 14 cores (50 s on 5).
+
 ### pminfo
 `$RE pminfo FILE [--tsv FILE] [--top N]`
 - Prints the PMTiles header, tiles and bytes per zoom, and the biggest tiles. `--tsv` writes every tile's size. Writes nothing else.

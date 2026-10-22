@@ -11,6 +11,7 @@
 //!   world      one PMTiles file (`world.pmtiles`) and `world.parts.json` over the tile input of many slugs, in memory-bounded passes, then `places`
 //!   world-list which countries of a world cut have passenger rail -> kept.txt, dropped.txt
 //!   places     city / town / country labels (places.json) and the search index (search.json) from the cache's place nodes
+//!   cn12306    route the China 12306 timetable's stop pairs over the world cut's China track -> data/cn12306/{pairs,stretches,report}.json
 //!   pminfo     header, tiles and bytes per zoom of a PMTiles file
 //!
 //! A user mistake (no cut before a build, a missing outline, cache or config parent) is reported as `error: ...` with exit code 1.
@@ -23,6 +24,7 @@ mod assemble;
 mod build;
 mod cache;
 mod classify;
+mod cn12306;
 mod config;
 mod construction;
 mod cut;
@@ -207,6 +209,23 @@ enum Cmd {
         #[arg(required = true)]
         slugs: Vec<String>,
     },
+    /// Route every stop pair of the China 12306 timetable over the world cut's China track: pairs, stretches and a report
+    Cn12306 {
+        /// folder of the world cut [default: data/world]
+        #[arg(long)]
+        data: Option<PathBuf>,
+        /// slug of the China cut whose features.geojsonl is the track
+        #[arg(long, default_value = "cn")]
+        slug: String,
+        /// folder with timetable.json and stations.tsv [default: pipeline/config/cn-12306]
+        #[arg(long)]
+        input: Option<PathBuf>,
+        /// output folder [default: data/cn12306]
+        #[arg(long)]
+        out: Option<PathBuf>,
+        #[command(flatten)]
+        t: Threads,
+    },
     /// Header, tiles and bytes per zoom of a PMTiles file
     Pminfo {
         file: PathBuf,
@@ -222,9 +241,13 @@ enum Cmd {
 impl Cmd {
     fn threads(&self) -> Option<usize> {
         match self {
-            Cmd::Cache { t, .. } | Cmd::Cut { t, .. } | Cmd::Outlines { t, .. } | Cmd::Build { t, .. } | Cmd::World { t, .. } | Cmd::Places { t, .. } => {
-                t.threads
-            }
+            Cmd::Cache { t, .. }
+            | Cmd::Cut { t, .. }
+            | Cmd::Outlines { t, .. }
+            | Cmd::Build { t, .. }
+            | Cmd::World { t, .. }
+            | Cmd::Places { t, .. }
+            | Cmd::Cn12306 { t, .. } => t.threads,
             Cmd::WorldList { .. } | Cmd::Pminfo { .. } => None,
         }
     }
@@ -459,6 +482,13 @@ fn main() {
                 fail(format!("cache {} does not exist", cache.display()));
             }
             places::run(&data, &out, &cache, &slugs, &[root.join("pipeline/regions"), root.join("data/regions")], &root.join("data/regions"));
+        }
+        Cmd::Cn12306 { data, slug, input, out, .. } => {
+            let features = data.unwrap_or_else(|| root.join("data/world")).join(&slug).join("features.geojsonl");
+            if !features.exists() {
+                fail(format!("{} does not exist: run `rail-extract cut` for {slug} first", features.display()));
+            }
+            cn12306::run(&features, &input.unwrap_or_else(|| root.join("pipeline/config/cn-12306")), &out.unwrap_or_else(|| root.join("data/cn12306")));
         }
         Cmd::Pminfo { file, tsv, top } => {
             if !file.exists() {

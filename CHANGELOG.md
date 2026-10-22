@@ -2,6 +2,13 @@
 
 Newest first. Decisions are in `docs/00-overview.md`; open items in `docs/17-action-items.md`.
 
+## 2026-10-22: China 12306 routing, stage 1
+
+- Decision `2026-10-20-china-12306-services` in `docs/00-overview.md`: China services may come from a static 12306 timetable snapshot, shown only on station click; credited in a footnote.
+- `rail-extract cn12306` (`pipeline/rail-extract/src/cn12306/`): routes every consecutive stop pair of the timetable over the `cn` cut (all `railway=rail`, service track at 3x cost, ends joined within 2 m, stations snapped onto edges), picks among candidates by the fastest scheduled time against way `maxspeed`, bridges only real holes (gaps priced 10 per km plus 5, audits ratio 1.5 and 355 km/h), spreads each leg onto parallel tracks, and cuts paths into stretches with 64-bit ids. Output: pairs, stretches and a report under `data/`. National run: 6,822 pairs, 6,560 ok, 248 bridged, 14 chord; 89.0% within 5% of the china-rail reference; about 20 s and 2 GB; byte-identical across thread counts; 84 tests.
+- Tracked inputs in `pipeline/config/cn-12306/`: `timetable.json` (5,043 trains, 2026-10-21), `stations.tsv` (12306 name to point, with 61 relocations and 13 drops), `build_inputs.py` to regenerate both, README with the 12306 credit.
+- No app or tile change yet; the station panel is still a dev prototype (not committed).
+
 ## 2026-10-20 (pass 3): publish, R2 world only, checks
 
 - World data published to R2 (`pipeline/publish.sh`): 195 files updated, prune deleted nothing; R2 `cn/stats.json` has `hs_min_kmh` 250; `shards.json` is `no-cache`.

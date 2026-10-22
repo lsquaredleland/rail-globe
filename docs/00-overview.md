@@ -16,7 +16,7 @@ Rail Globe is a static web map of passenger rail built from OpenStreetMap. Its p
 | In v1 | Parked (not in v1) |
 | --- | --- |
 | Passenger track, stations, platforms, station grounds, yards | GTFS of any kind: frequencies, timetables, Portolan, train animation |
-| Lines from OSM route relations | Live train positions |
+| Lines from OSM route relations; China services from a 12306 snapshot | Live train positions |
 | Two colour modes: by rail type, by operator colour | History timeline (`start_date` is kept in the data for later) |
 | Standard rail types (high-speed to tram) | Comparing custom drawn areas |
 | Compare view for preset regions | Routing |
@@ -30,6 +30,7 @@ One line per rule in force. Each links to the decision that holds the evidence. 
 
 **Scope and delivery**
 - Static only: no server, no GTFS, no live data. [2026-10-04-static-delivery](#2026-10-04-static-delivery), [2026-10-11-no-gtfs](#2026-10-11-no-gtfs)
+- China services may also come from a static 12306 timetable snapshot, credited in a footnote. [2026-10-20-china-12306-services](#2026-10-20-china-12306-services)
 - Three data layers (infrastructure, service, link); infrastructure builds first. [2026-10-08-three-data-layers](#2026-10-08-three-data-layers)
 - OSM ids stay on every feature; stable ids survive rebuilds. [2026-10-11-stable-ids](#2026-10-11-stable-ids), [2026-10-10-data-spec-osm-ids](#2026-10-10-data-spec-osm-ids)
 - Abandoned and disused track is dropped; proposed is kept for Hong Kong only (a test, off by default). [2026-10-11-abandoned-dropped](#2026-10-11-abandoned-dropped), [2026-10-12-proposed-hong-kong-only](#2026-10-12-proposed-hong-kong-only)
@@ -85,6 +86,7 @@ Newest first. Everything here is settled; `00-overview.md` wins over every other
 
 | Date | Decision | Detail |
 | --- | --- | --- |
+| 2026-10-20 <a id="2026-10-20-china-12306-services"></a> | China services may come from a 12306 timetable snapshot, a second service source beside OSM route relations, because OSM has almost no route relations for Chinese intercity and high-speed trains. It is a static file built offline (no server, no live data), shown only when a station is clicked: the cities its trains go to (trains per day, fastest time, per-station breakdown) and the paths they use. Track click shows no services in China; track hover stays as it is (narrowed by the user 2026-10-20: a busy line carries 70+ origin-destination pairs, too many to list). Credit: a footnote naming 12306 as the timetable source; OSM attribution is unchanged | Approved by the user 2026-10-20. China has 612 OSM route relations, 21 of them high-speed. Source data and method: `~/Downloads/china-rail` (one-day harvest 2026-10-21, 5,043 trains). First experiment on osm-rail's own China track (scratch, not in the build): Chengdu ⇄ Chongqing 203 of 223 stop pairs routed cleanly, Beijing ⇄ Shanghai 88 of 94; G1 1,314.8 km against 1,318 official. Pipeline and app work: `17-action-items.md` |
 | 2026-10-17 <a id="2026-10-17-world-build-default"></a> | The world build is the default after data-changing work; the pilot extracts (SF Bay Area, Chengdu, Paris) are for specific testing; publishing (`pipeline/publish.sh`) deploys the live site and still needs the user's go | The user dropped the earlier opt-in rule on 2026-10-17 (old row: `archive/decisions-superseded.md`, "The world build is a user-requested exception"). Commands and times: `10-world-build.md`. |
 | 2026-10-17 <a id="2026-10-17-glyph-free-labels"></a> | Map labels: glyph-free, all text is drawn locally from system fonts (SUPERSEDES the 2026-10-15 row on self-hosted subset glyphs and the 2026-10-17 row on CJK drawn locally with `glyphs-v2`) | No `glyphs` property; `text-font` stacks start with Noto Sans Bold or Regular, then Noto Sans, Helvetica Neue, Arial, sans-serif (`mapStyle/`). Removed: `localIdeographFontFamily`, `pipeline/glyphs/`, the glyph upload in `r2/sync.sh`, the `glyphs` stage of `publish.sh`. Cost accepted: the first-zoom hitch roughly doubles, and fonts and label collisions differ by OS. The next `r2/sync.sh` deletes the R2 glyph folders. Evidence: [decision-evidence](archive/decision-evidence.md#2026-10-17-glyph-free-labels). |
 | 2026-10-16 <a id="2026-10-16-deployed-world-only"></a> | Deployed: the world build is the only source the app reads (the `VITE_TILE_SOURCE` switch and the hand-tuned pilot regions are removed, commit 0da274e). Tiles and side files (hash shards) are on Cloudflare R2 (glyphs were on R2 too and were removed 2026-10-17, see [2026-10-17-glyph-free-labels](#2026-10-17-glyph-free-labels)) behind the `r2.dev` public URL; the app is on Vercel (`rail-globe.vercel.app`); `pipeline/publish.sh` runs raw data to live site (`r2/README.md`). Custom domain is still to do (this supersedes "nothing deployed" and "pilot only" wording in older rows and docs; checked values: `archive/performance-todos-2026-10-17.md`). | Static hosting only, no server component (unchanged) |
@@ -142,7 +144,7 @@ Newest first. Everything here is settled; `00-overview.md` wins over every other
 | 2026-10-11 <a id="2026-10-11-attribution"></a> | Attribution: OSM credit on the map; side files offered under ODbL | |
 | 2026-10-11 <a id="2026-10-11-keep-start-date"></a> | Keep `start_date` in the filtered data | For a later history timeline; the feature stays parked |
 | 2026-10-11 <a id="2026-10-11-direction"></a> | Direction: passenger infrastructure and services, built for comparing regions | Station and yard outlines show magnitude |
-| 2026-10-11 <a id="2026-10-11-no-gtfs"></a> | GTFS is not used | OSM route relations are the only service source. Chinese intercity services stay a known gap |
+| 2026-10-11 <a id="2026-10-11-no-gtfs"></a> | GTFS is not used | OSM route relations are the service source; China may also use a 12306 snapshot (see [2026-10-20-china-12306-services](#2026-10-20-china-12306-services)) |
 | 2026-10-11 <a id="2026-10-11-abandoned-dropped"></a> | Abandoned and disused track is dropped | Not in the data or the tiles |
 | 2026-10-11 <a id="2026-10-11-yards-shown"></a> | Yards are shown | Yard outlines from z12, yard track from z13 |
 | 2026-10-11 <a id="2026-10-11-stable-ids"></a> | Stable ids | Built from OSM ids; see `02-architecture.md` |
