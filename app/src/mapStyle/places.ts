@@ -7,7 +7,10 @@ import { BOLD_STACK, L, REG_STACK, get, type Expr } from './shared'
  *  Drawn above the rail so track does not cover them; colours come from `applyTheme`, the language from `applyState`. */
 export const PLACE_LAYERS = ['place-country', 'place-city-1', 'place-city-2', 'place-city-3', 'place-town']
 export const placeText = (lang: 'local' | 'en'): Expr => (lang === 'en' ? ['coalesce', get('en'), get('name')] : get('name')) as Expr
+let placeFeatures: GeoJSON.Feature[] = []
 export function addPlaceLabels(map: MLMap, places: GeoJSON.FeatureCollection) {
+  placeFeatures = places.features
+  buildGrid()
   const t = THEME_COLORS.light
   map.addSource('places', { type: 'geojson', data: places })
   const sym = (id: string, filter: Expr, minzoom: number, maxzoom: number, layout: Record<string, unknown>, paint: Record<string, unknown> = {}) =>
@@ -71,4 +74,53 @@ export function placesGeoJSON(rows: [number, number, string, number, string, str
       geometry: { type: 'Point', coordinates: [lon, lat] },
     })),
   }
+}
+
+/** A clicked China station's trains (cn12306): place names within 8 km of a stop stay lit, and a city's own name within 60 km of one of its stops; the rest fade
+ *  to 25%. One expression per layer, set once; the layers' own opacity is put back by restorePlaces. */
+const PLACE_FADE = 0.25
+const placeOpacity = new Map<string, unknown>()
+let placeGrid: Map<string, number[]> | null = null
+let gridFor: GeoJSON.Feature[] | null = null
+const cellOf = (lon: number, lat: number) => `${Math.floor(lon / 0.1)},${Math.floor(lat / 0.1)}`
+const km = (a: [number, number], b: [number, number]) => Math.hypot((a[0] - b[0]) * Math.cos((b[1] * Math.PI) / 180) * 111, (a[1] - b[1]) * 111)
+const placeAt = (i: number) => (placeFeatures[i].geometry as GeoJSON.Point).coordinates as [number, number]
+function buildGrid() {
+  gridFor = placeFeatures
+  const grid = new Map<string, number[]>()
+  placeFeatures.forEach((_, i) => {
+    const k = cellOf(...placeAt(i))
+    grid.set(k, [...(grid.get(k) ?? []), i])
+  })
+  placeGrid = grid
+  return grid
+}
+export function fadePlaces(map: MLMap, stops: [number, number][], cities: string[]) {
+  const grid = !placeGrid || gridFor !== placeFeatures ? buildGrid() : placeGrid
+  const cells = new Map<string, [number, number][]>()
+  for (const p of stops) cells.set(cellOf(...p), [...(cells.get(cellOf(...p)) ?? []), p])
+  const lit = new Set<number>()
+  for (const [k, pts] of cells) {
+    const [cx, cy] = k.split(',').map(Number)
+    for (let x = cx - 1; x <= cx + 1; x++)
+      for (let y = cy - 1; y <= cy + 1; y++) for (const i of grid.get(`${x},${y}`) ?? []) if (!lit.has(i) && pts.some((p) => km(placeAt(i), p) <= 8)) lit.add(i)
+  }
+  const names = new Set(cities)
+  placeFeatures.forEach((f, i) => {
+    if (f.properties?.class === 'city' && names.has(String(f.properties.name).replace(/市$/, '')) && !lit.has(i) && stops.some((p) => km(placeAt(i), p) <= 60))
+      lit.add(i)
+  })
+  const keys = [...lit].map((i) => `${placeFeatures[i].properties?.name}|${placeFeatures[i].properties?.rank}|${placeFeatures[i].properties?.n}`)
+  const key = ['concat', get('name'), '|', ['to-string', get('rank')], '|', ['to-string', get('n')]]
+  const on = ['in', key, ['literal', keys]]
+  for (const id of PLACE_LAYERS) {
+    if (!map.getLayer(id)) continue
+    if (!placeOpacity.has(id)) placeOpacity.set(id, map.getPaintProperty(id, 'text-opacity'))
+    const v = id === 'place-country' ? ['interpolate', ['linear'], ['zoom'], 6, ['case', on, 1, PLACE_FADE], 8, 0] : ['case', on, 1, PLACE_FADE]
+    map.setPaintProperty(id, 'text-opacity', v as never, { validate: false })
+  }
+}
+export function restorePlaces(map: MLMap) {
+  for (const [id, v] of placeOpacity) if (map.getLayer(id)) map.setPaintProperty(id, 'text-opacity', v as never)
+  placeOpacity.clear()
 }

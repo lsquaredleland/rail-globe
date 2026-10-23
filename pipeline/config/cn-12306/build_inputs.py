@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""Refresh timetable.json and stations.tsv from the china-rail checkout (default ~/Downloads/china-rail).
+"""Refresh timetable.json, stations.tsv, meta.json and city_en.json from the china-rail checkout (default ~/Downloads/china-rail) and the
+corridor-v3 handoff (default ~/Downloads/china-rail-handoff-v3, read only).
 
-    python3 pipeline/config/cn-12306/build_inputs.py [--china-rail DIR] [--timetable FILE] [--world DIR]
+    python3 pipeline/config/cn-12306/build_inputs.py [--china-rail DIR] [--timetable FILE] [--intercity FILE] [--handoff DIR] [--world DIR]
 
-Reads china-rail's deliverable/china-rail-timetables-<date>.json (newest by default), derived/stations.json, harvest/osm_stations.json,
-harvest/station_resolution.json and harvest/pair_distances.json, and osm-rail's data/world/cn/stations.geojsonl. Standard library only.
+Reads china-rail's deliverable/china-rail-timetables-<date>.json (newest by default; the trunk trains), the handoff's
+output/china-rail-intercity-<date>.json (the C and S intercity trains, a later day; none with --intercity none), derived/stations.json,
+harvest/osm_stations.json, harvest/station_resolution.json and harvest/pair_distances.json of china-rail (plus the handoff's
+data/derived/cs_out/ pair distances and station resolution for the intercity stops), and osm-rail's data/world/cn/stations.geojsonl.
+Trains that share a 12306 train_no are kept once (the trunk's first). meta.json records both days with their classes and train counts;
+city_en.json is the handoff's English gazetteer of city and station names. Standard library only.
 
 timetable.json: per train the class and the stops as [name, arrive, depart] ("HH:MM", "" when 12306 has none).
-stations.tsv: name, lon, lat, source. Sources: list (china-rail's station list), fix (a name whose point put a pair
+stations.tsv: name, lon, lat, source, english (the English name on the 12306 list, where it has one). Sources: list (china-rail's station list), fix (a name whose point put a pair
 more than 3x + 3 km from china-rail's chord_km: moved to the known place of that name that fits its neighbours; fix+list when the
 name is on the list too), resolution (china-rail's cluster pick between several places), osm (the only place of that name),
 candidate (several places, no pick: the build takes the one nearest the stops on both sides), dropped (no place fits).
@@ -17,16 +22,30 @@ import argparse, collections, glob, json, math, os, re
 ap = argparse.ArgumentParser()
 ap.add_argument('--china-rail', default=os.path.expanduser('~/Downloads/china-rail'))
 ap.add_argument('--timetable')
+ap.add_argument('--intercity', help='the C and S deliverable [default: the newest output/china-rail-intercity-*.json of --handoff]; "none" for no intercity trains')
+ap.add_argument('--handoff', default=os.path.expanduser('~/Downloads/china-rail-handoff-v3'))
 ap.add_argument('--world', default=os.path.join(os.path.dirname(__file__), '../../../data/world'))
 args = ap.parse_args()
 CR, HERE = args.china_rail, os.path.dirname(os.path.abspath(__file__))
 nrm = lambda s: re.sub(r'\s+', '', s)
 tt = args.timetable or sorted(glob.glob(CR + '/deliverable/china-rail-timetables-*.json'))[-1]
 d = json.load(open(tt))
+for t in d['trains']:
+    t['snapshot'] = 'trunk'
+ic = args.intercity or (sorted(glob.glob(args.handoff + '/output/china-rail-intercity-*.json')) or ['none'])[-1]
+dic = None if ic == 'none' else json.load(open(ic))
+if dic:
+    have = {t['train_no'] for t in d['trains']}
+    dic['trains'] = [dict(t, snapshot='intercity') for t in dic['trains'] if t['train_no'] not in have]
+    d['trains'] = d['trains'] + dic['trains']
 STN = json.load(open(CR + '/derived/stations.json'))
 OS = json.load(open(CR + '/harvest/osm_stations.json'))
 RES = json.load(open(CR + '/harvest/station_resolution.json'))
 pd = json.load(open(CR + '/harvest/pair_distances.json'))['pairs']
+if dic:
+    cs = args.handoff + '/data/derived/cs_out/'
+    pd = pd + json.load(open(cs + 'pair_distances.json'))['pairs']
+    RES = dict(json.load(open(cs + 'station_resolution.json')), **RES)
 chord = {(nrm(p['from']), nrm(p['to'])): p['chord_km'] for p in pd}
 
 # places by name: china-rail's OSM list first, osm-rail's own station points only for names it lacks
@@ -138,11 +157,21 @@ for n in names:
     else:
         rows += [(n, c[0], c[1], 'candidate') for c in cand[n]]
 with open(HERE + '/stations.tsv', 'w') as f:
-    f.write('# name, lon, lat, source. Sources: see build_inputs.py\n')
+    f.write('# name, lon, lat, source, english (the English name on the 12306 list, where it has one). Sources: see build_inputs.py\n')
     for n, lo, la, s in rows:
-        f.write('%s\t%s\t%s\t%s\n' % (n, '' if lo is None else '%.6f' % lo, '' if la is None else '%.6f' % la, s))
+        f.write('%s\t%s\t%s\t%s\t%s\n' % (n, '' if lo is None else '%.6f' % lo, '' if la is None else '%.6f' % la, s, STN[n].get('en') or '' if n in STN else ''))
 
 tm = lambda s: '' if (not s or '-' in s) else s
 out = [{'code': t['code'], 'class': t['class'], 'stops': [[nrm(s['name']), tm(s['arrive']), tm(s['depart'])] for s in t['stops']]} for t in d['trains']]
 open(HERE + '/timetable.json', 'w').write(json.dumps(out, ensure_ascii=False, separators=(',', ':')))
-print('%s: %d trains, %d station names (%d without a place), %d rows; %d fixed or dropped' % (os.path.basename(tt), len(out), len(names), unplaced, len(rows), len(fix)))
+snaps = []
+for name, src, path in (('trunk', d, tt), ('intercity', dic, ic)):
+    if src and any(t['snapshot'] == name for t in d['trains']):
+        ts = [t for t in d['trains'] if t['snapshot'] == name]
+        cls = collections.Counter(t['class'] for t in ts)
+        snaps.append({'name': name, 'date': src['date'], 'classes': [c for c, _ in cls.most_common()], 'trains': len(ts), 'source': src.get('source'), 'timetable': os.path.basename(path)})
+json.dump({'snapshots': snaps, 'trains': len(out)}, open(HERE + '/meta.json', 'w'), indent=1)
+if dic:
+    gaz = json.load(open(args.handoff + '/data/city_en.json'))
+    json.dump(dict(sorted(gaz.items())), open(HERE + '/city_en.json', 'w'), ensure_ascii=False, indent=0)
+print('%s: %d trains (%s), %d station names (%d without a place), %d rows; %d fixed or dropped' % (os.path.basename(tt), len(out), ', '.join('%d %s' % (s['trains'], s['name']) for s in snaps), len(names), unplaced, len(rows), len(fix)))

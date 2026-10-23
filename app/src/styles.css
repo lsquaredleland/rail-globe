@@ -488,6 +488,27 @@ a {
   font-size: 12px;
   color: var(--ink4);
 }
+.cn-city {
+  width: 100%;
+  padding: 3px 8px;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+button.cn-city {
+  cursor: pointer;
+}
+.cn-part {
+  padding: 2px 8px 2px 22px;
+}
+.cn-bars {
+  margin: 6px 0 2px;
+}
+.cn-bars svg {
+  display: block;
+}
 .tt-row {
   display: flex;
   justify-content: space-between;

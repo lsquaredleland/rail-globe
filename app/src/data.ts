@@ -96,12 +96,14 @@ function get<T>(path: string): Promise<T> {
 export const loadLineIndex = (slug: string) => get<LineIndex>(`${slug}/lines-index.json`)
 /** Per-feature side files are packed into hash shards, a few per region (shards.json, written by pipeline/rail-extract/src/tiles.rs):
  *  a record lives in `<kind>/<fnv1a(key) % count>.json`, an object keyed by the record's key. Lines whose record is large stay their own file in lines-big/. */
+export type CnSnapshot = { date: string; classes: string[] }[]
 interface Shards {
   stations: number
   lines: number
   lines_big: number[]
   tags: number
   'name-hl': number
+  cn12306?: { rev: string; count: number; snapshot: CnSnapshot | string; cells: string[] } // China only: the 12306 files are in cn12306/<rev>/
 }
 const loadShards = (slug: string) => get<Shards>(`${slug}/shards.json`)
 async function fromShard<T>(slug: string, kind: 'stations' | 'lines' | 'tags' | 'name-hl', key: string): Promise<T | undefined> {
@@ -120,6 +122,66 @@ export async function loadLine(slug: string, id: number | string): Promise<LineR
   if (!r) throw new Error(`${slug}: no line ${id}`)
   return r
 }
+
+/** China only: a station's trains from the 12306 timetable (pipeline/rail-extract/src/cn12306/records.rs). Times are minutes of the day. */
+export type CnPart = [string, string | null, number, number] // station, English, trains/day, fastest minutes
+export type CnCity = [string, string | null, number, number, CnPart[]] // city, English, trains/day, fastest minutes, its stations
+export type CnDst = [number, number, number, number, number, number, number, number] // trains/day there, fastest, first and last departure; the same back
+export interface CnRecord {
+  name: string
+  name_en: string | null
+  stops: number
+  dep: number
+  arr: number
+  first: number | null
+  last: number | null
+  hd: number[]
+  ha: number[]
+  dest: CnCity[]
+  dst: Record<string, CnDst> // destination station id -> both directions
+  st: number[][] // five width bands of stretch numbers, each ascending and stored as steps from the one before
+  pts: [number, number][]
+}
+export interface CnStretch {
+  t: string // rail type
+  c: number[][] // lines: the first pair absolute in 1/q degrees, then steps
+}
+export interface CnStretches {
+  q: number
+  s: CnStretch[] // by stretch number
+}
+const cn = async () => {
+  const c = (await loadShards('cn')).cn12306
+  if (!c) throw new Error('cn: no 12306 data')
+  return c
+}
+/** Any station or complex id of a station with trains -> the key of its record. Only for an id that has no record of its own. */
+export const loadCnIds = async () => get<Record<string, string>>(`cn/cn12306/${(await cn()).rev}/ids.json`)
+/** The record a China station opens: its own, else the one its id maps to in ids.json, with the key it is stored under and the timetable's day; null where it has no trains. */
+export async function loadCnRecord(id: string): Promise<{ key: string; rec: CnRecord; snapshot: CnSnapshot } | null> {
+  const c = await cn().catch(() => null)
+  if (!c) return null
+  const snapshot: CnSnapshot = typeof c.snapshot === 'string' ? [{ date: c.snapshot, classes: [] }] : c.snapshot
+  const shard = (key: string) => get<Record<string, CnRecord>>(`cn/cn12306/${c.rev}/${fnv1a(key) % c.count}.json`)
+  const has = (sh: Record<string, CnRecord>, key: string) => Object.prototype.hasOwnProperty.call(sh, key)
+  const own = await shard(id)
+  if (has(own, id)) return { key: id, rec: own[id], snapshot }
+  const key = (await loadCnIds())[id]
+  if (!key) return null
+  const sh = await shard(key)
+  return has(sh, key) ? { key, rec: sh[key], snapshot } : null
+}
+/** Every stretch's rail type and simplified geometry, numbered as the records number them (for views below z9). */
+export async function loadCnStretches(): Promise<CnStretches> {
+  return get<CnStretches>(`cn/cn12306/${(await cn()).rev}/stretches.json`)
+}
+/** The 2 degree cells (`<lon>_<lat>`, floor(degrees / 2)) that have a way file. */
+export const loadCnCells = async () => new Set((await cn()).cells)
+/** The way numbers of the stretches in one cell, stretch number -> way numbers (for z9 and closer). */
+export async function loadCnWays(cell: string): Promise<Record<string, number[]>> {
+  return get<Record<string, number[]>>(`cn/cn12306/${(await cn()).rev}/ways/${cell}.json`)
+}
+
 export const pmtilesUrl = (slug: string) => `pmtiles://${base}${slug}.pmtiles`
 export const boundaryUrl = (slug: string) => `${base}${slug}.boundary.geojson`
 export const loadNamedLines = (slug: string) => get<NamedLine[]>(`${slug}/named-lines.json`)

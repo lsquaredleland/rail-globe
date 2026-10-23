@@ -18,9 +18,24 @@ pub struct Row {
 
 pub type Table = FxHashMap<String, Vec<Row>>;
 
+/// a pair of stops as the build keeps it: the two names in order and the places, in 1e-6 degrees
+pub type Key = (String, String, [i64; 4]);
+
+/// the key of the pair between two stops, and whether the stops run in the key's order (the first name is not after the second)
+pub fn pair_key(na: &str, pa: (f64, f64), nb: &str, pb: (f64, f64)) -> (Key, bool) {
+    let q = |p: (f64, f64)| [(p.0 * 1e6).round() as i64, (p.1 * 1e6).round() as i64];
+    let swap = na > nb;
+    let (a, b, pa, pb) = if swap { (nb, na, pb, pa) } else { (na, nb, pa, pb) };
+    let [qa, qb] = [q(pa), q(pb)];
+    ((a.to_string(), b.to_string(), [qa[0], qa[1], qb[0], qb[1]]), !swap)
+}
+
 #[derive(Deserialize)]
 pub struct Train {
-    /// 12306 class letter, `plain` for the rest (the file also has the train code, which the build does not read)
+    /// the train code ("G1", "D2208"), for the debugging files
+    #[serde(default)]
+    pub code: String,
+    /// 12306 class letter, `plain` for the rest
     pub class: String,
     /// name, arrival, departure ("HH:MM", or empty)
     pub stops: Vec<(String, String, String)>,
@@ -37,6 +52,22 @@ pub struct PairIn {
     pub joined: bool,
 }
 
+/// one stop of a train as the records read it
+pub struct RunStop {
+    pub name: String,
+    pub pt: Option<(f64, f64)>,
+    /// arrival and departure in minutes from the first stop's day (past midnight they run on), None when 12306 gives no time
+    pub times: Option<(i32, i32)>,
+}
+
+/// a train with its stops and the pairs it runs: (index of the stop before, index of the stop after, index into the pair list)
+pub struct TrainRun {
+    pub code: String,
+    pub class: String,
+    pub stops: Vec<RunStop>,
+    pub legs: Vec<(usize, usize, usize)>,
+}
+
 #[derive(Default)]
 pub struct Counts {
     pub trains: usize,
@@ -47,24 +78,58 @@ pub struct Counts {
     pub spanning_pairs: usize,
 }
 
-pub fn load_table(path: &Path) -> Table {
-    let text = std::fs::read_to_string(path).unwrap_or_else(|e| crate::fail(format!("read {}: {e}", path.display())));
+pub fn load_table(path: &Path) -> super::R<Table> {
+    let text = super::io(std::fs::read_to_string(path), "read", path)?;
     let mut t = Table::default();
     for l in text.lines().filter(|l| !l.is_empty() && !l.starts_with('#')) {
         let f: Vec<&str> = l.split('\t').collect();
-        if f.len() != 4 {
-            crate::fail(format!("{}: expected 4 tab-separated fields: {l}", path.display()));
+        if f.len() < 4 || f.len() > 5 {
+            return Err(format!("{}: expected 4 or 5 tab-separated fields: {l}", path.display()));
         }
-        let num = |s: &str| s.parse::<f64>().unwrap_or_else(|_| crate::fail(format!("{}: bad number {s:?}", path.display())));
-        let pt = (!f[1].is_empty()).then(|| (num(f[1]), num(f[2])));
+        let num = |s: &str| s.parse::<f64>().map_err(|_| format!("{}: bad number {s:?}", path.display()));
+        let pt = if f[1].is_empty() { None } else { Some((num(f[1])?, num(f[2])?)) };
         t.entry(f[0].to_string()).or_default().push(Row { pt, trusted: f[3] == "list" || f[3] == "fix+list", candidate: f[3] == "candidate" });
     }
-    t
+    Ok(t)
 }
 
-pub fn load_timetable(path: &Path) -> Vec<Train> {
-    let text = std::fs::read_to_string(path).unwrap_or_else(|e| crate::fail(format!("read {}: {e}", path.display())));
-    serde_json::from_str(&text).unwrap_or_else(|e| crate::fail(format!("{}: {e}", path.display())))
+/// the English names of the stations the 12306 list has them for (stations.tsv, fifth field)
+pub fn load_english(path: &Path) -> super::R<FxHashMap<String, String>> {
+    let text = super::io(std::fs::read_to_string(path), "read", path)?;
+    Ok(text
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            (f.len() == 5 && !f[4].is_empty()).then(|| (f[0].to_string(), super::records::clean_en(f[0], f[4])))
+        })
+        .collect())
+}
+
+/// the days of the timetable as `shards.json` gives them: [{ "date": "2026-10-21", "classes": ["G", "D", ...] }, ...], from
+/// pipeline/config/cn-12306/meta.json (written by build_inputs.py)
+pub fn load_snapshot(input: &Path) -> super::R<serde_json::Value> {
+    let p = input.join("meta.json");
+    let text = super::io(std::fs::read_to_string(&p), "read", &p)?;
+    let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", p.display()))?;
+    let list = v["snapshots"].as_array().filter(|l| !l.is_empty()).ok_or_else(|| format!("{} has no \"snapshots\"", p.display()))?;
+    let day = |s: &serde_json::Value| {
+        let date = s["date"].as_str().ok_or_else(|| format!("{}: a snapshot has no \"date\"", p.display()))?;
+        Ok(serde_json::json!({ "date": date, "classes": s["classes"] }))
+    };
+    Ok(serde_json::Value::Array(list.iter().map(day).collect::<super::R<Vec<_>>>()?))
+}
+
+/// the English gazetteer of city and station names (city_en.json, from the corridor-v3 project)
+pub fn load_gazetteer(input: &Path) -> super::R<FxHashMap<String, String>> {
+    let p = input.join("city_en.json");
+    let text = super::io(std::fs::read_to_string(&p), "read", &p)?;
+    serde_json::from_str(&text).map_err(|e| format!("{}: {e}", p.display()))
+}
+
+pub fn load_timetable(path: &Path) -> super::R<Vec<Train>> {
+    let text = super::io(std::fs::read_to_string(path), "read", path)?;
+    serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// squared distance in degrees with longitude shrunk, to compare candidates
@@ -141,11 +206,10 @@ fn clock(stops: &[(String, String, String)]) -> Vec<Option<(i32, i32)>> {
 
 /// the stop pairs of all trains, sorted by name pair and points. A stop without a place is passed over: the pair runs from the stop
 /// before it to the stop after it, with the whole time between. Two places of one name make two pairs.
-pub fn pairs(trains: &[Train], table: &Table) -> (Vec<PairIn>, Counts) {
-    type Key = (String, String, [i64; 4]);
-    let q = |p: (f64, f64)| [(p.0 * 1e6).round() as i64, (p.1 * 1e6).round() as i64];
+pub fn pairs(trains: &[Train], table: &Table) -> (Vec<PairIn>, Vec<TrainRun>, Counts) {
     let mut by_key: BTreeMap<Key, PairIn> = BTreeMap::new();
     let mut counts = Counts { trains: trains.len(), ..Default::default() };
+    let mut runs: Vec<(&Train, Vec<RunStop>, Vec<(usize, usize, Key)>)> = Vec::new();
     for t in trains {
         let names: Vec<&str> = t.stops.iter().map(|s| s.0.as_str()).collect();
         let pts = place_stops(table, &names);
@@ -153,6 +217,7 @@ pub fn pairs(trains: &[Train], table: &Table) -> (Vec<PairIn>, Counts) {
         counts.unplaced_stops += pts.iter().filter(|p| p.is_none()).count();
         let times = clock(&t.stops);
         let placed: Vec<usize> = (0..names.len()).filter(|&i| pts[i].is_some()).collect();
+        let mut legs = Vec::new();
         for w in placed.windows(2) {
             let (i, j) = (w[0], w[1]);
             if names[i] == names[j] {
@@ -162,17 +227,10 @@ pub fn pairs(trains: &[Train], table: &Table) -> (Vec<PairIn>, Counts) {
                 counts.spanning_pairs += 1;
             }
             let (pi, pj) = (pts[i].unwrap(), pts[j].unwrap());
-            let swap = names[i] > names[j];
-            let (a, b, pa, pb) = if swap { (names[j], names[i], pj, pi) } else { (names[i], names[j], pi, pj) };
-            let [qa, qb] = [q(pa), q(pb)];
-            let e = by_key.entry((a.to_string(), b.to_string(), [qa[0], qa[1], qb[0], qb[1]])).or_insert_with(|| PairIn {
-                a: a.to_string(),
-                b: b.to_string(),
-                pa,
-                pb,
-                fs: None,
-                joined: true,
-            });
+            let (key, forward) = pair_key(names[i], pi, names[j], pj);
+            let (a, b, pa, pb) = if forward { (names[i], names[j], pi, pj) } else { (names[j], names[i], pj, pi) };
+            legs.push((i, j, key.clone()));
+            let e = by_key.entry(key).or_insert_with(|| PairIn { a: a.to_string(), b: b.to_string(), pa, pb, fs: None, joined: true });
             e.joined &= j > i + 1;
             if let (Some(ti), Some(tj)) = (times[i], times[j]) {
                 let lt = tj.0 - ti.1;
@@ -181,6 +239,18 @@ pub fn pairs(trains: &[Train], table: &Table) -> (Vec<PairIn>, Counts) {
                 }
             }
         }
+        let stops = (0..names.len()).map(|i| RunStop { name: names[i].to_string(), pt: pts[i], times: times[i] }).collect();
+        runs.push((t, stops, legs));
     }
-    (by_key.into_values().collect(), counts)
+    let index: BTreeMap<Key, usize> = by_key.keys().cloned().enumerate().map(|(i, k)| (k, i)).collect();
+    let runs = runs
+        .into_iter()
+        .map(|(t, stops, legs)| TrainRun {
+            code: t.code.clone(),
+            class: t.class.clone(),
+            stops,
+            legs: legs.into_iter().map(|(i, j, k)| (i, j, index[&k])).collect(),
+        })
+        .collect();
+    (by_key.into_values().collect(), runs, counts)
 }

@@ -3,6 +3,8 @@ import { logoUrl } from '../config'
 import { loadLine, loadStation, type LineIndex, type LineRecord, type NamedLine, type StationRecord } from '../data'
 import { km, tierLabel, UNKNOWN } from '../format'
 import { TYPE_COLOR, TYPE_LABEL, TYPE_ORDER, TYPE_WIDTH, type RailType } from '../palette'
+import { CnServices } from './CnServices'
+import type { CnFocus } from '../cnServices'
 import { Icon, LineBadge, namePair, shortName, shortNameEn, Swatch, useLang } from './ui'
 
 function useLoaded<T>(load: () => Promise<T>, key: string): { data: T | null; error: boolean } {
@@ -59,6 +61,7 @@ export function StationPanel({
   onLine,
   onStation,
   onHoverLine,
+  onServices,
 }: {
   slug: string
   id: string
@@ -67,6 +70,7 @@ export function StationPanel({
   onLine(id: number): void
   onStation(id: string): void
   onHoverLine(id: number | null): void
+  onServices(cn: CnFocus | null): void
 }) {
   const lang = useLang()
   const { data: s, error } = useLoaded<StationRecord>(() => loadStation(slug, id), `${slug}/${id}`)
@@ -117,6 +121,7 @@ export function StationPanel({
           <span className={s.line_count ? 'v' : 'v dim'}>{s.line_count || 'none'}</span>
         </div>
       </div>
+      {slug === 'cn' && <CnServices id={id} onFocus={onServices} />}
       {s.line_count > 0 && (
         <section>
           <h3 className="eyebrow">

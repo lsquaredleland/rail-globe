@@ -1,0 +1,31 @@
+{
+ "snapshots": [
+  {
+   "name": "trunk",
+   "date": "2026-10-21",
+   "classes": [
+    "G",
+    "D",
+    "K",
+    "Z",
+    "T",
+    "plain"
+   ],
+   "trains": 5043,
+   "source": "12306 live (leftTicket + czxx/queryByTrainNo)",
+   "timetable": "china-rail-timetables-2026-10-21.json"
+  },
+  {
+   "name": "intercity",
+   "date": "2026-10-28",
+   "classes": [
+    "C",
+    "S"
+   ],
+   "trains": 2210,
+   "source": "12306 live (leftTicket + czxx/queryByTrainNo)",
+   "timetable": "china-rail-intercity-2026-10-28.json"
+  }
+ ],
+ "trains": 7253
+}

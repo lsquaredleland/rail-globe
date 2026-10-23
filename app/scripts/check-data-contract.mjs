@@ -43,6 +43,8 @@ const CONTRACT = {
     ['name_en', 'hl'],
   ],
   'line index entry': [['n', 'r', 'c', 't', 'o', 'f', 'to', 'km'], ['ne']],
+  // China only (public/data/world/cn/cn12306/<rev>/<n>.json): a station's 12306 services. src/data.ts has no interface for it yet; these lists are the contract
+  'china service record': [['name', 'name_en', 'stops', 'dep', 'arr', 'first', 'last', 'hd', 'ha', 'dest', 'dst', 'st', 'pts'], []],
   'stats area': [
     ['slug', 'name', 'local', 'kind', 'bbox', 'km', 'lines', 'stations'],
     ['speed', 'speed_con', 'speed_prop', 'hs_min_kmh'],
@@ -76,6 +78,34 @@ const { areas } = read(join(dir, 'stats.json'))
 check('stats area', areas.find((a) => a.kind === 'region') ?? areas[0], `${slug}/stats.json (region row)`)
 if (areas.find((a) => a.kind === 'region')?.hs_min_kmh === undefined)
   notes.push('stats.json region row has no hs_min_kmh yet (the app falls back to 250 for China, 200 elsewhere)')
+
+const cn = join(root, 'cn')
+if (existsSync(join(cn, 'cn12306'))) {
+  // cn/shards.json "cn12306": { rev, count, snapshot: [{ date, classes }], cells }; everything of one revision is under cn12306/<rev>/
+  const sh = read(join(cn, 'shards.json')).cn12306
+  const day = (d) => d && typeof d.date === 'string' && Array.isArray(d.classes) && d.classes.every((c) => typeof c === 'string')
+  if (
+    !sh ||
+    typeof sh.rev !== 'string' ||
+    !Number.isInteger(sh.count) ||
+    !Array.isArray(sh.snapshot) ||
+    !sh.snapshot.length ||
+    !sh.snapshot.every(day) ||
+    !Array.isArray(sh.cells)
+  )
+    problems.push('cn/shards.json "cn12306" lacks rev, count, snapshot ([{ date, classes }]) or cells')
+  else {
+    const rd = join(cn, 'cn12306', sh.rev)
+    const rec = first(read(join(rd, '0.json')) ?? {}) ?? first(read(join(rd, '1.json')))
+    if (rec) check('china service record', rec, `cn/cn12306/${sh.rev}/0.json`)
+    for (const f of ['stretches.json', 'ids.json', `${sh.count - 1}.json`]) if (!existsSync(join(rd, f))) problems.push(`cn/cn12306/${sh.rev}/${f} is missing`)
+    for (const c of sh.cells.slice(0, 3)) if (!existsSync(join(rd, 'ways', `${c}.json`))) problems.push(`cn/cn12306/${sh.rev}/ways/${c}.json is missing`)
+    const st = existsSync(join(rd, 'stretches.json')) ? read(join(rd, 'stretches.json')) : null
+    if (st && (typeof st.q !== 'number' || !Array.isArray(st.s) || !('t' in st.s[0]) || !('c' in st.s[0])))
+      problems.push('stretches.json is not { q, s: [{ t, c }] }')
+    notes.push(`cn/cn12306 (revision ${sh.rev}, snapshot ${sh.snapshot.map((d) => d.date).join(' + ')}) matches the contract above`)
+  }
+}
 
 for (const n of notes) console.log(`note: ${n}`)
 if (problems.length) {

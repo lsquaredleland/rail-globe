@@ -5,6 +5,7 @@ import { ATTRIBUTION } from './base'
 import { L, byType, get, roundJoin, type Expr, type RailCtx } from './shared'
 import { LOW_ZOOM_SHARE, TWINS, rank, typeColor, widthExpr } from './trackStyle'
 import { addConstructionLayers } from './construction'
+import { addCnServiceLayers } from './cnServices'
 import { addHighlightLayers } from './highlight'
 import { addAirportLabels, addAreaLayers } from './areas'
 import { addLineLabels } from './labels'
@@ -50,6 +51,7 @@ export function addRailSource(map: MLMap, source: string) {
   addAreaLayers(c)
   addTrackLayers(c)
   addConstructionLayers(c)
+  addCnServiceLayers(c) // below the line highlight
   addHighlightLayers(c)
   addStrandLayers(c)
 

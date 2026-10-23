@@ -174,8 +174,12 @@ pub(super) fn shard_count(bytes: usize) -> u32 {
 
 /// Writes `recs` (key, record as JSON text) to `dir/<n>.json`, each file one JSON object, a record in shard `fnv1a(key) % count`.
 /// Returns the count (the app reads it from shards.json). Every shard file is written, empty ones as `{}`, so a fetch never 404s.
-pub(super) fn write_shards(dir: &Path, recs: &[(String, String)]) -> u32 {
-    let n = shard_count(recs.iter().map(|r| r.1.len()).sum());
+pub(crate) fn write_shards(dir: &Path, recs: &[(String, String)]) -> u32 {
+    write_shards_n(dir, recs, shard_count(recs.iter().map(|r| r.1.len()).sum()))
+}
+
+/// `write_shards` with the shard count given (a power of two)
+pub(crate) fn write_shards_n(dir: &Path, recs: &[(String, String)], n: u32) -> u32 {
     let mut out: Vec<String> = vec![String::new(); n as usize];
     for (k, v) in recs {
         let sh = &mut out[(fnv1a(k) % n) as usize];

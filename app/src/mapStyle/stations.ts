@@ -141,6 +141,7 @@ export function stationLayers(slug: string) {
 const STATION_FADE = 0.22
 let stationFocus: Set<string> | null = null
 let stationFocusKey = ''
+let fadeCities = false
 const FOCUS_DOT_LAYERS = ['st1', 'st2', 'st3', 'stcon1', 'stcon2', 'stcon3']
 const FOCUS_LABEL_LAYERS = ['lbl1', 'lbl2', 'lbl1t', 'lbl2t', 'lbl3', 'lblcon1', 'lblcon2', 'lblcon3']
 function paintStationFocus(map: MLMap, ids: Set<string> | null) {
@@ -156,8 +157,12 @@ function paintStationFocus(map: MLMap, ids: Set<string> | null) {
     put(n, 'text-opacity', ids ? fade('id', 1, STATION_FADE) : 1)
   }
   put('logo', 'icon-opacity', ids ? fade('id', 1, STATION_FADE) : 1)
+  // the city dots (metro, tram or monorail systems, z2 to z8) have no station id: during a China 12306 focus every one of them fades
+  put('cities', 'circle-opacity', ids && fadeCities ? STATION_FADE : 0.95)
+  put('cities', 'circle-stroke-opacity', ids && fadeCities ? STATION_FADE : 1)
 }
-export function setStationFocus(map: MLMap, ids: string[] | null) {
+export function setStationFocus(map: MLMap, ids: string[] | null, cities = false) {
+  fadeCities = cities
   stationFocus = ids ? new Set(ids) : null
   stationFocusKey = ''
   refreshStationFocus(map)

@@ -1,4 +1,4 @@
-//! World rail cache + region outline -> data/<slug>/{features.geojsonl, relations.jsonl, stop_positions.jsonl, qa.json,
+//! World rail cache + region outline -> data/<slug>/{features.geojsonl, way_nodes.jsonl, relations.jsonl, stop_positions.jsonl, qa.json,
 //! airports.geojsonl, and the rail types (features.typed.geojsonl, lines.json, classify_report.json)}.
 //!
 //! Region membership follows osmium extract's "smart" strategy:
@@ -322,6 +322,23 @@ enum AreaRes {
     Skip,
 }
 
+/// Write one line to way_nodes.jsonl: [<way id>, <first node id>, <delta2>, <delta3>, ...]
+pub fn encode_way_nodes(out: &mut Vec<u8>, id: i64, refs: &[i64]) {
+    out.push(b'[');
+    int(out, id);
+    if let Some((&first, rest)) = refs.split_first() {
+        out.push(b',');
+        int(out, first);
+        let mut prev = first;
+        for &cur in rest {
+            out.push(b',');
+            int(out, cur - prev);
+            prev = cur;
+        }
+    }
+    out.extend_from_slice(b"]\n");
+}
+
 /// everything the feature steps collect, in output order
 #[derive(Default)]
 struct Emit<'a> {
@@ -329,6 +346,7 @@ struct Emit<'a> {
     used_areas: FxHashSet<String>,
     emitted_ways: FxHashSet<i64>,
     feats: Vec<u8>,
+    way_nodes: Vec<u8>,
     stops: Vec<u8>,
     stations: Vec<(String, Option<String>, bool)>,
     pax_stations: Vec<(i32, i32)>, // (lat, lon) of passenger stations, nodes and areas
@@ -718,6 +736,7 @@ impl<'a> Emit<'a> {
                     }
                     self.add_feature(f);
                     self.emitted_ways.insert(id);
+                    encode_way_nodes(&mut self.way_nodes, id, &ways[k].refs);
                 }
                 WayRes::Dropped => self.count("dropped:bad_geometry".into()),
                 WayRes::Skip => {}
@@ -911,6 +930,9 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
     std::fs::create_dir_all(outdir).expect("create output folder");
     let wr = |name: &str, b: &[u8]| std::fs::write(outdir.join(name), b).unwrap_or_else(|e| panic!("write {name}: {e}"));
     wr("features.geojsonl", &e.feats);
+    if reg.slug == "cn" {
+        wr("way_nodes.jsonl", &e.way_nodes);
+    }
     wr("stop_positions.jsonl", &e.stops);
     wr("relations.jsonl", &kept.out_rel);
     wr("qa.json", &qa_bytes);

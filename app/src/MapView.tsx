@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
 import * as maplibregl from 'maplibre-gl' // MapLibre 6 is ESM-only: no default export
 import type { GeoJSONSource, Map as MLMap, MapGeoJSONFeature } from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
@@ -19,12 +19,14 @@ import {
   prefetchHighlights,
   refreshStationFocus,
   setFocus,
+  setCnServices,
   setStationFocus,
   stationLayers,
   strandLayer,
   yardHitLayer,
   type MapState,
 } from './mapStyle'
+import type { CnFocus } from './cnServices'
 import { loadParts, regionOf, warmParts, TILES } from './regions'
 import { DATA_BASE } from './config'
 
@@ -58,6 +60,7 @@ interface Props {
   hoverHighlight: ((hit: Hit | null) => { slug: string; line: number | null; name: string | null } | null) | null
   focusSlug: string | null // a line or railway is selected (clicked): the region whose lines stay, all others fade
   focusStations: string[] | null // the stations of the focused lines: every other station fades (null: none)
+  cnServices: CnFocus | null // a China station's trains are on the map: draw the stretches they use, fade the place names away from them
   selectedStation: [number, number] | null
   outline: GeoJSON.Geometry | null // the area in view, outlined faintly (null: switch off)
   touch: boolean
@@ -146,6 +149,9 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
   const p = useRef(props)
   p.current = props
   const scale = useRef<maplibregl.ScaleControl | null>(null)
+  const cnLit = useMemo(() => (props.cnServices && props.focusStations ? new Set(props.focusStations) : null), [props.cnServices, props.focusStations])
+  const cnLitRef = useRef(cnLit)
+  cnLitRef.current = cnLit
 
   useImperativeHandle(ref, () => ({
     fitBounds: (b) =>
@@ -250,7 +256,14 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
 
       const st = q(stationLayers(TILES))
       if (st.length) {
-        const best = [...st].sort((a, b) => Number(a.properties.tier) - Number(b.properties.tier))[0]
+        // stations on top of each other (Shanghai at z6): while a China station's trains are focused, one of the lit ones wins
+        const cnLit = cnLitRef.current
+        const lit = (f: MapGeoJSONFeature) => (cnLit?.has(String(f.properties.id)) ? 0 : 1)
+        const away = (f: MapGeoJSONFeature) => {
+          const c = map.project((f.geometry as GeoJSON.Point).coordinates as [number, number])
+          return cnLit ? Math.hypot(c.x - pt.x, c.y - pt.y) : 0
+        }
+        const best = [...st].sort((a, b) => Number(a.properties.tier) - Number(b.properties.tier) || lit(a) - lit(b) || away(a) - away(b))[0]
         const g = best.geometry as GeoJSON.Point
         return { kind: 'station', slug: slugOf(best), props: toProps(best), lngLat: g.coordinates as [number, number] }
       }
@@ -363,10 +376,15 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
     const m = mapRef.current
     if (m && loaded.current) setFocus(m, props.focusSlug)
   }, [props.focusSlug])
+  const cnOn = !!props.cnServices
   useEffect(() => {
     const m = mapRef.current
-    if (m && loaded.current) setStationFocus(m, props.focusStations)
-  }, [props.focusStations])
+    if (m && loaded.current) setStationFocus(m, props.focusStations, cnOn)
+  }, [props.focusStations, cnOn])
+  useEffect(() => {
+    const m = mapRef.current
+    if (m && loaded.current) setCnServices(m, props.cnServices)
+  }, [props.cnServices])
   useEffect(() => {
     const m = mapRef.current
     if (m && loaded.current) updateSelection(m, props.selectedStation)

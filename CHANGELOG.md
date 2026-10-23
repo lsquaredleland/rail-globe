@@ -2,6 +2,15 @@
 
 Newest first. Decisions are in `docs/00-overview.md`; open items in `docs/17-action-items.md`.
 
+## 2026-10-23: China 12306 station panel (stage 2), corridor router, node ids for China
+
+- Stage 2: `build cn` runs `cn12306` and writes side files `app/public/data/world/cn/cn12306/<rev>/` (`rev` = content hash; 1,024 record shards keyed by station id, `ids.json`, `stretches.json` compact delta geometry, `ways/<cell>.json` incl. same-line twin tracks for highlighting); `shards.json` `"cn12306"` `{rev, count, snapshot list, cells}`. Failure skips the stage with a warning and removes the side files; never aborts the build. Report: `data/world/cn/cn12306_report.json`.
+- Router: per-train corridor routing ported from the user project china-rail-handoff-v3 ("corridor-v3"): learned run-time model, demonstrated-corridor prior, per-train posterior, switch only on decisive evidence, canonical double-track redraw, smallest-gap bridging. Self-check (leave-one-out, 6,594 tests): shipped 94.4% vs 86.8% for per-pair stage 1. Decisions over 73,959 legs: production 60,732, switched 2,865, bridge-fix 4,643, filled 85, ambiguous-keep 5,241. Six goldens pass (Chengdu–Chongqing nonstops on Chengyu HSR; 8 D trains via Suining; G2450 via Chongqing West; Rongchang North–Dazu South one 196-train stretch; Wuxi K/Z/T on Jinghu line).
+- Data: 7,253 trains (5,043 trunk 2026-10-21 + 2,210 C/S 2026-10-28); 2,212 stations with records; English gap 189 (gazetteer `city_en.json` from the source project).
+- Node ids: `cut` writes `data/<slug>/way_nodes.jsonl` for `cn` ONLY; `cn12306` graphs join only at shared OSM node ids (removed 2,491 coordinate-only joins, 1,339 at flyovers), plus a duplicate-node endpoint repair (160 joins listed in the report); 250 m stitching between real dead ends only. A world-wide switch of classify/stations/dashes to node ids was tried and reverted (it marked through stations such as Kassel-Wilhelmshöhe, Eindhoven, Gouda as termini because of OSM duplicate nodes); every non-China output is byte-identical to before.
+- App: station click in China shows a Trains (12306) panel section (departures/arrivals, hourly bars, top destination cities with per-station breakdown, footnote crediting 12306 with both dates), dims other track/stations/place labels, draws the station paths in 5 widths by rail type, destination hover tooltip; China track click/hover unchanged. Dev prototype removed.
+- Run: `cn12306` ~40 s, 2.4 GB; deterministic across thread counts; 113 Rust tests, 22 app tests.
+
 ## 2026-10-22: China 12306 routing, stage 1
 
 - Decision `2026-10-20-china-12306-services` in `docs/00-overview.md`: China services may come from a static 12306 timetable snapshot, shown only on station click; credited in a footnote.

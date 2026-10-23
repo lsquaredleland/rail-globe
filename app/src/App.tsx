@@ -22,6 +22,8 @@ import { ignoreError } from './dev'
 import { readHash } from './urlState'
 import { Toolbar, RegionPicker, type Controls } from './components/Toolbar'
 import { Legend } from './components/Legend'
+import { CnDestTip } from './components/CnServices'
+import type { CnFocus } from './cnServices'
 import { TooltipBody } from './components/Tooltip'
 import { LinePanel, LinesList, ServicesPanel, StationPanel } from './components/Panels'
 import { railTypeLabel } from './format'
@@ -76,6 +78,7 @@ export default function App() {
     sync,
   } = settings
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [cn, setCn] = useState<CnFocus | null>(null) // a clicked China station's trains: what the map shows of them (set by the station panel)
   const [sel, act] = useSelection() // what is picked and what the pointer is on, reset together
   const { selected, selPt, hover, peek, selTrackName, selTrackSlug, listHoverLine, listHoverName } = sel
   const [indexes, setIndexes] = useState<Record<string, LineIndex>>({})
@@ -449,13 +452,14 @@ export default function App() {
           selectedTrackName={hlName}
           hoverHighlight={touch || selected || listHoverLine != null || listHoverName != null ? null : hoverHighlight}
           focusSlug={
-            selected?.kind === 'line' || (groupLines && selected?.kind === 'station') || selected?.kind === 'services'
+            selected?.kind === 'line' || (groupLines && selected?.kind === 'station') || (cn && selected?.kind === 'station') || selected?.kind === 'services'
               ? selected.slug
               : selTrackName != null
                 ? (selTrackSlug ?? region.slug)
                 : null
           }
-          focusStations={focusStations}
+          focusStations={cn && selected?.kind === 'station' ? cn.lit : focusStations}
+          cnServices={selected?.kind === 'station' ? cn : null}
           selectedStation={selPt}
           outline={outlineGeo}
           touch={touch}
@@ -553,6 +557,18 @@ export default function App() {
             )}
           </div>
         )}
+        {cn && selected?.kind === 'station' && hover?.hit.kind === 'station' && (
+          <CnDestTip
+            cn={cn}
+            hit={{
+              id: String(hover.hit.props.id ?? ''),
+              cx: String(hover.hit.props.cx ?? ''),
+              n: String(hover.hit.props.n ?? ''),
+              ne: String(hover.hit.props.ne ?? ''),
+            }}
+            style={{ left: hover.x + 330 > W ? hover.x - 322 : hover.x + 16, top: Math.min(hover.y + 14, (wrap.current?.clientHeight ?? 800) - 260) }}
+          />
+        )}
         {touch && peek && !selected && (
           <div className="peek" role="status">
             <button type="button" className="close" aria-label="Dismiss" onClick={act.clearPeek}>
@@ -580,6 +596,7 @@ export default function App() {
             onLine={(id) => openLine(selected.slug, id, { sel: selected, pt: selPt })}
             onStation={(id) => openStation(selected.slug, id, undefined, true)}
             onHoverLine={act.setListHoverLine}
+            onServices={setCn}
           />
         )}
         {selected?.kind === 'line' && (

@@ -26,7 +26,7 @@ use std::io::Write;
 use std::path::Path;
 use util::track_minzoom;
 
-pub(crate) use util::haversine_len;
+pub(crate) use util::{haversine_len, write_shards_n};
 
 // Zoomed out (tile zooms 0..OVERVIEW_MAXZOOM) the track layer holds a merged overview instead of every piece (docs/00-overview.md)
 const OVERVIEW_MAXZOOM: i64 = 8;

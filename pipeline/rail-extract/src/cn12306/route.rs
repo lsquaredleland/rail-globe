@@ -253,8 +253,7 @@ fn astar(net: &Net, sc: &mut Scratch, s: u32, t: u32, bound: f64, pen: &Pen, cap
 /// one way of getting from A to B
 pub struct Cand {
     pub src: &'static str,
-    pub geom: Vec<(f64, f64)>,
-    /// indexes i where geom[i] -> geom[i + 1] is a gap, not track
+    /// the hops of the search path that cross a gap of more than 50 m instead of track
     pub jl: Vec<usize>,
     cells: FxHashMap<(i32, i32), f64>,
     pub km: f64,
@@ -264,6 +263,8 @@ pub struct Cand {
     pub gap_km: f64,
     /// km on ways whose speed is a tag, inferred, or a default
     pub cov: [f64; 3],
+    /// the graph nodes of the path (the stations' own points on an edge left out); two that are not joined by an edge are a gap
+    pub nodes: Vec<u32>,
 }
 
 /// the path's km per 0.01 degree cell, to tell two paths on the same track from two corridors
@@ -320,7 +321,8 @@ fn mk(net: &Net, pn: &[u32], hops: &[Hop], src: &'static str) -> Cand {
     for &(w, k) in &wk {
         cov[net.g.ways[w as usize].speed_src as usize] += k;
     }
-    Cand { src, geom: pn.iter().map(|&n| net.xy(n)).collect(), jl, cells: cell_km(net, pn), km, min_time: mt, wk, gap_km, cov }
+    let nodes = pn.iter().copied().filter(|&n| (n as usize) < net.g.n_nodes()).collect();
+    Cand { src, jl, cells: cell_km(net, pn), km, min_time: mt, wk, gap_km, cov, nodes }
 }
 
 /// the hop from `a` to `b` when two pieces of track are joined: the edge if there is one, else a gap

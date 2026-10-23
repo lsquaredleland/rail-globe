@@ -220,9 +220,12 @@ enum Cmd {
         /// folder with timetable.json and stations.tsv [default: pipeline/config/cn-12306]
         #[arg(long)]
         input: Option<PathBuf>,
-        /// output folder [default: data/cn12306]
+        /// output folder for the debugging files pairs.json, stretches.json and report.json [default: data/cn12306]
         #[arg(long)]
         out: Option<PathBuf>,
+        /// also write the app's side files to <SIDE>/<slug>/cn12306/ (the build does this itself for `cn`) and update <SIDE>/<slug>/shards.json
+        #[arg(long)]
+        side: Option<PathBuf>,
         #[command(flatten)]
         t: Threads,
     },
@@ -483,12 +486,23 @@ fn main() {
             }
             places::run(&data, &out, &cache, &slugs, &[root.join("pipeline/regions"), root.join("data/regions")], &root.join("data/regions"));
         }
-        Cmd::Cn12306 { data, slug, input, out, .. } => {
-            let features = data.unwrap_or_else(|| root.join("data/world")).join(&slug).join("features.geojsonl");
+        Cmd::Cn12306 { data, slug, input, out, side, .. } => {
+            let data = data.unwrap_or_else(|| root.join("data/world"));
+            let features = data.join(&slug).join("features.geojsonl");
             if !features.exists() {
                 fail(format!("{} does not exist: run `rail-extract cut` for {slug} first", features.display()));
             }
-            cn12306::run(&features, &input.unwrap_or_else(|| root.join("pipeline/config/cn-12306")), &out.unwrap_or_else(|| root.join("data/cn12306")));
+            let out = out.unwrap_or_else(|| root.join("data/cn12306"));
+            let dir = side.map(|s| s.join(&slug));
+            let (cut, regions) = (data.join(&slug), root.join("data/regions"));
+            let side = dir.as_ref().map(|d| cn12306::Side { cut: &cut, regions: &regions, dir: d });
+            if let Err(e) = cn12306::run_checked(&features, &input.unwrap_or_else(|| root.join("pipeline/config/cn-12306")), Some(&out), side) {
+                // as in the build: nothing old stays published
+                if let Some(d) = &dir {
+                    cn12306::remove_side_files(d);
+                }
+                fail(e);
+            }
         }
         Cmd::Pminfo { file, tsv, top } => {
             if !file.exists() {

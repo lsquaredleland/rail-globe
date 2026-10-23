@@ -61,6 +61,24 @@ fn parse_values(path: &Path) -> Vec<Value> {
     read_lines(path).into_par_iter().map(|l| serde_json::from_str(&l).unwrap_or_else(|e| panic!("{}: {e}", path.display()))).collect()
 }
 
+/// Decode one line of way_nodes.jsonl: [<way id>, <first node id>, <delta2>, ...] -> (way_id, Vec<node_id>)
+pub fn decode_way_nodes(line: &str) -> Option<(i64, Vec<i64>)> {
+    let row: Vec<i64> = serde_json::from_str(line.trim()).ok()?;
+    let (&id, rest) = row.split_first()?;
+    if rest.is_empty() {
+        return Some((id, Vec::new()));
+    }
+    let (&first, deltas) = rest.split_first()?;
+    let mut nodes = Vec::with_capacity(rest.len());
+    nodes.push(first);
+    let mut cur = first;
+    for &d in deltas {
+        cur += d;
+        nodes.push(cur);
+    }
+    Some((id, nodes))
+}
+
 pub fn load(dir: &Path, cfg: &Path) -> Input {
     Input {
         feats: parse_feats(&dir.join("features.typed.geojsonl")),
@@ -220,6 +238,28 @@ pub fn build(slug: &str, paths: &Paths) -> Vec<String> {
     let summary = stats::run(slug, &inp, &st.stations, &paths.regions, &paths.out);
     lap(&mut log, &mut t, format!("region statistics: {summary}"));
     log.push(format!("  {}", prep.summary));
+    // China's services from the 12306 timetable ride on the `cn` cut: routed over its track, written beside its other side files.
+    // They are a layer on top: when they cannot be built the stage is skipped with a warning and nothing old is left behind.
+    if slug == "cn" {
+        let mut t = Instant::now();
+        let inputs = paths.config.join("cn-12306");
+        let dir_out = paths.out.join(slug);
+        let result = if !inputs.is_dir() {
+            Err(format!("no {}", inputs.display()))
+        } else if let Some(regions) = paths.regions.iter().find(|d| d.join("index.json").exists()) {
+            // the release profile aborts on panic, so the stage reports bad input as an error rather than panicking
+            crate::cn12306::run_checked(&dir.join("features.geojsonl"), &inputs, None, Some(crate::cn12306::Side { cut: &dir, regions, dir: &dir_out }))
+        } else {
+            Err("no index.json in the outline folders (run `rail-extract outlines --level 5 --country CN`)".to_string())
+        };
+        match result {
+            Ok(()) => lap(&mut log, &mut t, "12306 services: station records and stretches (cn12306/)".to_string()),
+            Err(e) => {
+                crate::cn12306::remove_side_files(&dir_out);
+                log.push(format!("  WARNING: 12306 services skipped ({e}); cn/cn12306/ and its shards.json entry removed"));
+            }
+        }
+    }
     log.push(format!("  {:6.2}s  total", t0.elapsed().as_secs_f64()));
     log
 }
@@ -270,5 +310,29 @@ mod tests {
         // listed in _groups.json: the group's template
         assert_eq!(config_path(&dir, "tz"), (dir.join("_evidence-stations.json"), true));
         assert_eq!(config_path(&dir, "ar"), (dir.join("_evidence-routes.json"), true));
+    }
+
+    #[test]
+    fn way_nodes_delta_round_trip() {
+        let refs = vec![10_000_000_001, 10_000_000_500, 10_000_000_300, 10_000_001_000];
+        let mut buf = Vec::new();
+        crate::cut::encode_way_nodes(&mut buf, 1234567, &refs);
+        let line = std::str::from_utf8(&buf).unwrap();
+        let (id, decoded) = decode_way_nodes(line).unwrap();
+        assert_eq!(id, 1234567);
+        assert_eq!(decoded, refs);
+    }
+
+    #[test]
+    fn way_nodes_closed_way_round_trip() {
+        let refs = vec![20_000_000_001, 20_000_000_050, 20_000_000_100, 20_000_000_001];
+        assert_eq!(refs.first(), refs.last());
+        let mut buf = Vec::new();
+        crate::cut::encode_way_nodes(&mut buf, 7654321, &refs);
+        let line = std::str::from_utf8(&buf).unwrap();
+        let (id, decoded) = decode_way_nodes(line).unwrap();
+        assert_eq!(id, 7654321);
+        assert_eq!(decoded.first(), decoded.last());
+        assert_eq!(decoded, refs);
     }
 }

@@ -1,6 +1,6 @@
 //! The China track as a graph: every `railway=rail` way of the world cut's `cn` slug, service track included (it costs 3x in the
-//! router), ways joined where two vertices are within about 2 m (a way end that stops 1 m short of the next way). One edge per way
-//! segment; every way keeps its `osm_id`, so ids match the world tiles. Each way gets a speed for the minimum run time: its
+//! router). Nodes are OSM nodes: two ways connect only where they share a node id (way_nodes.jsonl, written by `cut` beside the features);
+//! a gap between ways that do not share a node is repaired by the router's stitches (rgraph.rs), not here. One edge per way segment; every way keeps its `osm_id`, so ids match the world tiles. Each way gets a speed for the minimum run time: its
 //! `maxspeed` tag, else the median of the neighbouring ways of the same railway, else 250 km/h for a high-speed line and 120 for
 //! the rest (40 for service track).
 
@@ -39,9 +39,18 @@ pub struct Way {
     pub speed: f64,
     /// where the speed came from: 0 the way's own maxspeed tag, 1 inferred from neighbours, 2 a default
     pub speed_src: u8,
-    /// the middle vertex, to attach a parallel way to the nearest way of a path
+    /// the middle vertex, where the way is filed in the way files
     pub mid: (f64, f64),
+    /// `highspeed=yes`
+    pub hsr: bool,
+    /// the speed of an untagged way by its `usage` (the corridor router's default), km/h
+    pub usage_kmh: f64,
+    /// the index of the way's name in `Graph::lines`, `NO_LINE` for none
+    pub line: u32,
 }
+
+/// a way without a name
+pub const NO_LINE: u32 = u32::MAX;
 
 pub struct Graph {
     pub xy: Vec<(f64, f64)>,
@@ -55,6 +64,12 @@ pub struct Graph {
     pub seg_grid: FxHashMap<(i32, i32), Vec<u32>>,
     /// connected component of every node (-1: no edge)
     pub comp: Vec<i32>,
+    /// the names of the ways, in the order of their first way
+    pub lines: Vec<String>,
+    /// ways whose node list did not match their vertices
+    pub ways_without_node_ids: usize,
+    /// repaired duplicate nodes: the two way ids and the point
+    pub dup_joins: Vec<(String, String, (f64, f64))>,
 }
 
 impl Graph {
@@ -85,6 +100,10 @@ struct RawProps {
     service: Option<String>,
     maxspeed: Option<String>,
     highspeed: Option<String>,
+    usage: Option<String>,
+    bridge: Option<String>,
+    tunnel: Option<String>,
+    layer: Option<String>,
     name: Option<String>,
     #[serde(rename = "name:zh")]
     name_zh: Option<String>,
@@ -140,11 +159,6 @@ fn median(v: &mut [f64]) -> f64 {
     }
 }
 
-/// vertex coordinates are 1e-5 degrees; two vertices within one unit of each other (about 1 m) are one node
-fn unit_key(x: i32, y: i32) -> i64 {
-    ((x as i64) << 32) | (y as u32 as i64)
-}
-
 /// a way's speed from the rules in the header; `neigh[w]` lists the ways that share a node with `w` (only filled for ways that need an inferred speed)
 fn speeds(tags: &[Tags], service: &[bool], neigh: &[Vec<u32>]) -> Vec<(f64, u8)> {
     let n = tags.len();
@@ -187,45 +201,49 @@ fn speeds(tags: &[Tags], service: &[bool], neigh: &[Vec<u32>]) -> Vec<(f64, u8)>
 }
 
 /// read <features> (a cut's features.geojsonl) and build the graph
-pub fn load(features: &Path) -> Graph {
-    let text = std::fs::read_to_string(features).unwrap_or_else(|e| crate::fail(format!("read {}: {e}", features.display())));
+pub fn load(features: &Path) -> super::R<Graph> {
+    let text = super::io(std::fs::read_to_string(features), "read", features)?;
     let lines: Vec<&str> = text.lines().filter(|l| l.contains("\"railway\":\"rail\"") && l.contains("\"type\":\"LineString\"")).collect();
     let raws: Vec<RawFeature> = lines
         .par_iter()
-        .map(|l| serde_json::from_str::<RawFeature>(l).unwrap_or_else(|e| crate::fail(format!("{}: {e}: {}", features.display(), &l[..l.len().min(200)]))))
+        .map(|l| serde_json::from_str::<RawFeature>(l).map_err(|e| format!("{}: {e}: {}", features.display(), l.chars().take(200).collect::<String>())))
+        .collect::<super::R<Vec<_>>>()?
+        .into_iter()
         .filter(|f| f.properties.railway.as_deref() == Some("rail"))
         .collect();
 
+    // the OSM node ids of every way (way_nodes.jsonl beside the features): two ways connect only where they share a node id
+    let wn_path = features.with_file_name("way_nodes.jsonl");
+    let wn_text =
+        std::fs::read_to_string(&wn_path).map_err(|e| format!("read {}: {e} (written by `rail-extract cut`; cut the region again)", wn_path.display()))?;
+    let way_nodes: FxHashMap<i64, Vec<i64>> = wn_text.par_lines().filter_map(crate::site::decode_way_nodes).collect();
+    drop(wn_text);
+
     let mut xy: Vec<(f64, f64)> = Vec::new();
-    let mut units: Vec<(i32, i32)> = Vec::new();
-    let mut alias: FxHashMap<i64, u32> = FxHashMap::default();
-    let mut created: FxHashMap<i64, u32> = FxHashMap::default();
-    let mut node = |c: [f64; 2]| -> (u32, (f64, f64)) {
-        let (ux, uy) = ((c[0] * 1e5).round() as i32, (c[1] * 1e5).round() as i32);
-        let key = unit_key(ux, uy);
-        if let Some(&n) = alias.get(&key) {
-            return (n, xy[n as usize]);
-        }
-        let near = (-1..=1).flat_map(|dx| (-1..=1).map(move |dy| (dx, dy))).filter_map(|(dx, dy)| created.get(&unit_key(ux + dx, uy + dy)).copied()).min();
-        let n = near.unwrap_or_else(|| {
-            let n = xy.len() as u32;
-            xy.push((ux as f64 / 1e5, uy as f64 / 1e5));
-            units.push((ux, uy));
-            created.insert(key, n);
-            n
+    let mut index: FxHashMap<i64, u32> = FxHashMap::default();
+    let mut node = |id: i64, c: [f64; 2]| -> (u32, (f64, f64)) {
+        let n = *index.entry(id).or_insert_with(|| {
+            xy.push((c[0], c[1]));
+            xy.len() as u32 - 1
         });
-        alias.insert(key, n);
         (n, xy[n as usize])
     };
+    let mut without_ids = 0usize;
 
     let mut ways: Vec<Way> = Vec::with_capacity(raws.len());
     let mut tags: Vec<Tags> = Vec::with_capacity(raws.len());
     let mut segs: Vec<Seg> = Vec::new();
+    // every (node, way, the vertex is an end of the way) and the level of every way, for the repair of duplicate nodes below
+    let mut inc: Vec<(u32, u32, bool)> = Vec::new();
+    let mut level: Vec<u32> = Vec::new();
+    let mut level_of: FxHashMap<(bool, bool, i32), u32> = FxHashMap::default();
+    let mut lines: Vec<String> = Vec::new();
+    let mut line_of: FxHashMap<String, u32> = FxHashMap::default();
     for f in raws.iter().filter(|f| !f.geometry.coordinates.is_empty()) {
         let w = ways.len();
         let p = &f.properties;
         let Some(osm_id) = p.osm_id.clone().filter(|s| !s.is_empty()) else {
-            crate::fail(format!("{}: a railway=rail line has no osm_id", features.display()))
+            return Err(format!("{}: a railway=rail line has no osm_id", features.display()));
         };
         let service = p.service.as_deref().is_some_and(|s| !s.is_empty());
         let name = p.name.clone().filter(|s| !s.is_empty()).or_else(|| p.name_zh.clone()).unwrap_or_default();
@@ -233,10 +251,28 @@ pub fn load(features: &Path) -> Graph {
         let key = if rwy.is_empty() { name.clone() } else { rwy };
         tags.push(Tags { maxspeed: p.maxspeed.as_deref().and_then(maxspeed_kmh), high_speed: p.highspeed.as_deref() == Some("yes"), name, key });
         let cs = &f.geometry.coordinates;
+        // a way whose node list does not match its vertices (a node the cut had no point for) cannot be aligned: its vertices get an id
+        // from their place, so they join only at the same place
+        let ids: Vec<i64> = match osm_id.strip_prefix("way/").and_then(|x| x.parse::<i64>().ok()).and_then(|id| way_nodes.get(&id)) {
+            Some(v) if v.len() == cs.len() => v.clone(),
+            Some(_) => {
+                without_ids += 1;
+                cs.iter().map(|c| -1 - (((c[0] * 1e5).round() as i64) << 32 | ((c[1] * 1e5).round() as i64 & 0xffff_ffff))).collect()
+            }
+            None => return Err(format!("{}: no node list for {osm_id}", wn_path.display())),
+        };
+        let lv = (
+            p.bridge.as_deref().is_some_and(|b| !b.is_empty() && b != "no"),
+            p.tunnel.as_deref().is_some_and(|b| !b.is_empty() && b != "no"),
+            p.layer.as_deref().and_then(|l| l.trim().parse::<i32>().ok()).unwrap_or(0),
+        );
+        let next = level_of.len() as u32;
+        level.push(*level_of.entry(lv).or_insert(next));
         let mut km = 0.0;
         let mut prev: Option<(u32, (f64, f64))> = None;
-        for &c in cs {
-            let (n, p) = node(c);
+        for (vi, (&c, &id)) in cs.iter().zip(&ids).enumerate() {
+            let (n, p) = node(id, c);
+            inc.push((n, w as u32, vi == 0 || vi + 1 == cs.len()));
             if let Some((pv, a)) = prev.filter(|&(pv, _)| pv != n) {
                 let d = hav(a.0, a.1, p.0, p.1);
                 segs.push(Seg { a: pv, b: n, way: w as u32, km: d });
@@ -245,11 +281,72 @@ pub fn load(features: &Path) -> Graph {
             prev = Some((n, p));
         }
         let m = cs[cs.len() / 2];
-        ways.push(Way { id: osm_id, service, km, speed: 0.0, speed_src: 0, mid: (m[0], m[1]) });
+        let usage_kmh = match p.usage.as_deref() {
+            Some("main") => 120.0,
+            Some("branch") => 80.0,
+            Some("industrial" | "military" | "tourism" | "test") => 40.0,
+            _ => 100.0,
+        };
+        let line = if tags[w].name.is_empty() {
+            NO_LINE
+        } else {
+            *line_of.entry(tags[w].name.clone()).or_insert_with(|| {
+                lines.push(tags[w].name.clone());
+                (lines.len() - 1) as u32
+            })
+        };
+        ways.push(Way { id: osm_id, service, km, speed: 0.0, speed_src: 0, mid: (m[0], m[1]), hsr: tags[w].high_speed, usage_kmh, line });
     }
 
     if segs.is_empty() {
-        crate::fail(format!("{}: no railway=rail way with two distinct vertices: not a China cut?", features.display()));
+        return Err(format!("{}: no railway=rail way with two distinct vertices: not a China cut?", features.display()));
+    }
+
+    // duplicate nodes: OSM mapping errors where one point is two nodes (bit-identical coordinates, different ids). They are joined when at
+    // least one is the end of its way and both ways are on the same level (bridge, tunnel, layer; missing is ground, 0). A crossing in the
+    // middle of two ways, or on different levels, stays unjoined.
+    let mut dup_joins: Vec<(String, String, (f64, f64))> = Vec::new();
+    {
+        let mut at: FxHashMap<(u64, u64), Vec<u32>> = FxHashMap::default();
+        for (i, p) in xy.iter().enumerate() {
+            at.entry((p.0.to_bits(), p.1.to_bits())).or_default().push(i as u32);
+        }
+        let mut groups: Vec<Vec<u32>> = at.into_values().filter(|v| v.len() > 1).collect();
+        groups.sort();
+        inc.sort_unstable();
+        let incident = |n: u32| &inc[inc.partition_point(|x| x.0 < n)..inc.partition_point(|x| x.0 <= n)];
+        // union-find over the nodes, the smallest index the root
+        let mut canon: Vec<u32> = (0..xy.len() as u32).collect();
+        fn find(p: &mut [u32], mut x: u32) -> u32 {
+            while p[x as usize] != x {
+                p[x as usize] = p[p[x as usize] as usize];
+                x = p[x as usize];
+            }
+            x
+        }
+        for grp in groups {
+            for (i, &a) in grp.iter().enumerate() {
+                for &b in &grp[i + 1..] {
+                    let hit = incident(a)
+                        .iter()
+                        .flat_map(|x| incident(b).iter().map(move |y| (x, y)))
+                        .find(|(x, y)| (x.2 || y.2) && level[x.1 as usize] == level[y.1 as usize]);
+                    if let Some((x, y)) = hit {
+                        let (ra, rb) = (find(&mut canon, a), find(&mut canon, b));
+                        canon[ra.max(rb) as usize] = ra.min(rb);
+                        dup_joins.push((ways[x.1 as usize].id.clone(), ways[y.1 as usize].id.clone(), xy[a as usize]));
+                    }
+                }
+            }
+        }
+        if !dup_joins.is_empty() {
+            for s in segs.iter_mut() {
+                s.a = find(&mut canon, s.a);
+                s.b = find(&mut canon, s.b);
+            }
+            segs.retain(|s| s.a != s.b);
+        }
+        dup_joins.sort_by(|p, q| p.2 .0.total_cmp(&q.2 .0).then(p.2 .1.total_cmp(&q.2 .1)).then(p.0.cmp(&q.0)).then(p.1.cmp(&q.1)));
     }
 
     // adjacency in compressed form: the segments of a node in the order they were read
@@ -350,5 +447,5 @@ pub fn load(features: &Path) -> Graph {
         }
         nc += 1;
     }
-    Graph { xy, segs, adj_start, adj, ways, grid, seg_grid, comp }
+    Ok(Graph { xy, segs, adj_start, adj, ways, grid, seg_grid, comp, lines, ways_without_node_ids: without_ids, dup_joins })
 }
