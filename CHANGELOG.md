@@ -2,6 +2,16 @@
 
 Newest first. Decisions are in `docs/00-overview.md`; open items in `docs/17-action-items.md`.
 
+## 2026-10-24: styles split, side-file schema, docs cleanup
+
+- App: `app/src/styles.css` is split into 12 files under `app/src/styles/`, imported in order from `app/src/main.tsx`; three dead `.lg-rule` rules removed; the `.zoom-debug` readout and `window.__map` render only in dev or with `?debug`.
+- Side-file contract: `shared/side-schema.json` is generated from the Rust serde structs by the test `side_schema_is_current` (`UPDATE_SCHEMA=1 cargo test --release side_schema_is_current`), the same pattern as `shared/tile-schema.json`; `schemars` is a dev-dependency only.
+- Stats rows (`StatsRow`, `stats.rs`) and the China service record (`CnRecord`, `cn12306/records.rs`) are structs instead of `json!` literals; output byte-identical.
+- `app/scripts/check-data-contract.mjs` reads the schema instead of hand-typed key lists; new vitest `app/src/sideSchema.test.ts` checks the `app/src/data.ts` interfaces against it (listed exception: `Shards.cn12306`, added by the China build).
+- `app/src/data.ts` optionality corrected: fields always written (`StationRecord` construction, rail_lines, airport, logo; `LineRecord` name_en, hl; `LineIndexEntry` ne; `NamedLine` ne; `StatsArea` hs_min_kmh, speed, speed_con, speed_prop) are no longer optional.
+- Hygiene: 21 nested `.omc/` agent-state folders deleted (all gitignored).
+- Docs: the user's feature notes moved into `docs/17-action-items.md` section 7; README and `CLAUDE.md` state compare mode as planned; `docs/02-architecture.md` and `pipeline/README.md` name the schema (`scripts/check-docs-allow.txt` checked: every entry is still referenced, nothing removed).
+
 ## 2026-10-23: China 12306 station panel (stage 2), corridor router, node ids for China
 
 - Stage 2: `build cn` runs `cn12306` and writes side files `app/public/data/world/cn/cn12306/<rev>/` (`rev` = content hash; 1,024 record shards keyed by station id, `ids.json`, `stretches.json` compact delta geometry, `ways/<cell>.json` incl. same-line twin tracks for highlighting); `shards.json` `"cn12306"` `{rev, count, snapshot list, cells}`. Failure skips the stage with a warning and removes the side files; never aborts the build. Report: `data/world/cn/cn12306_report.json`.

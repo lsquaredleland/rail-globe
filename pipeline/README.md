@@ -86,6 +86,7 @@ Outlines in `pipeline/regions/` (`sf-bay-area`, `paris`, `chengdu`, `greater-bay
 - `python3 pipeline/measure_views.py [world.pmtiles]`: compressed tile bytes per laptop and phone view at z2 to z8 against the 600 KB budget. Default file `app/public/data/world/world.pmtiles`.
 - `pipeline/qa/`: `fetch_narn.py`, `study_ways.py`, `eval_rules.py`, the freight study against the US NARN data (`docs/13-freight-north-america.md`). `fetch_passenger_stations.py`: the 12306 station list for China (`config/cn-passenger-stations.txt`).
 - `pipeline/logos/`: one-time operator logo pull; how `app/static/logos/` is made: `pipeline/logos/README.md`.
+- Side-file contract: `shared/side-schema.json`, generated from the Rust serde structs by the test `side_schema_is_current`. After changing a side-file struct, regenerate with `UPDATE_SCHEMA=1 cargo test --release side_schema_is_current` (run in `pipeline/rail-extract`); the same pattern as `shared/tile-schema.json`. `app/scripts/check-data-contract.mjs` and `app/src/sideSchema.test.ts` read it.
 - `pipeline/archive/`: dead scripts and raw data, see its README.
 
 Timings and the pilot-era command log: `docs/reference/pipeline-timings.md`.

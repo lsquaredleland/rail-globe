@@ -145,3 +145,26 @@ Research notes, not decisions or commitments. v1 stays GTFS-free and fully stati
   - [Turf `lineOffset`](https://atlas.co/functions/turf/turf-line-offset/) computes offset geometry if offsets are precomputed in JS instead of in the pipeline.
   - Design caution (Remix, Esri threads): manual offsets cascade, so one change can hide a line elsewhere. Compute offsets from the line graph, not by hand.
 - **Station markers** (white circle, dark ring, name beside it): `circle` layer or a canvas icon like the airport icon in `app/src/mapStyle/icons.ts`.
+
+### User's feature ideas (2026-10-24)
+
+#### A Stream of Thoughts on What Features Could be Added
+
+**How to present the China Rail Data:**
+
+Given the scale of China Rail and the amount of services, something different needs to be done. Also there is so many services that data could be presented in a very unique or novel way. Can explore more static one off websites....
+
+- All routes + trips between 2 city pairs (similar to what was done with Chengdu <> Chongqing)
+- Aggregate data?
+- visualizing how many trains per day per line?
+- night train map
+- visualizing every single trip in a day.
+- given 1 city all the paths that a train can will go down to reach other cities? Weighted by traffic or number of trains down that route? And Maybe numbers next to the stations to show how many stops there are
+- How to show how many pairs of trips between cities there are a day? Maybe can do thickness of a line?
+
+
+
+**Small fixes:**
+
+- Non major cities should have smaller text on the map at middle zooms
+- Should add disused / razed track back into the tool, so can easily see things if desired
