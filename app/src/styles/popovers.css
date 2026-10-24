@@ -1,0 +1,95 @@
+/* popovers */
+.pop-wrap {
+  position: relative;
+}
+.pop-wrap.block {
+  flex: 1;
+  min-width: 0;
+}
+.pop-wrap.block .btn.region {
+  width: 100%;
+  height: 44px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  border-radius: 10px;
+}
+.pop-wrap.block .btn.region .muted {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pop {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 240px;
+  padding: 6px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(30, 30, 28, 0.14);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pop.right {
+  left: auto;
+  right: 0;
+  min-width: 250px;
+}
+.pad {
+  padding: 8px 10px 4px;
+}
+.row.pad {
+  padding: 6px 8px;
+}
+.opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.opt:hover,
+.opt.sel {
+  background: var(--fill);
+}
+.opt .name {
+  display: block;
+  font-weight: 500;
+}
+.opt .sub {
+  display: block;
+  font-size: 12px;
+  color: var(--ink3);
+}
+.hint {
+  padding: 8px 10px;
+  border-top: 1px solid var(--line2);
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ink4);
+}
+.sep {
+  height: 1px;
+  background: var(--line2);
+  margin: 2px 4px;
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  text-align: left;
+}
+.item:hover {
+  background: var(--fill);
+}

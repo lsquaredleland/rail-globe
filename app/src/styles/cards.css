@@ -1,0 +1,359 @@
+/* area cards (rail types as squares, track speed): totals for the area under the view centre, each row a switch for the map */
+.area-card {
+  position: absolute;
+  z-index: 4;
+  left: 16px;
+  top: 76px;
+  width: 304px;
+  max-height: calc(100% - 92px);
+  overflow: auto;
+  padding: 10px 12px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.area-card.embedded {
+  position: static;
+  width: 100%;
+  max-height: none;
+  box-shadow: none;
+  border: 0;
+  padding: 0;
+  flex: none;
+  overflow: visible;
+}
+.ac-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+}
+.ac-local {
+  color: var(--ink2);
+}
+.ac-kind {
+  margin-left: auto;
+}
+.ac-total {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ac-big {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+.ac-scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: var(--fill);
+  font-weight: 600;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.ac-scale i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+.ac-scale.small {
+  padding: 2px 6px;
+  font-size: 11px;
+}
+.ac-scale b {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--ink);
+}
+.sq-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 9px);
+  gap: 2px;
+  justify-content: start;
+}
+.sq-grid i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background-color: transparent;
+  box-shadow: inset 0 0 0 0.5px rgba(30, 30, 28, 0.04);
+}
+.ac-sec {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 3px;
+}
+.ac-sec.top {
+  margin-top: 0;
+  align-items: flex-start;
+}
+.ac-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.ac-tools {
+  display: flex;
+  gap: 6px;
+}
+.ac-btn {
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--white);
+  font-size: 11px;
+  font-weight: 600;
+}
+.ac-btn:hover:not(:disabled) {
+  background: var(--fill);
+}
+.ac-rows {
+  display: flex;
+  flex-direction: column;
+}
+.ac-row,
+.sp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 2px;
+  border: 0;
+  border-top: 1px solid var(--line2);
+  background: transparent;
+  text-align: left;
+  border-radius: 0;
+}
+.ac-row:first-child {
+  border-top: 0;
+}
+.ac-row:hover,
+.sp-row:hover {
+  background: var(--fill2);
+}
+.ac-row .sw {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  border: 2px solid;
+  flex: none;
+}
+.ac-row .v {
+  font-weight: 600;
+  min-width: 40px;
+  text-align: right;
+}
+.ac-row .p {
+  min-width: 28px;
+  text-align: right;
+  font-size: 11px;
+}
+.ac-row.off .nm,
+.sp-row.off .nm {
+  text-decoration: line-through;
+}
+.ac-row.off,
+.sp-row.off {
+  opacity: 0.55;
+}
+.ac-st {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 2px;
+}
+.dot-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.dot-grid i {
+  width: 5px;
+  height: 5px;
+  border-radius: 3px;
+}
+.ac-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 11px;
+}
+.ac-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ac-key b {
+  width: 6px;
+  height: 6px;
+  border-radius: 4px;
+}
+.ac-foot {
+  line-height: 1.4;
+}
+/* speed card */
+.sp-row {
+  padding: 4px 2px;
+}
+.sp-row .nm {
+  font-size: 12px;
+}
+.sp-row.hs .nm {
+  font-weight: 600;
+  font-size: 12px;
+}
+.sp-row svg {
+  flex: none;
+}
+.sp-row .sub {
+  display: block;
+  font-size: 10.5px;
+  color: var(--ink3);
+}
+.sp-row .v {
+  font-size: 11px;
+}
+.sp-hs {
+  margin: 0 -12px;
+  padding: 7px 12px 2px;
+  background: #f9efed;
+  display: flex;
+  flex-direction: column;
+}
+.sp-hs .sp-row {
+  border-top: 0;
+}
+.sp-hs .sp-row:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+.sp-cap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+  color: #7a1730;
+}
+.sp-cap .eyebrow {
+  color: #7a1730;
+}
+.sp-cap i {
+  flex: 1;
+  height: 1px;
+  background: #e2c9c8;
+}
+.sp-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0;
+}
+.sp-line b {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.sp-line i {
+  flex: 1;
+}
+.sp-line.china b {
+  background: var(--ink);
+  color: #fff;
+}
+.sp-line.china i {
+  height: 2px;
+  background: var(--ink);
+}
+.sp-line.uic b {
+  border: 1.5px dashed #7b776e;
+  color: var(--ink);
+}
+.sp-line.uic i {
+  border-top: 1.5px dashed #7b776e;
+}
+.compact .area-card.sp .sp-hs {
+  margin: 0 -12px;
+}
+
+/* HSR only: the cards grey what the map greys */
+.ac-row.grey .nm,
+.ac-row.grey .v,
+.sp-row.grey .nm {
+  color: var(--ink3);
+}
+.ac-row.grey,
+.sp-row.grey {
+  opacity: 0.75;
+}
+.ac-row.grey.off,
+.sp-row.grey.off {
+  opacity: 0.5;
+}
+.ac-grey {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.ac-grey i {
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  background: #d4d1c7;
+  flex: none;
+}
+.sp-hs.off {
+  background: transparent;
+}
+.sp-hs.off .sp-cap,
+.sp-hs.off .sp-cap .eyebrow {
+  color: var(--ink3);
+}
+.sp-hs.off .sp-cap i {
+  background: var(--line2);
+}
+
+/* toolbar and card stack on the left: the card sits under the toolbar wherever it wraps to */
+.left-stack {
+  position: absolute;
+  z-index: 5;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  pointer-events: none;
+}
+.left-stack > * {
+  pointer-events: auto;
+}
+.left-stack > .toolbar {
+  position: static;
+  flex: none;
+}
+.left-stack > .area-card {
+  position: static;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: none;
+}

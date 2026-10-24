@@ -76,6 +76,8 @@ let protocolAdded = false
  *  Requests in flight are shared (aborted only when every asker has given up) and finished tiles stay in a small LRU. Every
  *  caller gets its own copy: MapLibre may transfer the buffer to a worker, which would detach a shared one. */
 type TileResult = Awaited<ReturnType<Protocol['tilev4']>>
+const debugOn = import.meta.env.DEV || location.search.includes('debug') // ?debug: zoom readout and window.__map for profiling a production build
+
 function dedupedPmtiles(proto: Protocol) {
   const inflight = new Map<string, { promise: Promise<TileResult>; ac: AbortController; refs: number }>()
   const done = new Map<string, TileResult>() // insertion order = age
@@ -144,7 +146,7 @@ maplibregl.setWorkerUrl(
 export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref) {
   const el = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MLMap | null>(null)
-  const zoomEl = useRef<HTMLDivElement>(null) // debug readout, remove when no longer needed
+  const zoomEl = useRef<HTMLDivElement>(null) // zoom readout, only with ?debug or in dev
   const loaded = useRef(false)
   const p = useRef(props)
   p.current = props
@@ -197,7 +199,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       fadeDuration: 100, // 0 makes MapLibre redo full label placement every frame (never paused); any fade keeps it time-sliced
     })
     mapRef.current = map
-    if (import.meta.env.DEV || location.search.includes('debug')) (window as unknown as { __map: MLMap }).__map = map // ?debug: for profiling a production build
+    if (debugOn) (window as unknown as { __map: MLMap }).__map = map // ?debug: for profiling a production build
     map.touchZoomRotate.disableRotation()
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right')
     const sc = new maplibregl.ScaleControl({ maxWidth: 120, unit: p.current.units === 'km' ? 'metric' : 'imperial' })
@@ -404,7 +406,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
   return (
     <>
       <div ref={el} className="map" />
-      <div ref={zoomEl} className="zoom-debug" aria-hidden="true" />
+      {debugOn && <div ref={zoomEl} className="zoom-debug" aria-hidden="true" />}
     </>
   )
 })

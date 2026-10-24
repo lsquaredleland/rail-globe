@@ -1,0 +1,156 @@
+/* phone */
+.phone-top {
+  position: absolute;
+  z-index: 5;
+  top: max(12px, env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+}
+.phone-bottom {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  padding: 4px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.phone-bottom .seg button {
+  height: 36px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+.sheet-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  background: rgba(30, 30, 28, 0.28);
+  display: flex;
+  align-items: flex-end;
+}
+.sheet {
+  width: 100%;
+  max-height: 88%;
+  overflow: auto;
+  padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+}
+.sheet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.sheet-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.sheet .seg button {
+  height: 36px;
+  flex: 1;
+}
+.sheet .seg {
+  width: 100%;
+}
+.sheet .tgl {
+  height: 44px;
+  padding: 0 4px;
+}
+.compact .panel {
+  top: auto;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  max-height: 72%;
+  border-radius: 16px 16px 0 0;
+  border-width: 1px 0 0;
+  padding-bottom: calc(22px + env(safe-area-inset-bottom));
+}
+.compact .maplibregl-ctrl-bottom-left {
+  margin-bottom: 62px;
+}
+.compact .maplibregl-ctrl-bottom-right {
+  margin-bottom: 62px;
+}
+
+.maplibregl-ctrl-scale {
+  background: rgba(255, 255, 255, 0.8) !important;
+  border-color: var(--ink2) !important;
+  color: var(--ink2) !important;
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+}
+.maplibregl-ctrl-attrib {
+  font-size: 11px;
+  font-family: var(--sans);
+}
+.maplibregl-ctrl-bottom-left {
+  margin: 0 0 8px 8px;
+}
+
+.sheet .row .seg {
+  width: auto;
+}
+.sheet .row .seg button {
+  flex: none;
+  padding: 0 16px;
+}
+
+.lg-btn {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 2px 4px;
+  margin: 0 -4px;
+  border-radius: 6px;
+  text-align: left;
+}
+.lg-btn:hover {
+  background: var(--fill);
+}
+.eb-btn {
+  border: 0;
+  background: transparent;
+  padding: 2px 4px;
+  margin: 0 -4px;
+  border-radius: 6px;
+  text-align: left;
+  width: fit-content;
+}
+.eb-btn:hover {
+  background: var(--fill);
+}
+.lg-body .link.sm {
+  margin-top: 2px;
+}
+
+.tt-title.lg {
+  font-size: 18px;
+  line-height: 1.25;
+}
+.named-note {
+  font-size: 12px;
+  color: var(--ink3);
+  margin: 2px 0 6px;
+  line-height: 1.4;
+}
+.line-row.active {
+  background: var(--fill);
+}
+
+.p-en {
+  margin-top: -6px;
+  color: var(--ink2);
+  font-size: 14px;
+}

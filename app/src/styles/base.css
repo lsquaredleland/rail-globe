@@ -1,0 +1,103 @@
+:root {
+  --ink: #1e1e1c;
+  --ink2: #45423c;
+  --ink3: #5f5b53;
+  --ink4: #77736a;
+  --line: #dad7d0;
+  --line2: #ece9e3;
+  --fill: #f1efea;
+  --fill2: #f7f6f3;
+  --white: #fff;
+  --shadow: 0 1px 2px rgba(30, 30, 28, 0.06), 0 6px 20px rgba(30, 30, 28, 0.1);
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink);
+  background: #f3f2ef;
+  -webkit-text-size-adjust: 100%;
+}
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+a {
+  color: var(--ink);
+}
+:focus-visible {
+  outline: 2px solid #1c5db8;
+  outline-offset: 2px;
+}
+
+.app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.map {
+  position: absolute;
+  inset: 0;
+}
+.muted {
+  color: var(--ink3);
+}
+.dim {
+  color: var(--ink4);
+}
+.sm {
+  font-size: 12px;
+}
+.row {
+  display: flex;
+  align-items: center;
+}
+.gap8 {
+  gap: 8px;
+}
+.wrap {
+  flex-wrap: wrap;
+}
+.between {
+  justify-content: space-between;
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+}
+.mt {
+  margin-top: 6px;
+}
+.ell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.eyebrow {
+  display: block;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink3);
+}

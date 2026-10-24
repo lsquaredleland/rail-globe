@@ -1,0 +1,142 @@
+/* tooltips */
+.tooltip,
+.peek {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 6px 22px rgba(30, 30, 28, 0.14);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tooltip {
+  position: absolute;
+  z-index: 10;
+  width: 306px;
+  pointer-events: none;
+}
+.peek {
+  position: absolute;
+  z-index: 10;
+  left: 12px;
+  right: 12px;
+  bottom: 70px;
+  padding-right: 44px;
+}
+.tt-names {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tt-title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.tt-sub {
+  color: var(--ink3);
+  font-size: 13px;
+}
+.tt-sub2 {
+  color: var(--ink2);
+}
+.tt-foot {
+  font-size: 12px;
+  color: var(--ink4);
+}
+.cn-city {
+  width: 100%;
+  padding: 3px 8px;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+button.cn-city {
+  cursor: pointer;
+}
+.cn-part {
+  padding: 2px 8px 2px 22px;
+}
+.cn-bars {
+  margin: 6px 0 2px;
+}
+.cn-bars svg {
+  display: block;
+}
+.tt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: baseline;
+}
+.tt-row .k,
+.facts .k {
+  color: var(--ink3);
+  flex: none;
+}
+.tt-row .v {
+  text-align: right;
+}
+.pill {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 11px;
+  background: var(--fill);
+  font-size: 12px;
+  font-weight: 500;
+}
+.pill.tier1 {
+  background: #f6eef0;
+  color: #7e0d29;
+}
+.pill.plain {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink2);
+}
+.ends {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  padding: 9px 10px;
+  background: var(--fill2);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.ends .arrow {
+  color: var(--ink4);
+}
+.more {
+  height: 40px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ink);
+  color: #fff;
+  font-weight: 500;
+}
+.close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.close:hover {
+  background: var(--fill);
+}
+.close.static {
+  position: static;
+}

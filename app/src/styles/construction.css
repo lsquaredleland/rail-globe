@@ -1,0 +1,358 @@
+/* construction switch on: the cards grow a construction and a proposed part. Everything that appears eases in (width, columns), nothing moves down. */
+.area-card {
+  transition: width 0.32s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+.ac-sec .eyebrow {
+  white-space: nowrap;
+}
+.ac-row .grow {
+  min-width: 0;
+}
+.ac-row .v,
+.ac-row .p {
+  white-space: nowrap;
+}
+.ac-row .c,
+.ac-colhead .c {
+  width: 0;
+  margin-left: -8px;
+  overflow: hidden;
+  opacity: 0;
+  text-align: right;
+  font-size: 11px;
+  white-space: nowrap;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  transition:
+    width 0.32s cubic-bezier(0.3, 0.7, 0.2, 1),
+    margin-left 0.32s cubic-bezier(0.3, 0.7, 0.2, 1),
+    opacity 0.25s ease;
+}
+.con-on .ac-row .c:not(.pr),
+.prop-on .ac-row .c.pr,
+.con-on .ac-colhead .c:not(.pr),
+.prop-on .ac-colhead .c.pr {
+  width: 64px;
+  margin-left: 0;
+  opacity: 1;
+}
+.area-card:not(.sp) {
+  --extra: 0px;
+}
+.area-card:not(.sp).con-on,
+.area-card:not(.sp).prop-on {
+  --extra: 72px;
+}
+.area-card:not(.sp).con-on.prop-on {
+  --extra: 144px;
+}
+.area-card:not(.sp):not(.embedded) {
+  width: calc(304px + var(--extra));
+}
+.dot-grid i.ring {
+  background: none;
+  border: 1.2px solid #8a867d;
+  box-sizing: border-box;
+  animation: pop 0.35s ease both;
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+.ac-key b.ring {
+  width: 7px;
+  height: 7px;
+  background: none;
+  border: 1.2px solid #8a867d;
+  box-sizing: border-box;
+}
+.ac-key .full {
+  flex-basis: 100%;
+}
+.area-card.sp {
+  --extra: 0px;
+}
+.area-card.sp.con-on,
+.area-card.sp.prop-on {
+  --extra: 84px;
+}
+.area-card.sp.con-on.prop-on {
+  --extra: 170px;
+}
+.area-card.sp:not(.embedded) {
+  width: calc(304px + var(--extra));
+}
+.sp-colhead,
+.sp-total {
+  display: flex;
+  justify-content: flex-end;
+  font-size: 11px;
+  color: var(--ink3);
+  padding-bottom: 2px;
+}
+.sp-colhead span:first-child {
+  min-width: 70px;
+  text-align: right;
+}
+.bt {
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  text-align: right;
+  white-space: nowrap;
+  transition:
+    width 0.32s cubic-bezier(0.3, 0.7, 0.2, 1),
+    opacity 0.25s ease;
+}
+.con-on .bt:not(.pr),
+.prop-on .bt.pr {
+  width: 86px;
+  opacity: 1;
+}
+.sp-total {
+  margin-top: 2px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 12px;
+}
+.sp-total b:first-child {
+  margin-right: auto;
+}
+.sp-total b:nth-child(2) {
+  min-width: 70px;
+  text-align: right;
+}
+.sp-row .v {
+  text-align: right;
+  white-space: nowrap;
+  min-width: 70px;
+}
+.sp-row {
+  align-items: center;
+}
+.sp-row .cv {
+  width: 0;
+  margin: -4px 0 -4px -9px;
+  opacity: 0;
+  overflow: hidden;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  border-left: 1px dashed var(--line);
+  font-size: 11px;
+  white-space: nowrap;
+  transition:
+    width 0.32s cubic-bezier(0.3, 0.7, 0.2, 1),
+    margin-left 0.32s cubic-bezier(0.3, 0.7, 0.2, 1),
+    opacity 0.25s ease;
+}
+.con-on .sp-row .cv:not(.pr),
+.prop-on .sp-row .cv.pr {
+  width: 86px;
+  margin-left: 0;
+  opacity: 1;
+}
+.sp-row .cv-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 4px;
+}
+
+.ac-colhead {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: -3px;
+  font-size: 11px;
+  color: var(--ink3);
+  white-space: nowrap;
+}
+.ac-colhead .ih {
+  flex: 1;
+  text-align: right;
+  margin-right: 36px;
+}
+.ac-colhead .c {
+  font-size: 11px;
+}
+
+.sq-grid.frt {
+  margin-top: -1px;
+}
+.sq-grid.frt i {
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border: 1px solid #cfcbc3;
+  background: transparent;
+  box-shadow: none;
+  transition: border-color 0.25s;
+}
+.ac-row.frt {
+  border-top: 1px dashed var(--line);
+  margin-top: 2px;
+}
+.ac-row.frt .sw {
+  border-width: 1.5px;
+}
+/* the More menu: switches fill the row and read left to right, label over its note */
+.pop .tgl {
+  width: 100%;
+  height: auto;
+  min-height: 38px;
+  padding: 7px 8px;
+  justify-content: flex-start;
+  gap: 12px;
+  text-align: left;
+  white-space: normal;
+}
+.pop .tgl .col {
+  align-items: flex-start;
+  gap: 1px;
+  line-height: 1.3;
+}
+.pop .tgl .col .sm {
+  font-size: 11.5px;
+}
+.pop .tgl-track {
+  align-self: center;
+}
+.pop.right {
+  min-width: 280px;
+  padding: 8px;
+  gap: 2px;
+}
+.pop .row.pad {
+  padding: 8px;
+}
+.pop .sep {
+  margin: 6px 4px;
+}
+.pop .item {
+  padding: 9px 8px;
+}
+.ac-row.frt .grow {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* under construction strip: slides open with the switch */
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-bottom: -7px;
+  transition:
+    grid-template-rows 0.34s cubic-bezier(0.3, 0.7, 0.2, 1),
+    opacity 0.22s ease,
+    margin-bottom 0.34s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+.collapse.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-bottom: 0;
+  transition-delay: 0s, 0.08s, 0s;
+}
+.collapse > div {
+  overflow: hidden;
+  min-height: 0;
+}
+.ac-con {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+.ac-con .ac-sec {
+  margin-top: 0;
+  white-space: nowrap;
+}
+.ac-conkm {
+  font-size: 13px;
+}
+.sq-grid.out {
+  gap: 2px;
+}
+.sq-grid.out i {
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border: 1.5px dashed #9b978e;
+  background: none;
+  box-shadow: none;
+  transition: border-color 0.3s;
+}
+
+.search-pop {
+  min-width: 300px;
+  max-width: min(360px, calc(100vw - 24px));
+}
+.pop-wrap.block .search-pop {
+  max-width: none;
+  width: 100%;
+}
+.search-in {
+  margin: 2px 2px 4px;
+  padding: 9px 10px;
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--white);
+  color: inherit;
+}
+.search-in:focus {
+  outline: 2px solid var(--ink3);
+  outline-offset: -1px;
+}
+.search-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* a folded card keeps only its header (.ac-keep) */
+.ac-fold {
+  flex: none;
+  align-self: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin: -2px -4px -2px 0;
+}
+.ac-fold:hover {
+  background: var(--fill);
+}
+.area-card.folded > :not(.ac-keep) {
+  display: none;
+}
+.area-card.folded {
+  overflow: hidden;
+}
