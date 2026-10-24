@@ -53,6 +53,7 @@ world/search.json
 airports.py
 app/public/glyphs-v2/
 app/public/glyphs/
+app/src/styles.css
 bench.mjs
 build-glyphs.mjs
 build_tiles.py
