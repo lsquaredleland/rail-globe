@@ -363,6 +363,37 @@ fn count_stations(areas: &mut [Area], stations: &[Value], tree: &Index, pips: &[
     }
 }
 
+/// One row of stats.json `areas` (the shape of app/src/data.ts `StatsArea`). The field order is the key order of the file.
+#[derive(serde::Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub(crate) struct StatsRow<'a> {
+    pub slug: &'a str,
+    pub name: &'a str,
+    pub local: &'a Option<String>,
+    pub kind: &'a str,
+    /// w, s, e, n
+    pub bbox: [f64; 4],
+    /// per rail type: open, under construction and proposed route km
+    #[cfg_attr(test, schemars(with = "std::collections::BTreeMap<String, serde_json::Value>"))]
+    pub km: Map<String, Value>,
+    /// per rail type: number of lines
+    #[cfg_attr(test, schemars(with = "std::collections::BTreeMap<String, u32>"))]
+    pub lines: Map<String, Value>,
+    /// route km by speed band
+    #[cfg_attr(test, schemars(with = "std::collections::BTreeMap<String, f64>"))]
+    pub speed: Map<String, Value>,
+    #[cfg_attr(test, schemars(with = "std::collections::BTreeMap<String, f64>"))]
+    pub speed_con: Map<String, Value>,
+    #[cfg_attr(test, schemars(with = "std::collections::BTreeMap<String, f64>"))]
+    pub speed_prop: Map<String, Value>,
+    /// per station kind: count
+    #[cfg_attr(test, schemars(with = "std::collections::BTreeMap<String, u32>"))]
+    pub stations: Map<String, Value>,
+    /// where high-speed starts in km/h
+    #[cfg_attr(test, schemars(with = "f64"))]
+    pub hs_min_kmh: &'a Value,
+}
+
 /// The stats.json rows (areas with too little metro or no track are left out), the shapes.json map, the count left out and a log of the first rows.
 fn area_rows(areas: &[Area], hs_min_kmh: &Value) -> (Vec<Value>, Map<String, Value>, usize, Vec<String>) {
     let mut rows = Vec::new();
@@ -395,7 +426,21 @@ fn area_rows(areas: &[Area], hs_min_kmh: &Value) -> (Vec<Value>, Map<String, Val
         if let Some(p) = &a.poly {
             shapes.insert(a.slug.clone(), shape(p));
         }
-        rows.push(json!({ "slug": a.slug, "name": a.name, "local": a.local, "kind": a.kind, "bbox": a.bbox, "km": km, "lines": lines, "speed": speed, "speed_con": speed_con, "speed_prop": speed_prop, "stations": st, "hs_min_kmh": hs_min_kmh }));
+        let row = StatsRow {
+            slug: &a.slug,
+            name: &a.name,
+            local: &a.local,
+            kind: a.kind,
+            bbox: a.bbox,
+            km,
+            lines,
+            speed,
+            speed_con,
+            speed_prop,
+            stations: st,
+            hs_min_kmh,
+        };
+        rows.push(serde_json::to_value(row).expect("stats row serializes"));
     }
     (rows, shapes, dropped, log)
 }

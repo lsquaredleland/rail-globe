@@ -4,7 +4,7 @@ import { setHsMin } from './regions'
 
 export interface LineIndexEntry {
   n: string | null
-  ne?: string | null
+  ne: string | null
   r: string | null
   c: string | null
   t: RailType
@@ -20,7 +20,7 @@ export interface StationRecord {
   name: string | null
   name_en: string | null
   tier: 1 | 2 | 3
-  construction?: boolean
+  construction: boolean
   terminus: boolean
   hsr: boolean
   modes: string[]
@@ -30,21 +30,21 @@ export interface StationRecord {
   platform_refs_other: string[]
   line_count: number
   lines: Record<string, number[]>
-  rail_lines?: { id: string; name: string | null; name_en: string | null }[]
+  rail_lines: { id: string; name: string | null; name_en: string | null }[]
   complex: { id: string; name: string | null; others: { id: string; name: string | null; name_en: string | null; modes: string[] }[] } | null
-  airport?: string | null
+  airport: string | null
   osm: string | null
   wikidata: string[] | null
   pt: [number, number]
   /** Wikidata id of the operator whose logo (logos/<id>.png) the card shows; null when we have none */
-  logo?: string | null
+  logo: string | null
   tags: { id: string; tags: Record<string, string> }[]
   model: Record<string, string | number | boolean | null>
 }
 export interface LineRecord {
   id: number
   name: string | null
-  name_en?: string | null
+  name_en: string | null
   tags: Record<string, string>
   route_ids: string[]
   ref: string | null
@@ -58,7 +58,7 @@ export interface LineRecord {
   osm: string
   routes: { id: string; name: string | null; from: string | null; to: string | null; km: number; stations: string[] }[]
   station_names: Record<string, { n: string | null; ne: string | null }>
-  hl?: Highlight
+  hl: Highlight
 }
 
 /** What a line or named railway is drawn with when highlighted: its track pieces' ids (a layer filter on the track layer, z9 and closer) and a
@@ -72,7 +72,7 @@ export interface Highlight {
 
 export interface NamedLine {
   n: string
-  ne?: string | null
+  ne: string | null
   t: RailType
   km: number
   ways: number
@@ -226,8 +226,8 @@ export async function loadFeatureTags(slug: string, osmId: string): Promise<Tags
 /** Rail totals for a region and the areas inside it: provinces and cities with a metro (pipeline/rail-extract/src/stats.rs).
  *  Length is route km, double track counted once (about 10% accurate). */
 export interface StatsArea {
-  /** region rows only: where high-speed starts in km/h (the config's high_speed_min_kmh) */
-  hs_min_kmh?: number
+  /** where high-speed starts in km/h (the config's high_speed_min_kmh) */
+  hs_min_kmh: number
   slug: string
   name: string
   local: string | null
@@ -235,11 +235,11 @@ export interface StatsArea {
   bbox: [number, number, number, number]
   km: Record<string, { open: number; con: number; prop?: number }>
   /** open passenger route km by speed band: the band's lower bound in km/h, or 'none' without a usable maxspeed */
-  speed?: Record<string, number>
+  speed: Record<string, number>
   /** the same for passenger track under construction */
-  speed_con?: Record<string, number>
+  speed_con: Record<string, number>
   /** the same for proposed passenger track (a test scope: Hong Kong) */
-  speed_prop?: Record<string, number>
+  speed_prop: Record<string, number>
   lines: Record<string, number>
   stations: Record<string, number>
 }

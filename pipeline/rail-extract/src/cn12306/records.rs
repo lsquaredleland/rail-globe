@@ -8,10 +8,32 @@ use super::stations::TrainRun;
 use crate::region::Region;
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::OnceLock;
+
+/// One record of cn12306/<rev>/<n>.json (the shape of app/src/data.ts `CnRecord`). The field order is the key order of the file.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub(crate) struct CnRecord<'a> {
+    pub name: &'a str,
+    pub name_en: Option<String>,
+    pub stops: usize,
+    pub dep: usize,
+    pub arr: usize,
+    pub first: Option<i32>,
+    pub last: Option<i32>,
+    pub hd: [u32; 24],
+    pub ha: [u32; 24],
+    #[cfg_attr(test, schemars(with = "Vec<serde_json::Value>"))]
+    pub dest: Vec<Value>,
+    #[cfg_attr(test, schemars(with = "std::collections::BTreeMap<String, serde_json::Value>"))]
+    pub dst: serde_json::Map<String, Value>,
+    pub st: Vec<Vec<u32>>,
+    pub pts: Vec<[f64; 2]>,
+}
 
 /// a regex compiled once
 fn re(cell: &'static OnceLock<regex::Regex>, pattern: &str) -> &'static regex::Regex {
@@ -466,22 +488,22 @@ pub fn build(
         }
         let name_en = name_en.map(|e| e.0);
         let (first, last) = rng(&dep);
-        let rec = json!({
-            "name": zh,
-            "name_en": name_en,
-            "stops": items.len(),
-            "dep": dep.len(),
-            "arr": arr.len(),
-            "first": if dep.is_empty() { Value::Null } else { json!(first) },
-            "last": if dep.is_empty() { Value::Null } else { json!(last) },
-            "hd": hd,
-            "ha": ha,
-            "dest": dest,
-            "dst": dst_out,
-            "st": bands,
-            "pts": pts.iter().map(|p| json!([p.0 as f64 / 100.0, p.1 as f64 / 100.0])).collect::<Vec<_>>(),
-        });
-        let text = rec.to_string();
+        let rec = CnRecord {
+            name: zh,
+            name_en,
+            stops: items.len(),
+            dep: dep.len(),
+            arr: arr.len(),
+            first: if dep.is_empty() { None } else { Some(first) },
+            last: if dep.is_empty() { None } else { Some(last) },
+            hd,
+            ha,
+            dest,
+            dst: dst_out,
+            st: bands,
+            pts: pts.iter().map(|p| [p.0 as f64 / 100.0, p.1 as f64 / 100.0]).collect(),
+        };
+        let text = serde_json::to_string(&rec).expect("china record serializes");
         sizes.push(text.len());
         records.push((app.list[k].id.clone(), text));
     }

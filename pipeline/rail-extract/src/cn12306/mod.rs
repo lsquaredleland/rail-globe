@@ -21,7 +21,7 @@ mod corridor_tests;
 mod draw;
 mod graph;
 mod model;
-mod records;
+pub(crate) mod records;
 mod rgraph;
 mod route;
 mod selfcheck;

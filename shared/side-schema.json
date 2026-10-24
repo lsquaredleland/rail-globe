@@ -1,0 +1,786 @@
+{
+  "definitions": {
+    "station": {
+      "type": "object",
+      "properties": {
+        "id": true,
+        "name": true,
+        "name_en": true,
+        "tier": {
+          "description": "size rank 1 (largest) to 3"
+        },
+        "terminus": true,
+        "hsr": {
+          "type": "boolean",
+          "description": "high-speed station: flagged by the model or served by a high-speed line"
+        },
+        "modes": true,
+        "platforms": {
+          "description": "mainline platform count"
+        },
+        "platform_count": true,
+        "platform_refs": true,
+        "platform_refs_other": true,
+        "rail_lines": {
+          "description": "railway lines (route=railway relations) through the station"
+        },
+        "line_count": true,
+        "lines": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "line numbers by rail type, most prominent type first"
+        },
+        "complex": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ComplexRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "construction": {
+          "type": "boolean",
+          "description": "station under construction"
+        },
+        "airport": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "the airport it serves (IATA code or name)"
+        },
+        "osm": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "OSM id of the first source object"
+        },
+        "wikidata": true,
+        "pt": {
+          "description": "`[lon, lat]`"
+        },
+        "logo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Wikidata id of its operator, when a logo exists"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SourceTags"
+          },
+          "description": "raw tags of the source objects"
+        },
+        "model": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "the station model's own numbers (score, tier, land_ha, ...)"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "name_en",
+        "tier",
+        "terminus",
+        "hsr",
+        "modes",
+        "platforms",
+        "platform_count",
+        "platform_refs",
+        "platform_refs_other",
+        "rail_lines",
+        "line_count",
+        "lines",
+        "complex",
+        "construction",
+        "airport",
+        "osm",
+        "wikidata",
+        "pt",
+        "logo",
+        "tags",
+        "model"
+      ],
+      "description": "A record of stations/: everything the station card shows.",
+      "title": "StationRecord",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "ComplexRef": {
+          "type": "object",
+          "properties": {
+            "id": true,
+            "name": true,
+            "others": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ComplexOther"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "others"
+          ],
+          "description": "The complex a station belongs to (only written when it has other stations)."
+        },
+        "ComplexOther": {
+          "type": "object",
+          "properties": {
+            "id": true,
+            "name": true,
+            "name_en": true,
+            "modes": true
+          },
+          "required": [
+            "id",
+            "name",
+            "name_en",
+            "modes"
+          ],
+          "description": "A station of the same complex, listed on the station card."
+        },
+        "SourceTags": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "OSM id (`node/1`, `relation/2`)"
+            },
+            "tags": true
+          },
+          "required": [
+            "id",
+            "tags"
+          ],
+          "description": "Tags of one source object of a station or line."
+        }
+      }
+    },
+    "line": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64",
+          "description": "line number"
+        },
+        "name": true,
+        "ref": true,
+        "type": true,
+        "colour": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "operator": true,
+        "network": true,
+        "from": true,
+        "to": true,
+        "km": {
+          "description": "length in km: the longest route"
+        },
+        "osm": {
+          "type": "string",
+          "description": "OSM id of the line relation"
+        },
+        "routes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RouteRecord"
+          },
+          "description": "the eight longest routes"
+        },
+        "station_names": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/StationName"
+          },
+          "description": "names of the stations on those routes, by station id"
+        },
+        "tags": {
+          "description": "raw tags of the line relation"
+        },
+        "name_en": true,
+        "route_ids": {
+          "type": "array",
+          "items": true,
+          "description": "ids of its route relations (at most 30)"
+        },
+        "hl": {
+          "$ref": "#/$defs/Highlight"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ref",
+        "type",
+        "colour",
+        "operator",
+        "network",
+        "from",
+        "to",
+        "km",
+        "osm",
+        "routes",
+        "station_names",
+        "tags",
+        "name_en",
+        "route_ids",
+        "hl"
+      ],
+      "description": "A record of lines/ (or lines-big/): everything the line card shows.",
+      "title": "LineRecord",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "RouteRecord": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": true,
+            "from": true,
+            "to": true,
+            "km": {
+              "type": "number",
+              "format": "double",
+              "description": "length in km"
+            },
+            "stations": {
+              "description": "station ids in order"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "from",
+            "to",
+            "km",
+            "stations"
+          ],
+          "description": "One route of a line record."
+        },
+        "StationName": {
+          "type": "object",
+          "properties": {
+            "n": true,
+            "ne": true
+          },
+          "required": [
+            "n",
+            "ne"
+          ],
+          "description": "The name of a station on a line record."
+        },
+        "Highlight": {
+          "type": "object",
+          "properties": {
+            "ways": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "ids of its track pieces (a filter on the track layer, z9 and closer)"
+            },
+            "geom": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HlGeom"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "merged geometry, for the overview that has no per-piece ids; null when there is no track"
+            },
+            "type": {
+              "description": "rail type"
+            },
+            "oc": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "line colour, when it has one"
+            }
+          },
+          "required": [
+            "ways",
+            "geom",
+            "type"
+          ],
+          "description": "What a line or a named railway is drawn with when highlighted: its track pieces and a simplified geometry."
+        },
+        "HlGeom": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "always `MultiLineString`"
+            },
+            "coordinates": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              "description": "merged, simplified lines as `[lon, lat]`"
+            }
+          },
+          "required": [
+            "type",
+            "coordinates"
+          ],
+          "description": "The simplified geometry of a highlight (GeoJSON MultiLineString)."
+        }
+      }
+    },
+    "line_index_entry": {
+      "type": "object",
+      "properties": {
+        "n": {
+          "description": "line name"
+        },
+        "r": {
+          "description": "line ref (number or letter)"
+        },
+        "c": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "line colour, normalised to `#rrggbb`"
+        },
+        "t": {
+          "description": "rail type of the line"
+        },
+        "o": {
+          "description": "operator"
+        },
+        "f": {
+          "description": "first terminus"
+        },
+        "to": {
+          "description": "last terminus"
+        },
+        "km": {
+          "type": "number",
+          "format": "double",
+          "description": "length in km: the longest route"
+        },
+        "ne": {
+          "description": "English name"
+        }
+      },
+      "required": [
+        "n",
+        "r",
+        "c",
+        "t",
+        "o",
+        "f",
+        "to",
+        "km",
+        "ne"
+      ],
+      "description": "One entry of lines-index.json (keyed by line number): what the search and the line cards need without loading the line.",
+      "title": "LineIndexEntry",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "named_line": {
+      "type": "object",
+      "properties": {
+        "n": {
+          "type": "string",
+          "description": "name"
+        },
+        "ne": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "English name"
+        },
+        "t": {
+          "type": "string",
+          "description": "rail type"
+        },
+        "km": {
+          "type": "number",
+          "format": "double",
+          "description": "length in km"
+        },
+        "ways": {
+          "type": "integer",
+          "format": "int64",
+          "description": "number of ways"
+        },
+        "bbox": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "description": "bounding box `[west, south, east, north]`"
+        }
+      },
+      "required": [
+        "n",
+        "ne",
+        "t",
+        "km",
+        "ways",
+        "bbox"
+      ],
+      "description": "One entry of named-lines.json: a named railway that no line runs on.",
+      "title": "NamedLine",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "highlight": {
+      "type": "object",
+      "properties": {
+        "ways": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "ids of its track pieces (a filter on the track layer, z9 and closer)"
+        },
+        "geom": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HlGeom"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "merged geometry, for the overview that has no per-piece ids; null when there is no track"
+        },
+        "type": {
+          "description": "rail type"
+        },
+        "oc": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "line colour, when it has one"
+        }
+      },
+      "required": [
+        "ways",
+        "geom",
+        "type"
+      ],
+      "description": "What a line or a named railway is drawn with when highlighted: its track pieces and a simplified geometry.",
+      "title": "Highlight",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "HlGeom": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "always `MultiLineString`"
+            },
+            "coordinates": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "format": "double"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              "description": "merged, simplified lines as `[lon, lat]`"
+            }
+          },
+          "required": [
+            "type",
+            "coordinates"
+          ],
+          "description": "The simplified geometry of a highlight (GeoJSON MultiLineString)."
+        }
+      }
+    },
+    "shards": {
+      "type": "object",
+      "properties": {
+        "stations": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "description": "station records in `stations/`"
+        },
+        "lines": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "description": "line records in `lines/`"
+        },
+        "lines_big": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "description": "line numbers that are their own file in `lines-big/`"
+        },
+        "tags": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "description": "tag records in `tags/`"
+        },
+        "name-hl": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "description": "name highlights in `name-hl/`"
+        }
+      },
+      "required": [
+        "stations",
+        "lines",
+        "lines_big",
+        "tags",
+        "name-hl"
+      ],
+      "description": "shards.json: shard counts for the app, which hashes a key with fnv1a and takes it modulo the count.",
+      "title": "Shards",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "stats_area": {
+      "type": "object",
+      "properties": {
+        "slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "local": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "bbox": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "w, s, e, n"
+        },
+        "km": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "per rail type: open, under construction and proposed route km"
+        },
+        "lines": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "description": "per rail type: number of lines"
+        },
+        "speed": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          },
+          "description": "route km by speed band"
+        },
+        "speed_con": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "speed_prop": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "stations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "description": "per station kind: count"
+        },
+        "hs_min_kmh": {
+          "type": "number",
+          "format": "double",
+          "description": "where high-speed starts in km/h"
+        }
+      },
+      "required": [
+        "slug",
+        "name",
+        "local",
+        "kind",
+        "bbox",
+        "km",
+        "lines",
+        "speed",
+        "speed_con",
+        "speed_prop",
+        "stations",
+        "hs_min_kmh"
+      ],
+      "description": "One row of stats.json `areas` (the shape of app/src/data.ts `StatsArea`). The field order is the key order of the file.",
+      "title": "StatsRow",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "china_service_record": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "name_en": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stops": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "dep": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "arr": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "first": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "last": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "hd": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "minItems": 24,
+          "maxItems": 24
+        },
+        "ha": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "minItems": 24,
+          "maxItems": 24
+        },
+        "dest": {
+          "type": "array",
+          "items": true
+        },
+        "dst": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "st": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          }
+        },
+        "pts": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      },
+      "required": [
+        "name",
+        "name_en",
+        "stops",
+        "dep",
+        "arr",
+        "first",
+        "last",
+        "hd",
+        "ha",
+        "dest",
+        "dst",
+        "st",
+        "pts"
+      ],
+      "description": "One record of cn12306/<rev>/<n>.json (the shape of app/src/data.ts `CnRecord`). The field order is the key order of the file.",
+      "title": "CnRecord",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  }
+}

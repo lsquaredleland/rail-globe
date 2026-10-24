@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 /// One entry of lines-index.json (keyed by line number): what the search and the line cards need without loading the line.
 #[derive(Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub(super) struct LineIndexEntry<'a> {
     /// line name
     pub n: &'a Value,
@@ -31,6 +32,7 @@ pub(super) struct LineIndexEntry<'a> {
 
 /// One entry of named-lines.json: a named railway that no line runs on.
 #[derive(Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub(super) struct NamedLine<'a> {
     /// name
     pub n: &'a str,
@@ -48,6 +50,7 @@ pub(super) struct NamedLine<'a> {
 
 /// shards.json: shard counts for the app, which hashes a key with fnv1a and takes it modulo the count.
 #[derive(Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub(super) struct Shards {
     /// station records in `stations/`
     pub stations: u32,
@@ -64,6 +67,7 @@ pub(super) struct Shards {
 
 /// The simplified geometry of a highlight (GeoJSON MultiLineString).
 #[derive(Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub(super) struct HlGeom {
     /// always `MultiLineString`
     #[serde(rename = "type")]
@@ -74,6 +78,7 @@ pub(super) struct HlGeom {
 
 /// What a line or a named railway is drawn with when highlighted: its track pieces and a simplified geometry.
 #[derive(Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub(super) struct Highlight<'a> {
     /// ids of its track pieces (a filter on the track layer, z9 and closer)
     pub ways: &'a [String],
@@ -89,6 +94,7 @@ pub(super) struct Highlight<'a> {
 
 /// A station of the same complex, listed on the station card.
 #[derive(Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub(super) struct ComplexOther<'a> {
     pub id: &'a Value,
     pub name: &'a Value,
@@ -98,6 +104,7 @@ pub(super) struct ComplexOther<'a> {
 
 /// The complex a station belongs to (only written when it has other stations).
 #[derive(Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub(super) struct ComplexRef<'a> {
     pub id: &'a Value,
     pub name: Value,
@@ -106,6 +113,7 @@ pub(super) struct ComplexRef<'a> {
 
 /// Tags of one source object of a station or line.
 #[derive(Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub(super) struct SourceTags<'a> {
     /// OSM id (`node/1`, `relation/2`)
     pub id: &'a str,
@@ -114,6 +122,7 @@ pub(super) struct SourceTags<'a> {
 
 /// A record of stations/: everything the station card shows.
 #[derive(Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub(super) struct StationRecord<'a> {
     pub id: &'a Value,
     pub name: &'a Value,
@@ -154,6 +163,7 @@ pub(super) struct StationRecord<'a> {
 
 /// One route of a line record.
 #[derive(Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub(super) struct RouteRecord<'a> {
     pub id: &'a str,
     pub name: &'a Value,
@@ -167,6 +177,7 @@ pub(super) struct RouteRecord<'a> {
 
 /// The name of a station on a line record.
 #[derive(Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub(super) struct StationName<'a> {
     pub n: &'a Value,
     pub ne: &'a Value,
@@ -174,6 +185,7 @@ pub(super) struct StationName<'a> {
 
 /// A record of lines/ (or lines-big/): everything the line card shows.
 #[derive(Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub(super) struct LineRecord<'a> {
     /// line number
     pub id: i64,
@@ -201,4 +213,42 @@ pub(super) struct LineRecord<'a> {
     /// ids of its route relations (at most 30)
     pub route_ids: Vec<&'a Value>,
     pub hl: Highlight<'a>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cn12306::records::CnRecord;
+    use crate::stats::StatsRow;
+    use schemars::generate::SchemaSettings;
+    use serde_json::json;
+
+    /// shared/side-schema.json is the JSON Schema of every side-file record, generated from the serde structs above (and the stats and China ones).
+    /// The app (src/data.ts, checked by src/sideSchema.test.ts) and app/scripts/check-data-contract.mjs read it.
+    /// Each entry is a standalone schema (its `$ref`s resolve within the entry), so the file as a whole is not one JSON Schema document.
+    /// Out of date: regenerate with `UPDATE_SCHEMA=1 cargo test --release side_schema_is_current`.
+    #[test]
+    fn side_schema_is_current() {
+        let mut defs = Map::new();
+        let mut add = |name: &str, schema: schemars::Schema| {
+            defs.insert(name.to_string(), schema.to_value());
+        };
+        // a fresh generator per entry, so no entry carries another's definitions
+        let gen = || SchemaSettings::draft2020_12().for_serialize().into_generator();
+        add("station", gen().root_schema_for::<StationRecord>());
+        add("line", gen().root_schema_for::<LineRecord>());
+        add("line_index_entry", gen().root_schema_for::<LineIndexEntry>());
+        add("named_line", gen().root_schema_for::<NamedLine>());
+        add("highlight", gen().root_schema_for::<Highlight>());
+        add("shards", gen().root_schema_for::<Shards>());
+        add("stats_area", gen().root_schema_for::<StatsRow>());
+        add("china_service_record", gen().root_schema_for::<CnRecord>());
+        let want = serde_json::to_string_pretty(&json!({ "definitions": defs })).unwrap() + "\n";
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../shared/side-schema.json");
+        if std::env::var_os("UPDATE_SCHEMA").is_some() {
+            std::fs::write(&path, &want).unwrap();
+        }
+        let have = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(have == want, "shared/side-schema.json is out of date: regenerate it with `UPDATE_SCHEMA=1 cargo test --release side_schema_is_current`");
+    }
 }

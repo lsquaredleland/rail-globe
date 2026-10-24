@@ -258,7 +258,7 @@ export function LinePanel({
   return (
     <PanelFrame onClose={onClose} onBack={onBack} backLabel={backLabel} label="Line">
       <div className="row gap8">
-        <LineBadge e={{ n: l.name, r: l.ref, c: l.colour, t, o: l.operator, f: l.from, to: l.to, km: l.km }} size={26} />
+        <LineBadge e={{ n: l.name, ne: l.name_en, r: l.ref, c: l.colour, t, o: l.operator, f: l.from, to: l.to, km: l.km }} size={26} />
         <h2 className="p-title">{lMain}</h2>
       </div>
       {lOther && <div className="p-en">{lOther}</div>}

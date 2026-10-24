@@ -30,3 +30,6 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 panic = "abort"
+
+[dev-dependencies]
+schemars = { version = "1.2", features = ["derive"] }   # shared/side-schema.json: the JSON Schema of the side-file records (test `side_schema_is_current` only, never in the binary)
