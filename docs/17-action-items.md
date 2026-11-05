@@ -57,7 +57,7 @@ In HSR-only mode the station label layers (`lbl1`-`lbl3`, `lblcon1`-`lblcon3`) f
 
 1. Publishing deploys the live site: `pipeline/publish.sh` (build, verify, upload, push, prune, live checks) after the checks in the changelog. Never run without a go. Done 2026-10-20 for the world data (195 files updated, prune deleted nothing).
 2. Done 2026-10-20: `r2/sync.sh` ran, so `shards.json` is `no-cache`; it prunes dropped slugs through `r2/dropped-slugs.sh` (guards: kept/dropped overlap, `world.parts.json`). It now uploads and prunes only `world/`, and the bucket holds nothing else (3,424 stale objects, 1.35 GB, deleted).
-3. r2.dev is HTTP/1.1, uncompressed, tiles `max-age=3600`: custom domain checklist is in `r2/README.md` (compression rules for `.json` and `.pbf`, build-dated tile file names for immutability, then disable the r2.dev URL).
+3. The data custom domain is live (HTTP/2, Brotli on `.json`); left: edge cache rule, build-dated tile file names for immutability, then disable the r2.dev URL (`r2/README.md`).
 
 ## 5. Follow-ups, none blocking
 
@@ -72,7 +72,7 @@ Evidence and numbers for each item: `archive/performance-todos-2026-10-17.md` (o
 
 ### Blocks a release
 - **Low-zoom tile weight over the 600 KB view budget.** Plan, measurements and the ordered steps: `16-low-zoom-tile-weight-plan.md` (steps 1 to 3 built; Europe z5 laptop is the only failing zoom, see 1.1 above). Done when no laptop or phone view is over 600 KB in the listed views (Europe z4 to z7, world z3, Moscow, Cairo, Delhi, Mumbai, Seoul, Beijing, Shanghai), `rail-extract world` is still byte-identical for `--deep-zoom 5` and `6`, and the zoom bench is no worse. Measure with `python3 pipeline/measure_views.py` or `rail-extract pminfo --tsv`.
-- **Custom domain for R2 (needs the user's go).** Live on `r2.dev`: HTTP/1.1, no compression, tiles `max-age=3600`, no edge cache. Done when a custom domain is attached (`VITE_DATA_BASE`, `connect-src` in `app/vercel.json` and `r2/cors.json` changed together, `r2.dev` disabled), `curl -I` shows HTTP/2 or 3, a shard file has `content-encoding`, a second tile range shows `cf-cache-status: HIT`, and a cold load of Paris and Chengdu matches the localhost request counts. Option if edge misses hurt: split the 1.18 GB world file by zoom. Keep `dedupedPmtiles` in `MapView.tsx` (range requests are billed per operation). Checklist: `r2/README.md`.
+- **Custom domain for R2: finish.** Attached and live since 2026-11-05 at `network-data.lsquared.cc` (HTTP/2, `content-encoding: br` on shards, app switched, `ALLOW_R2_DEV` removed). Left: a Cache Rule (tiles still `cf-cache-status: DYNAMIC`), the WAF rule that blocks methods other than GET, HEAD and OPTIONS, the rate limit, and disabling `r2.dev` (steps 4, 6 and 9 of the checklist). Done when `r2.dev` is disabled, a second tile range shows `cf-cache-status: HIT`, and a cold load of Paris and Chengdu matches the localhost request counts. Option if edge misses hurt: split the 1.18 GB world file by zoom. Keep `dedupedPmtiles` in `MapView.tsx` (range requests are billed per operation). Checklist: `r2/README.md`.
 - **Freight spot check (US, Canada, Mexico).** The rule is built (`passenger_needs_evidence`, `13-freight-north-america.md`). Still to do: a spot check of the US Midwest and Mexico against the answer lists; freight must show as freight, the pilots unchanged.
 
 ### Search and app wiring

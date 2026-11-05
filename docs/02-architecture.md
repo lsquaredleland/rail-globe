@@ -10,7 +10,7 @@ A static site. An offline build turns OSM into one PMTiles file plus small JSON 
 | Filter and export | Rust: each region cut from the cache by its outline (countries and provinces / states from the planet's admin boundaries, or hand-made) | Exactly as `03-data-spec.md` says; under a second per region, all of China included |
 | Processing | Rust (`classify/`, `stations/`, `tiles/` in `pipeline/rail-extract`; geo and rstar) | No Python or PostGIS in the build. Python is only for the dev checks (`pipeline/check.py`, `pipeline/qa/`) |
 | Tiles | Rust writer (`tilewriter/`: geojson-vt-rs slicing, `mlt-core` encoding) → MLT in PMTiles | One run: merged track overview (z0–8, consecutive and end-to-start pieces joined, repeated vertices dropped, Douglas-Peucker 4 units; z0–8 point and line layers use extent 2048, no stations or complexes in z0–5 tiles, `16-low-zoom-tile-weight-plan.md` section 9) and full detail (z9–14) in the same layers. MLT only, no MVT, no tippecanoe |
-| Hosting | Cloudflare R2 for tiles, a static host for the app | Live since 2026-10-16: R2 on the `r2.dev` public URL, app on Vercel at `network.lsquared.cc` since 2026-11-05 (`rail-globe.vercel.app` redirects there); custom domain for the data at public launch |
+| Hosting | Cloudflare R2 for tiles, a static host for the app | Live since 2026-10-16; since 2026-11-05 the app is on Vercel at `network.lsquared.cc` (`rail-globe.vercel.app` redirects there) and the data on R2 at `network-data.lsquared.cc` |
 | Map | MapLibre GL JS | |
 | Basemap | OpenFreeMap, restyled minimal | See `01-features.md` |
 | App | Vite + React + TypeScript | |

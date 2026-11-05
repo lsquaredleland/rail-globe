@@ -2,6 +2,13 @@
 
 Newest first. Decisions are in `docs/00-overview.md`; open items in `docs/17-action-items.md`.
 
+## 2026-11-05: data on network-data.lsquared.cc, security hardening
+
+- Data: the R2 bucket is served from the custom domain `network-data.lsquared.cc` (min TLS 1.2, HTTP/2, Brotli on `.json`); `VITE_DATA_BASE` in Vercel points there, `ALLOW_R2_DEV` is removed, and `app/vercel.json` connect-src names it instead of r2.dev.
+- App: IBM Plex Sans is self-hosted (`@fontsource/ibm-plex-sans` 5.3.0, latin 400/500/600), so the CSP drops `fonts.googleapis.com` and `fonts.gstatic.com` (`style-src 'self' 'unsafe-inline'`, `font-src 'self'`).
+- GitHub: ruleset `protect-main` blocks force-pushes and deletion of `main`; Dependabot alerts and security updates are on.
+- Checked live: a cold load of Paris and Chengdu in Chromium has no CSP, CORS or failed requests and fetches only the app, the data domain and OpenFreeMap. Still open: edge cache rule, WAF method rule, rate limit, disabling r2.dev (`docs/17-action-items.md`).
+
 ## 2026-11-05: app on network.lsquared.cc
 
 - The app is live at `https://network.lsquared.cc`: domain added to the Vercel project `rail-globe`, DNS-only CNAME in the Cloudflare zone `lsquared.cc`; `rail-globe.vercel.app` now 308-redirects there.
