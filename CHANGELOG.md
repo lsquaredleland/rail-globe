@@ -2,6 +2,12 @@
 
 Newest first. Decisions are in `docs/00-overview.md`; open items in `docs/17-action-items.md`.
 
+## 2026-11-05: app on network.lsquared.cc
+
+- The app is live at `https://network.lsquared.cc`: domain added to the Vercel project `rail-globe`, DNS-only CNAME in the Cloudflare zone `lsquared.cc`; `rail-globe.vercel.app` now 308-redirects there.
+- R2 bucket CORS (`r2/cors.json`, applied live) allows `https://network.lsquared.cc` as well as the old origin.
+- `pipeline/publish.sh` checks the new address by default (`SITE`); docs updated. The data is still on `r2.dev`.
+
 ## 2026-10-24: styles split, side-file schema, docs cleanup
 
 - App: `app/src/styles.css` is split into 12 files under `app/src/styles/`, imported in order from `app/src/main.tsx`; three dead `.lg-rule` rules removed; the `.zoom-debug` readout and `window.__map` render only in dev or with `?debug`.

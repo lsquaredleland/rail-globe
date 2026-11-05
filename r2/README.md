@@ -2,7 +2,7 @@
 
 **Live on r2.dev (since 2026-10-16):** public development URL https://pub-dd749a156c5c4e869e4d54eb1c24d0c5.r2.dev is in app/vercel.json connect-src; VITE_DATA_BASE and ALLOW_R2_DEV=1 are set in Vercel. Switch to a custom domain and disable the r2.dev URL before public launch.
 
-The placeholders `data.example.com` are for the custom domain at launch; `r2/cors.json` already names `rail-globe.vercel.app`. The Vercel build fails if the domain in `app/vercel.json` does not match `VITE_DATA_BASE`.
+The placeholders `data.example.com` are for the custom domain at launch; `r2/cors.json` names the app at `network.lsquared.cc` and the old `rail-globe.vercel.app` (which redirects to it); both are live on the bucket since 2026-11-05 (`wrangler r2 bucket cors set` takes its own JSON shape, not this file as is). The zone `lsquared.cc` is on Cloudflare, so `data.lsquared.cc` can be the data domain. The Vercel build fails if the domain in `app/vercel.json` does not match `VITE_DATA_BASE`.
 
 ## R2 bucket (Cloudflare dashboard)
 1. Create a bucket. Today r2.dev public access is enabled (dev URL); disable it once the custom domain below is live (it is uncached, rate-limited and cannot carry a WAF).
@@ -17,7 +17,7 @@ Measured on the r2.dev URL on 2026-10-17 (`curl -sI`, `Origin: https://rail-glob
 Do these in order. Nothing here has been executed.
 1. Cloudflare dashboard > R2 > the bucket > Settings > Custom Domains > Connect `data.<your-domain>` (the zone must be on Cloudflare). Wait until the status is Active (TLS is issued automatically).
 2. Zone > SSL/TLS: Full (strict), minimum TLS 1.2, Always Use HTTPS, HSTS. Zone > Network: HTTP/2 and HTTP/3 (QUIC) on (both default on). Check later: `curl -sI --http2 https://data.<your-domain>/world/fr/shards.json` shows `HTTP/2 200`, and the response has `alt-svc: h3=...`.
-3. CORS: R2 bucket > Settings > CORS policy > paste `r2/cors.json` (origin `https://rail-globe.vercel.app`; add the production domain if there is one; GET and HEAD; `Range` allowed; `Content-Range`, `ETag`, `Content-Length`, `Accept-Ranges` exposed). The custom domain uses the bucket CORS policy. Not needed: a Transform Rule for CORS.
+3. CORS: R2 bucket > Settings > CORS policy > paste `r2/cors.json` (origins `https://network.lsquared.cc` and `https://rail-globe.vercel.app`; GET and HEAD; `Range` allowed; `Content-Range`, `ETag`, `Content-Length`, `Accept-Ranges` exposed). The custom domain uses the bucket CORS policy. Not needed: a Transform Rule for CORS.
 4. Caching (zone > Caching > Cache Rules; the bucket's `Cache-Control` is the source of truth, so the rules only make Cloudflare keep the files):
    - Rule A, "data": hostname equals the data domain > Eligible for cache, Edge TTL "Use cache-control header if present, bypass cache if not", Browser TTL "Respect origin".
    - Do not add a rule that overrides `shards.json`: it must stay `no-cache` (browsers revalidate with the ETag, Cloudflare answers 304).
@@ -57,7 +57,7 @@ The app never gets write credentials; the browser only does GET/HEAD.
 - Preview URLs differ from the CORS origin, so previews cannot load data unless you add them to `r2/cors.json` (or keep them protected).
 
 ## Verify after deploy
-`curl -sI https://rail-globe.vercel.app | grep -iE 'content-security|strict-transport'`; `curl -sI -H 'Range: bytes=0-15' https://pub-dd749a156c5c4e869e4d54eb1c24d0c5.r2.dev/world/world.pmtiles` returns 206 (`cf-cache-status` only with a custom domain); browser console shows no CSP violations on a cold load.
+`curl -sI https://network.lsquared.cc | grep -iE 'content-security|strict-transport'`; `curl -sI -H 'Range: bytes=0-15' https://pub-dd749a156c5c4e869e4d54eb1c24d0c5.r2.dev/world/world.pmtiles` returns 206 (`cf-cache-status` only with a custom domain); browser console shows no CSP violations on a cold load.
 
 ## Known gaps
 - Google Fonts is a third-party stylesheet (no SRI possible); self-hosting IBM Plex would let the CSP drop two origins.

@@ -39,7 +39,7 @@ done
 
 RE=pipeline/rail-extract/target/release/rail-extract
 DATA=app/public/data
-SITE=${SITE:-https://rail-globe.vercel.app}
+SITE=${SITE:-https://network.lsquared.cc}
 
 want() {  # is stage $1 on?
   local s="$1"

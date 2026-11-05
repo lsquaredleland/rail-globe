@@ -37,3 +37,4 @@ r2/.env
 
 # generated prototype
 /station_viewer.html
+.vercel
