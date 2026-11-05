@@ -94,9 +94,9 @@ Tiles include each class one zoom earlier than the style shows it, so zoom rules
 
 ## Hosting and cost
 
-The world build measured 1.1 GB (live on R2 since 2026-10-16). Both fit R2's free 10 GB. At public launch, a custom domain (about $10 a year) adds edge caching and removes the `r2.dev` rate limit. Free-tier limits were checked on 2026-10-02 and need checking again before launch.
+The world build measured 1.1 GB (live on R2 since 2026-10-16). Both fit R2's free 10 GB. Since 2026-11-05 the data is on the custom domain `network-data.lsquared.cc` (edge cache for side files, Brotli, rate limit and WAF; `r2.dev` disabled); tiles are not edge-cached because `world.pmtiles` is over the Free plan's 512 MB cacheable size. Free-tier limits were checked on 2026-10-02 and need checking again before launch.
 
-**Deploy (done 2026-10-16: world build on R2 `r2.dev`, app on Vercel; one command `pipeline/publish.sh`; runbook in `r2/README.md`; what was checked live: `archive/performance-todos-2026-10-17.md`):** the app goes to Vercel from GitHub; the pipeline output (`app/public/data`: tiles and side files, 588 MB for the pilot) is gitignored and too big for git, so it goes to R2.
+**Deploy (done 2026-10-16: world build on R2, on `network-data.lsquared.cc` since 2026-11-05, app on Vercel; one command `pipeline/publish.sh`; runbook in `r2/README.md`; what was checked live: `archive/performance-todos-2026-10-17.md`):** the app goes to Vercel from GitHub; the pipeline output (`app/public/data`: tiles and side files, 588 MB for the pilot) is gitignored and too big for git, so it goes to R2.
 1. Sync `app/public/data` to the R2 bucket after each pipeline run with `r2/sync.sh`.
 2. Add a CORS rule on the bucket: GET and HEAD, `Range` header allowed (PMTiles reads byte ranges).
 3. Set `VITE_DATA_BASE` in the Vercel project to the bucket's public URL, with a trailing slash (see `app/.env.example`). Unset, the app reads its own `data/` folder.

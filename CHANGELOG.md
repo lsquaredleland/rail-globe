@@ -8,7 +8,8 @@ Newest first. Decisions are in `docs/00-overview.md`; open items in `docs/17-act
 - App: IBM Plex Sans is self-hosted (`@fontsource/ibm-plex-sans` 5.3.0, latin 400/500/600), so the CSP drops `fonts.googleapis.com` and `fonts.gstatic.com` (`style-src 'self' 'unsafe-inline'`, `font-src 'self'`).
 - GitHub: ruleset `protect-main` blocks force-pushes and deletion of `main`; Dependabot alerts and security updates are on.
 - Cloudflare zone rules for the data host: cache rule (side files edge-cached; `.pmtiles` excluded, over the Free plan's 512 MB cacheable size), Smart Tiered Cache, rate limit 150 requests per 10 s per IP, WAF block on methods other than GET, HEAD and OPTIONS.
-- Checked live: a cold load of Paris and Chengdu in Chromium has no CSP, CORS or failed requests and fetches only the app, the data domain and OpenFreeMap; a second shard request is a cache HIT; a 140-request burst is cut off at about 100 by the first limit; a 30 s aggressive pan peaked at 59 data requests per 10 s with no 429. Still open: disabling r2.dev, edge-caching tiles (`docs/17-action-items.md`).
+- Checked live: a cold load of Paris and Chengdu in Chromium has no CSP, CORS or failed requests and fetches only the app, the data domain and OpenFreeMap; a second shard request is a cache HIT; a 140-request burst is cut off at about 100 by the first limit; a 30 s aggressive pan peaked at 59 data requests per 10 s with no 429. Still open: edge-caching tiles (`docs/17-action-items.md`).
+- The bucket's r2.dev public development URL is disabled; the old URL answers 401 and every read goes through `network-data.lsquared.cc`.
 
 ## 2026-11-05: app on network.lsquared.cc
 
