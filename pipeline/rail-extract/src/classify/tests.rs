@@ -519,19 +519,21 @@ fn high_speed_floor_from_config() {
 /// and so is every route that runs on it, whatever the route's tags say.
 #[test]
 fn gondola_track_and_its_lines_are_always_gondola() {
-    let ways: [(Vec<(&[u8], &[u8])>, Vec<&str>); 5] = [
+    let ways: [(Vec<(&[u8], &[u8])>, Vec<&str>); 6] = [
         (vec![(b"railway", b"gondola"), (b"aerialway", b"gondola")], vec![]),
         (vec![(b"railway", b"gondola"), (b"usage", b"tourism")], vec![]), // tourist track is Other, a lift is not
         (vec![(b"railway", b"gondola"), (b"aerialway", b"cable_car")], vec!["relation/1"]), // on a route mapped route=tram
-        (vec![(b"railway", b"construction"), (b"construction", b"gondola")], vec![]),
+        (vec![(b"railway", b"construction"), (b"construction", b"gondola"), (b"aerialway", b"gondola")], vec![]),
         (vec![(b"railway", b"tram")], vec!["relation/2"]),
+        // an OSM way mapped railway=construction + construction=gondola is not one of the cut's lifts (no aerialway): not forced to Gondola
+        (vec![(b"railway", b"construction"), (b"construction", b"gondola")], vec![]),
     ];
     let mut tram_on_lift = route("relation/1", &[("name", "Maokong")]);
     tram_on_lift.tags.0[0].1 = "tram".into();
     let mut tram = route("relation/2", &[("name", "Tram 1")]);
     tram.tags.0[0].1 = "tram".into();
     let (types, lines) = classify_ways(&ways, &[tram_on_lift, tram]);
-    assert_eq!(types, ["gondola", "gondola", "gondola", "gondola", "light_rail"]);
+    assert_eq!(types, ["gondola", "gondola", "gondola", "gondola", "light_rail", "other"]);
     let ty = |id: &str| lines.iter().find(|l| l["id"] == id).map(|l| (l["type"].as_str().unwrap().to_string(), l["type_source"].as_str().unwrap().to_string()));
     assert_eq!(ty("relation/1"), Some(("gondola".into(), "track".into())));
     assert_eq!(ty("relation/2"), Some(("light_rail".into(), "mode".into())));

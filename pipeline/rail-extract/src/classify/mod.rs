@@ -91,7 +91,10 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
     // a route that runs on a kept aerial lift is a Gondola line, whatever its tags say (the Maokong Gondola is mapped route=tram)
     let on_lift: FxHashSet<&str> = tracks
         .iter()
-        .filter(|tr| tr.props.g("railway") == Some("gondola") || (tr.props.g("railway") == Some("construction") && tr.props.g("construction") == Some("gondola")))
+        .filter(|tr| {
+            let p = &tr.props;
+            p.g("railway") == Some("gondola") || (p.g("railway") == Some("construction") && p.g("construction") == Some("gondola") && p.g("aerialway").is_some())
+        })
         .flat_map(|tr| tr.routes.iter().map(String::as_str))
         .collect();
     let rtype: Vec<(String, &'static str)> = routes

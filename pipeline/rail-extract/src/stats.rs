@@ -356,6 +356,9 @@ fn count_stations(areas: &mut [Area], stations: &[Value], tree: &Index, pips: &[
             if modes.contains("light_rail") || modes.contains("tram") {
                 *a.st.entry("light_rail").or_default() += 1;
             }
+            if modes.contains("gondola") {
+                *a.st.entry("gondola").or_default() += 1;
+            }
             if p["hsr"].as_bool() == Some(true) || p["line_counts"]["high_speed"].as_i64().unwrap_or(0) > 0 {
                 *a.st.entry("hsr").or_default() += 1;
             }

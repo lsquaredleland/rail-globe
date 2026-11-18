@@ -38,7 +38,10 @@ pub struct Cfg {
 impl Cfg {
     /// `pipeline/config/_aerialway.json`; no file means no lifts are kept
     pub fn load(path: &Path) -> Cfg {
-        let Ok(text) = std::fs::read_to_string(path) else { return Cfg::default() };
+        let Ok(text) = std::fs::read_to_string(path) else {
+            eprintln!("  WARNING: no {}: no gondola or cable car is kept", path.display());
+            return Cfg::default();
+        };
         Cfg::parse(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
     }
 

@@ -219,7 +219,8 @@ export function TypeCard({
   const st = a.stations
   const metro = st.metro ?? 0,
     tram = st.light_rail ?? 0,
-    main = Math.max(0, (st.open ?? 0) - metro - tram)
+    gondola = st.gondola ?? 0,
+    main = Math.max(0, (st.open ?? 0) - metro - tram - gondola)
   const conTypes = TYPE_ORDER.filter((t) => conOf(t) > 0)
   const con = conTypes.reduce((s, t) => s + conOf(t), 0)
   const shade = (t: string) => (hidden.includes(t) ? '#CFCBC3' : hsrOnly && t !== 'high_speed' ? INACTIVE : TYPE_COLOR[t as RailType])
@@ -355,6 +356,7 @@ export function TypeCard({
               { color: TYPE_COLOR.metro, v: metro },
               { color: '#B8A889', v: main },
               { color: TYPE_COLOR.light_rail, v: tram },
+              { color: TYPE_COLOR.gondola, v: gondola },
               { color: '#8a867d', v: stCon, ring: true },
             ]}
           />
@@ -381,6 +383,12 @@ export function TypeCard({
               <span>
                 <b style={{ background: TYPE_COLOR.light_rail }} />
                 {n0(tram)} light rail, tram
+              </span>
+            )}
+            {gondola > 0 && (
+              <span>
+                <b style={{ background: TYPE_COLOR.gondola }} />
+                {n0(gondola)} gondola
               </span>
             )}
             {!stCon && !!st.construction && <span>{n0(st.construction)} under construction</span>}

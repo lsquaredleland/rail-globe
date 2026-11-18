@@ -19,7 +19,7 @@ pub(super) fn route_mode_type(m: &str) -> Option<&'static str> {
         "light_rail" | "tram" => "light_rail",
         "monorail" => "monorail",
         "funicular" => "funicular",
-        "aerialway" | "gondola" => "gondola", // route=aerialway; track of a kept lift is railway=gondola (aerial.rs)
+        "aerialway" => "gondola", // route=aerialway (only the routes of kept lifts are rows); the track itself is typed in decide.rs
         _ => return None,
     })
 }

@@ -531,6 +531,14 @@ fn aerial_pick(c: &Cache, acfg: &aerial::Cfg, slug: &str, ext: &[u32], ways: &[W
             p.routes.extend(way_rels.get(&id).into_iter().flatten());
         }
     }
+    // the other routes of a kept route's master are kept too: a direction can be mapped with its stops only, and the master's line must
+    // have all its routes
+    for (k, (_, r)) in rels.iter().enumerate() {
+        let t = List(r.tags.clone());
+        if incl[k] && is(&t, b"type", b"route_master") && is(&t, b"route_master", b"aerialway") && r.mem.iter().any(|m| m.t == 2 && p.routes.contains(&m.id)) {
+            p.routes.extend(r.mem.iter().filter(|m| m.t == 2).map(|m| m.id));
+        }
+    }
     p
 }
 
@@ -1056,7 +1064,7 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>, 
         let ni = c.node_idx();
         for &i in &nodes {
             let n = &ni[i as usize];
-            if picked.near(n.lat, n.lon) && rules::node_kind(&List(c.node_tags(i as usize))) == Some(NodeKind::AerialStation) {
+            if rules::node_kind(&List(c.node_tags(i as usize))) == Some(NodeKind::AerialStation) && picked.near(n.lat, n.lon) {
                 picked.station_nodes.push((n.lat, n.lon));
             }
         }
