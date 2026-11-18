@@ -4,7 +4,7 @@ Newest first. Decisions are in `docs/00-overview.md`; open items in `docs/17-act
 
 ## 2026-11-17: gondolas and aerial cable cars
 
-Decision: [2026-11-15-gondolas](docs/00-overview.md#2026-11-15-gondolas). Built and checked locally; not published.
+Decision: [2026-11-15-gondolas](docs/00-overview.md#2026-11-15-gondolas). Published 2026-11-17 (R2 and the app; `pipeline/publish.sh` live checks passed).
 
 - New rail type "Gondola / aerial cable car" (`gondola`), with stations in the station model. 39 systems, 112 lift ways (5 under construction), 202.4 route km open and 18.5 km under construction, 50 lines, 242 stations (22 under construction), in 19 countries: Cablebús and Mexicable (Mexico City), Mi Teleférico (La Paz), Metrocable (Medellín, Caracas), TransMiCable, Santo Domingo, London, Toulouse, Câble C1, Algiers and others.
 - Which lifts: a hand-kept list, `pipeline/config/_aerialway.json` (box per city, optional `name_re`, `ways`, `exclude_ways`; schema in `docs/12-config-and-exemptions.md`). Sightseeing, mountain and ski lifts are left out. A system that matches nothing is reported like a stale exemption. Code: `pipeline/rail-extract/src/aerial.rs`.
