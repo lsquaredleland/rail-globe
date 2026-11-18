@@ -44,6 +44,7 @@ fn mode_types(m: &str) -> &'static [&'static str] {
         "light_rail" | "tram" => &["light_rail"],
         "monorail" => &["monorail"],
         "funicular" => &["funicular"],
+        "gondola" => &["gondola"],
         "other" => &["other"],
         _ => &[],
     }
@@ -56,6 +57,7 @@ fn default_type(m: &str) -> &'static str {
         "light_rail" | "tram" => "light_rail",
         "monorail" => "monorail",
         "funicular" => "funicular",
+        "gondola" => "gondola",
         _ => "other",
     }
 }
@@ -67,6 +69,7 @@ fn mode_of_track(t: &str) -> &'static str {
         "tram" => "tram",
         "monorail" => "monorail",
         "funicular" => "funicular",
+        "gondola" => "gondola",
         _ => "train",
     }
 }

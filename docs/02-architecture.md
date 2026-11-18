@@ -46,7 +46,7 @@ URL state uses these, e.g. `#compare=sf-bay-area,paris&color=type`.
 ## Build pipeline
 
 1. **Cache** every rail candidate of the planet, with coordinates, in one read (`rail-extract cache`, once per planet).
-2. **Cut and filter** each region from the cache to the data spec: GeoJSON features, the relations side table, the stop positions file, airports (`rail-extract cut <slug>...`).
+2. **Cut and filter** each region from the cache to the data spec: GeoJSON features, the relations side table, the stop positions file, airports (`rail-extract cut <slug>...`). The cut also keeps the gondolas and cable cars on the allowlist `pipeline/config/_aerialway.json` and hands them on as track of the mode `gondola` (`03-data-spec.md`).
 3. **Classify** every track and line into a rail type (`01-features.md`, section 2).
 4. **Build stations** with the station model.
 5. **Build lines**: join each route's member ways into one feature per line.

@@ -75,7 +75,7 @@ RE=pipeline/rail-extract/target/release/rail-extract
 
 ## Config
 
-Per-region rules are in `pipeline/config/<slug>.json`. A region with no file uses `_default.json`, or its group template in `_groups.json`. China shares rules through `_china.json` (`cn` extends it; `china`, `chengdu`, `greater-bay-area` and `cn-beijing` extend `_china` or `cn`). A config can `extends` another and list justified `exemptions`: `docs/12-config-and-exemptions.md`. Keys most used: `high_speed_networks_re`, `type_overrides`, `high_speed_track_overrides`, `proposed_region` (an outline under `pipeline/regions/` inside which proposed track is kept; today only `cn/hk.json`), `stat_areas`, `stat_auto`.
+Per-region rules are in `pipeline/config/<slug>.json`. A region with no file uses `_default.json`, or its group template in `_groups.json`. `_aerialway.json` is the global list of gondola and cable car systems that run as public transit (every `cut` reads it; schema in `docs/12-config-and-exemptions.md`). China shares rules through `_china.json` (`cn` extends it; `china`, `chengdu`, `greater-bay-area` and `cn-beijing` extend `_china` or `cn`). A config can `extends` another and list justified `exemptions`: `docs/12-config-and-exemptions.md`. Keys most used: `high_speed_networks_re`, `type_overrides`, `high_speed_track_overrides`, `proposed_region` (an outline under `pipeline/regions/` inside which proposed track is kept; today only `cn/hk.json`), `stat_areas`, `stat_auto`.
 
 Outlines in `pipeline/regions/` (`sf-bay-area`, `paris`, `chengdu`, `greater-bay-area`, `china`, `fr`, and `cn/hk.json`) are hand-made or came from Nominatim; the raw dumps and the scripts that built them are in `pipeline/archive/`.
 

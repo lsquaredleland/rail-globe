@@ -98,6 +98,15 @@ pub(super) struct TrackProps {
     /// `oc`: colour of the first line that has one. The operator colour mode below z12.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oc: Option<String>,
+    /// `cap`: OSM aerialway:capacity tag (people per hour), gondolas and cable cars only. The tooltip's Capacity row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cap: Option<String>,
+    /// `occ`: OSM aerialway:occupancy tag (people per cabin). The tooltip's Cabin row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub occ: Option<String>,
+    /// `dur`: OSM aerialway:duration tag (ride time, minutes). The tooltip's Ride time row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dur: Option<String>,
 }
 
 impl TrackProps {
@@ -395,6 +404,9 @@ mod tests {
                     ln: s(),
                     nl: Some(1),
                     oc: s(),
+                    cap: s(),
+                    occ: s(),
+                    dur: s(),
                 }),
                 keys(OverviewProps { ty: "metro".into(), con: true, prop: true, oc: s(), ln: s(), kmh: Some(1), nk: Some(1) }),
             ]),

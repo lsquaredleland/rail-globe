@@ -8,6 +8,7 @@
 //! - a type=multipolygon relation that is in directly (not only through a member relation) brings all its member ways;
 //! - a tagged node is in when it is inside, or is a node of a way that is in, or a node member of such a multipolygon.
 
+use crate::aerial;
 use crate::assemble::{self, Fail, Poly, P};
 use crate::cache::*;
 use crate::classify;
@@ -27,6 +28,7 @@ struct Ctx {
     /// way id -> the named infrastructure lines (route=railway) it is a member of: (way members of the line, name, English name); the smallest line names the track
     way_railway: FxHashMap<i64, Vec<(usize, String, Option<String>)>>,
     member_area: FxHashMap<(u8, i64), String>, // (b'n' | b'w' | b'r', id) -> stop_area id; a later stop area wins
+    aerial: aerial::Picked,                    // the gondolas and cable cars of the region that are kept
 }
 
 struct Feat {
@@ -48,8 +50,8 @@ fn txt(b: &[u8]) -> String {
     String::from_utf8_lossy(b).into_owned()
 }
 
-/// One GeoJSON feature line
-fn feature(t: &List, k: u8, id: i64, geom: &[u8], label: String, ctx: &Ctx) -> Feat {
+/// One GeoJSON feature line; `aerial` for a kept gondola or cable car or its station, which also carries its aerialway tags
+fn feature(t: &List, k: u8, id: i64, geom: &[u8], label: String, ctx: &Ctx, aerial: bool) -> Feat {
     let mut o = Vec::with_capacity(256 + geom.len());
     o.extend_from_slice(b"{\"type\":\"Feature\",\"properties\":{");
     let mut first = true;
@@ -65,6 +67,14 @@ fn feature(t: &List, k: u8, id: i64, geom: &[u8], label: String, ctx: &Ctx) -> F
         if let Some(v) = t.get(kk.as_bytes()) {
             key(&mut o, kk.as_bytes());
             js(&mut o, v);
+        }
+    }
+    if aerial {
+        for kk in rules::AERIAL_KEEP {
+            if let Some(v) = t.get(kk.as_bytes()) {
+                key(&mut o, kk.as_bytes());
+                js(&mut o, v);
+            }
         }
     }
     for (kk, v) in &t.0 {
@@ -217,9 +227,27 @@ enum WayRes {
 
 /// The feature of a way: track, siding, platform or area (or nothing)
 fn way_feature(id: i64, w: &Way, ctx: &Ctx) -> WayRes {
-    let t = List(w.tags.clone());
+    let mut t = List(w.tags.clone());
     if t.0.is_empty() || rules::has(&t, b"entrance") {
         return WayRes::Skip;
+    }
+    if aerial::is_lift(&t) {
+        // a gondola or cable car: kept only when it is on the allowlist, then track of the mode `gondola`
+        let Some(st) = ctx.aerial.keep.get(&id) else { return WayRes::Skip };
+        let Some(g) = line_geom(&w.ll) else { return WayRes::Dropped };
+        let t = List(aerial::track_tags(&t.0, *st));
+        let label = format!("track:{}", txt(t.get(b"railway").unwrap_or(b"")));
+        return WayRes::Feat(feature(&t, b'w', id, &g, label, ctx, true), true);
+    }
+    let mut aerial = false;
+    if aerial::is_station_only(&t) {
+        // the building of a lift station: a station area when it stands on a kept lift
+        if !w.ll.iter().any(|p| ctx.aerial.near(p.0, p.1)) {
+            return WayRes::Skip;
+        }
+        // with the station's node beside it, the way is that station's building; alone, it is the station
+        t = List(if ctx.aerial.has_station_node(&w.ll) { aerial::station_building_tags(&t.0) } else { aerial::station_tags(&t.0) });
+        aerial = true;
     }
     let rw = t.get(b"railway").unwrap_or(b"");
     if rw == b"platform_edge" {
@@ -229,11 +257,11 @@ fn way_feature(id: i64, w: &Way, ctx: &Ctx) -> WayRes {
         let svc = t.get(b"service").unwrap_or(b"");
         let Some(g) = line_geom(&w.ll) else { return WayRes::Dropped };
         let label = if rules::SERVICE_KEEP.contains(&svc) { format!("track:{}:{}", txt(rw), txt(svc)) } else { format!("track:{}", txt(rw)) };
-        return WayRes::Feat(feature(&t, b'w', id, &g, label, ctx), true);
+        return WayRes::Feat(feature(&t, b'w', id, &g, label, ctx, false), true);
     }
     if matches!(rw, b"siding" | b"spur" | b"crossover") {
         let Some(g) = line_geom(&w.ll) else { return WayRes::Skip };
-        return WayRes::Feat(feature(&t, b'w', id, &g, format!("track:{}", txt(rw)), ctx), false);
+        return WayRes::Feat(feature(&t, b'w', id, &g, format!("track:{}", txt(rw)), ctx, false), false);
     }
     let Some(lab) = rules::classify_poly(&t) else { return WayRes::Skip };
     let closed = w.refs.len() >= 4 && w.refs.first() == w.refs.last();
@@ -249,10 +277,10 @@ fn way_feature(id: i64, w: &Way, ctx: &Ctx) -> WayRes {
             pt(&mut g, p.0, p.1);
         }
         g.extend_from_slice(b"]]}");
-        WayRes::Feat(feature(&t, b'w', id, &g, lab.to_string(), ctx), false)
+        WayRes::Feat(feature(&t, b'w', id, &g, lab.to_string(), ctx, aerial), false)
     } else if lab == "area:platform" {
         let Some(g) = line_geom(&w.ll) else { return WayRes::Skip };
-        WayRes::Feat(feature(&t, b'w', id, &g, "platform:line".into(), ctx), false)
+        WayRes::Feat(feature(&t, b'w', id, &g, "platform:line".into(), ctx, false), false)
     } else {
         WayRes::Skip
     }
@@ -456,11 +484,66 @@ fn tagged_nodes(c: &Cache, reg: &Region, ways: &[Way], mp_nodes: &FxHashSet<i64>
         .collect()
 }
 
+/// The gondolas and cable cars of the extract that the allowlist keeps (aerial.rs), with their route relations.
+fn aerial_pick(c: &Cache, acfg: &aerial::Cfg, slug: &str, ext: &[u32], ways: &[Way], rels: &[(u32, Rel)], incl: &[bool]) -> aerial::Picked {
+    let (wi, ri) = (c.way_idx(), c.rel_idx());
+    // way id -> the names and refs of its route=aerialway relations, and the relations by way
+    let mut names: FxHashMap<i64, (Vec<String>, Vec<String>)> = FxHashMap::default();
+    let mut way_rels: FxHashMap<i64, Vec<i64>> = FxHashMap::default();
+    for (k, (i, r)) in rels.iter().enumerate() {
+        let t = List(r.tags.clone());
+        if !incl[k] || !is(&t, b"type", b"route") || !is(&t, b"route", b"aerialway") {
+            continue;
+        }
+        for m in r.mem.iter().filter(|m| m.t == 1) {
+            let e = names.entry(m.id).or_default();
+            e.0.extend(t.get(b"name").map(txt));
+            e.1.extend(t.get(b"ref").map(txt));
+            way_rels.entry(m.id).or_default().push(ri[*i as usize].id);
+        }
+    }
+    let none: (Vec<String>, Vec<String>) = Default::default();
+    let deg = |p: (i32, i32)| (p.0 as f64 * 1e-7, p.1 as f64 * 1e-7);
+    let cand: Vec<usize> = (0..ways.len()).filter(|&k| aerial::is_lift(&List(ways[k].tags.clone())) && ways[k].ll.iter().any(|p| p.0 != MISSING)).collect();
+    let lifts: Vec<aerial::Lift> = cand
+        .iter()
+        .map(|&k| {
+            let (w, id) = (&ways[k], wi[ext[k] as usize].id);
+            let t = List(w.tags.clone());
+            let located: Vec<(i32, i32)> = w.ll.iter().copied().filter(|p| p.0 != MISSING).collect();
+            let (rn, rr) = names.get(&id).unwrap_or(&none);
+            aerial::Lift {
+                id,
+                name: w.tags.iter().find(|(k, _)| *k == b"name").and_then(|(_, v)| std::str::from_utf8(v).ok()),
+                rel_names: rn,
+                rel_refs: rr,
+                ends: [deg(located[0]), deg(located[located.len() - 1])],
+                km: classify::ll_km(&w.ll),
+                status: aerial::status(&t),
+            }
+        })
+        .collect();
+    let mut p = aerial::Picked::pick(acfg, slug, &lifts);
+    for &k in &cand {
+        let id = wi[ext[k] as usize].id;
+        if p.keep.contains_key(&id) {
+            p.add_geometry(&ways[k].ll);
+            p.routes.extend(way_rels.get(&id).into_iter().flatten());
+        }
+    }
+    p
+}
+
 /// The relations side table, in id order: the rows and the lookups the features use.
-fn relation_rows(c: &Cache, rels: &[(u32, Rel)], incl: &[bool]) -> (Ctx, Vec<Row>) {
+fn relation_rows(c: &Cache, rels: &[(u32, Rel)], incl: &[bool], picked: aerial::Picked) -> (Ctx, Vec<Row>) {
     let ri = c.rel_idx();
-    let mut ctx =
-        Ctx { way_routes: FxHashMap::default(), route_operator: FxHashMap::default(), way_railway: FxHashMap::default(), member_area: FxHashMap::default() };
+    let mut ctx = Ctx {
+        way_routes: FxHashMap::default(),
+        route_operator: FxHashMap::default(),
+        way_railway: FxHashMap::default(),
+        member_area: FxHashMap::default(),
+        aerial: picked,
+    };
     let mut rows: Vec<Row> = Vec::new();
     for (k, (i, r)) in rels.iter().enumerate() {
         if !incl[k] {
@@ -468,6 +551,13 @@ fn relation_rows(c: &Cache, rels: &[(u32, Rel)], incl: &[bool]) -> (Ctx, Vec<Row
         }
         let t = List(r.tags.clone());
         let Some(kind) = rules::rel_kind(&t) else { continue };
+        // a gondola route or route master is a row only when one of its lifts is kept (the cache holds every route=aerialway)
+        if kind == RelKind::Route && is(&t, b"route", b"aerialway") && !ctx.aerial.routes.contains(&ri[*i as usize].id) {
+            continue;
+        }
+        if kind == RelKind::RouteMaster && is(&t, b"route_master", b"aerialway") && !r.mem.iter().any(|m| m.t == 2 && ctx.aerial.routes.contains(&m.id)) {
+            continue;
+        }
         let rid = format!("relation/{}", ri[*i as usize].id);
         let mut o = b"{\"id\":".to_vec();
         js(&mut o, rid.as_bytes());
@@ -559,10 +649,21 @@ fn node_results(c: &Cache, nodes: &[u32], ctx: &Ctx, cfg: Option<&classify::Cfg>
         .par_iter()
         .map(|&i| {
             let n = &ni[i as usize];
-            let t = List(c.node_tags(i as usize));
-            match rules::node_kind(&t) {
+            let mut t = List(c.node_tags(i as usize));
+            let mut kind = rules::node_kind(&t);
+            let aerial = kind == Some(NodeKind::AerialStation);
+            if aerial {
+                // a lift station: a station of the mode `gondola` when it stands on a kept lift
+                if ctx.aerial.near(n.lat, n.lon) {
+                    t = List(aerial::station_tags(&t.0));
+                    kind = Some(NodeKind::Station);
+                } else {
+                    kind = None;
+                }
+            }
+            match kind {
                 Some(NodeKind::Construction) => {
-                    NodeRes::Feat(feature(&t, b'n', n.id, &point_geom(n.lat, n.lon), "station:construction".into(), ctx), None, None)
+                    NodeRes::Feat(feature(&t, b'n', n.id, &point_geom(n.lat, n.lon), "station:construction".into(), ctx, false), None, None)
                 }
                 Some(NodeKind::Stop) => {
                     let mut o = b"{\"osm_id\":\"node/".to_vec();
@@ -593,17 +694,19 @@ fn node_results(c: &Cache, nodes: &[u32], ctx: &Ctx, cfg: Option<&classify::Cfg>
                 }
                 Some(NodeKind::Station) => {
                     let label = format!("station:{}", t.get(b"railway").map(txt).unwrap_or_else(|| "pt".into()));
-                    let f = feature(&t, b'n', n.id, &point_geom(n.lat, n.lon), label, ctx);
+                    let f = feature(&t, b'n', n.id, &point_geom(n.lat, n.lon), label, ctx, aerial);
                     let has_area = ctx.member_area.contains_key(&(b'n', n.id))
                         && (is(&t, b"railway", b"station") || is(&t, b"railway", b"halt") || is(&t, b"public_transport", b"station"));
                     // a passenger station for the freight test of classify: not one tagged freight only
-                    let pax = (is(&t, b"railway", b"station") || is(&t, b"railway", b"halt") || is(&t, b"public_transport", b"station"))
+                    // (a gondola station is no evidence that the railway beside it carries passengers)
+                    let pax = !aerial
+                        && (is(&t, b"railway", b"station") || is(&t, b"railway", b"halt") || is(&t, b"public_transport", b"station"))
                         && !is(&t, b"railway:traffic_mode", b"freight")
                         && !is(&t, b"station", b"freight")
                         && passenger_station(&t, cfg);
                     NodeRes::Feat(f, Some((format!("node/{}", n.id), t.get(b"name").map(txt), has_area)), pax.then_some((n.lat, n.lon)))
                 }
-                None => NodeRes::Skip,
+                Some(NodeKind::AerialStation) | None => NodeRes::Skip,
             }
         })
         .collect()
@@ -687,6 +790,34 @@ impl<'a> Emit<'a> {
         }
     }
 
+    /// The stop nodes of the kept gondola routes, as stop positions of the mode `gondola`: a gondola route lists plain
+    /// `public_transport=stop_position` nodes with no mode flag, which the cache does not keep as tagged nodes, so they are read from the
+    /// route's members (which carry their coordinates). They tie each line to its stations (stations/link.rs).
+    fn add_aerial_stops(&mut self, c: &Cache, rels: &[(u32, Rel)], incl: &[bool], ctx: &Ctx) {
+        let (ri, ni) = (c.rel_idx(), c.node_idx());
+        let mut seen: FxHashSet<i64> = FxHashSet::default();
+        for (k, (i, r)) in rels.iter().enumerate() {
+            if !incl[k] || !ctx.aerial.routes.contains(&ri[*i as usize].id) {
+                continue;
+            }
+            for m in r.mem.iter().filter(|m| m.t == 0 && m.role.starts_with(b"stop") && m.lat != MISSING) {
+                // a member that is a tagged node of the cache (the station node itself, a railway stop) is already a feature or a stop position
+                if ni.binary_search_by_key(&m.id, |n| n.id).is_ok() || !seen.insert(m.id) {
+                    continue;
+                }
+                let o = &mut self.stops;
+                o.extend_from_slice(b"{\"osm_id\":\"node/");
+                int(o, m.id);
+                o.extend_from_slice(b"\",\"lon\":");
+                num(o, m.lon);
+                o.extend_from_slice(b",\"lat\":");
+                num(o, m.lat);
+                o.extend_from_slice(b",\"name\":null,\"modes\":{\"gondola\":\"yes\"},\"ref\":null}\n");
+                self.count("stop_position".into());
+            }
+        }
+    }
+
     /// Ways: track pieces (kept for classify), platforms and station areas; strays and bad geometry are counted and dropped.
     fn add_ways(&mut self, c: &Cache, ext: &[u32], ways: &[Way<'a>], ctx: &Ctx, cfg: Option<&classify::Cfg>) {
         let wi = c.way_idx();
@@ -710,8 +841,13 @@ impl<'a> Emit<'a> {
                 WayRes::Feat(f, is_track) => {
                     let id = wi[ext[k] as usize].id;
                     let routes: Vec<String> = ctx.way_routes.get(&id).map(|s| s.iter().cloned().collect()).unwrap_or_default();
-                    let tl = List(ways[k].tags.clone());
+                    let mut tl = List(ways[k].tags.clone());
+                    if let Some(st) = ctx.aerial.keep.get(&id).filter(|_| aerial::is_lift(&tl)) {
+                        tl = List(aerial::track_tags(&tl.0, *st)); // classify reads the same tags the feature carries
+                    }
+                    // (the building of a gondola station is no evidence that the railway beside it carries passengers)
                     if !is_track
+                        && !aerial::is_station_only(&tl)
                         && (is(&tl, b"railway", b"station") || is(&tl, b"railway", b"halt") || is(&tl, b"public_transport", b"station"))
                         && !is(&tl, b"railway:traffic_mode", b"freight")
                         && passenger_station(&tl, cfg)
@@ -765,7 +901,7 @@ impl<'a> Emit<'a> {
                 let id = ri[*i as usize].id;
                 match assemble::assemble(&mw, true) {
                     Ok(polys) => {
-                        let f = lab.map(|l| feature(&t, b'r', id, &multipolygon_geom(&polys, false), l.to_string(), ctx));
+                        let f = lab.map(|l| feature(&t, b'r', id, &multipolygon_geom(&polys, false), l.to_string(), ctx, false));
                         let a = if air { airport_feature(&t, format!("relation/{id}"), &polys) } else { None };
                         (f.map_or(AreaRes::Skip, AreaRes::Feat), a)
                     }
@@ -902,7 +1038,7 @@ fn classify_step(reg: &Region, cfg: Option<&classify::Cfg>, kept: &Kept, e: &Emi
 }
 
 /// Cut one region out of the cache and write its files (features, relations, stop positions, qa, airports, rail types).
-pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) -> Summary {
+pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>, acfg: &aerial::Cfg) -> Summary {
     let t0 = Instant::now();
     let wi = c.way_idx();
 
@@ -915,11 +1051,23 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
     let nodes = tagged_nodes(c, reg, &ways, &mp_nodes);
     let t_member = t0.elapsed().as_secs_f64();
 
-    let (ctx, rows) = relation_rows(c, &rels, &incl);
+    let mut picked = aerial_pick(c, acfg, &reg.slug, &ext, &ways, &rels, &incl);
+    if !picked.keep.is_empty() {
+        let ni = c.node_idx();
+        for &i in &nodes {
+            let n = &ni[i as usize];
+            if picked.near(n.lat, n.lon) && rules::node_kind(&List(c.node_tags(i as usize))) == Some(NodeKind::AerialStation) {
+                picked.station_nodes.push((n.lat, n.lon));
+            }
+        }
+    }
+    let mut stale_aerial = picked.stale.clone();
+    let (ctx, rows) = relation_rows(c, &rels, &incl, picked);
 
     // features: nodes, then ways, then relation areas
     let mut e = Emit::default();
     e.add_nodes(node_results(c, &nodes, &ctx, cfg));
+    e.add_aerial_stops(c, &rels, &incl, &ctx);
     e.add_ways(c, &ext, &ways, &ctx, cfg);
     e.add_areas(c, &rels, &incl, &ext, &ways, &ctx);
 
@@ -938,7 +1086,12 @@ pub fn cut(c: &Cache, reg: &Region, outdir: &Path, cfg: Option<&classify::Cfg>) 
     wr("qa.json", &qa_bytes);
     wr("airports.geojsonl", &e.airports);
 
-    let (class_note, stale) = classify_step(reg, cfg, &kept, &e, &wr);
+    let (class_note, mut stale) = classify_step(reg, cfg, &kept, &e, &wr);
+    stale.extend(stale_aerial.drain(..).map(|w| format!("{}: {w}", reg.slug)));
+    let class_note = match ctx.aerial.keep.len() {
+        0 => class_note,
+        n => format!("{class_note}; {n} aerial lift ways ({})", ctx.aerial.by_system.iter().map(|(s, k)| format!("{s} {k}")).collect::<Vec<_>>().join(", ")),
+    };
 
     let nf: i64 = e.counts.iter().filter(|(k, _)| !k.starts_with("dropped") && k.as_str() != "stop_position").map(|(_, v)| v).sum();
     Summary {

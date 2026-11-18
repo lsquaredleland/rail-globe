@@ -42,7 +42,7 @@ pub(super) fn stop_positions(m: &Model, proj: &super::features::Proj) -> (NodeSt
         }
         let (x, y) = proj.fwd(sp["lon"].as_f64().unwrap_or(0.0), sp["lat"].as_f64().unwrap_or(0.0));
         let pg = Geometry::Point(Point::new(x, y));
-        let pm: BTreeSet<&str> = ["subway", "light_rail", "train"].into_iter().filter(|k| sp["modes"].get(*k).and_then(Value::as_str) == Some("yes")).collect();
+        let pm: BTreeSet<&str> = ["subway", "light_rail", "train", "gondola"].into_iter().filter(|k| sp["modes"].get(*k).and_then(Value::as_str) == Some("yes")).collect();
         let nn = norm_name(sp["name"].as_str().unwrap_or(""));
         let mut best: Option<(usize, f64)> = None;
         for i in m.st_tree.near(&pg, 300.0) {
@@ -67,6 +67,9 @@ pub(super) fn stop_positions(m: &Model, proj: &super::features::Proj) -> (NodeSt
     }
     (node_station, unmapped)
 }
+
+/// a gondola station takes the lines of the lifts this close to it (the same distance the cut uses to keep the station, aerial.rs)
+const GONDOLA_LINE_M: f64 = 150.0;
 
 /// step 4: lines per station, the order of stations along each route, and the named infrastructure lines through each station
 pub(super) struct Lines {
@@ -113,6 +116,22 @@ pub(super) fn lines_per_station(m: &Model, node_station: &NodeStation) -> Lines 
             }
         }
         route_order.insert(rid.to_string(), Value::Array(order.iter().map(|&i| Value::String(station_id(&m.feats, &st[i]))).collect()));
+    }
+    // A gondola station stands on its cable: it also takes the lines of the open lifts within GONDOLA_LINE_M, since many gondola route
+    // relations list no stops at all (Cablebús). Route order still comes from the listed stops only.
+    for (si, x) in st.iter().enumerate().filter(|(_, x)| x.modes.contains("gondola")) {
+        let pg = Geometry::Point(x.pt);
+        for ti in m.feats.track_tree.near(&pg, GONDOLA_LINE_M) {
+            let t = &m.feats.tracks[ti];
+            if t.p("type") != Some("gondola") || t.p("railway") == Some("construction") || geomx::dist(&t.g, &pg) > GONDOLA_LINE_M {
+                continue;
+            }
+            for r in t.f.p.get("_routes").and_then(Value::as_array).into_iter().flatten() {
+                if let Some(l) = route_line.get(r.as_str().unwrap_or("")) {
+                    st_lines[si].insert(l.to_string());
+                }
+            }
+        }
     }
     // named infrastructure lines (route=railway) that list the station as a member
     let mut st_rail: Vec<Map<String, Value>> = vec![Map::new(); st.len()];

@@ -30,7 +30,20 @@ pub fn has<T: Tags + ?Sized>(t: &T, k: &[u8]) -> bool {
 pub const MODE_FLAGS: [&[u8]; 5] = [b"train", b"subway", b"light_rail", b"tram", b"monorail"];
 pub const TRACK: [&[u8]; 9] = [b"rail", b"subway", b"light_rail", b"tram", b"monorail", b"funicular", b"narrow_gauge", b"construction", b"proposed"];
 pub const SERVICE_KEEP: [&[u8]; 4] = [b"yard", b"siding", b"spur", b"crossover"];
-pub const ROUTE_MODES: [&[u8]; 6] = [b"train", b"subway", b"light_rail", b"tram", b"monorail", b"funicular"];
+pub const ROUTE_MODES: [&[u8]; 7] = [b"train", b"subway", b"light_rail", b"tram", b"monorail", b"funicular", b"aerialway"];
+/// aerial lifts that can be public transit (`aerialway=*`); the cache keeps them all, the cut keeps the allowlisted ones (aerial.rs)
+pub const AERIAL_LIFTS: [&[u8]; 3] = [b"gondola", b"cable_car", b"mixed_lift"];
+/// extra feature properties of an aerial lift or its station, after KEEP
+pub const AERIAL_KEEP: [&str; 4] = ["aerialway", "aerialway:capacity", "aerialway:occupancy", "aerialway:duration"];
+
+/// an aerial lift way: `aerialway=gondola|cable_car|mixed_lift`, or `aerialway=construction` + `construction=<one of them>`
+pub fn aerial_lift<T: Tags + ?Sized>(t: &T) -> bool {
+    match t.get(b"aerialway") {
+        Some(b"construction") => t.get(b"construction").is_some_and(|c| AERIAL_LIFTS.contains(&c)),
+        Some(a) => AERIAL_LIFTS.contains(&a),
+        None => false,
+    }
+}
 
 /// feature properties, in this order, then every name:* tag (filter.cpp KEEP)
 pub const KEEP: [&str; 39] = [
@@ -163,6 +176,13 @@ pub fn cache_key(k: &[u8]) -> bool {
             | b"ISO3166-1"
             | b"ISO3166-1:alpha2"
             | b"ISO3166-2"
+            | b"aerialway"
+            | b"aerialway:capacity"
+            | b"aerialway:occupancy"
+            | b"aerialway:duration"
+            | b"abandoned"
+            | b"disused"
+            | b"access"
     )
 }
 
@@ -202,6 +222,8 @@ pub enum NodeKind {
     /// public_transport=stop_position or railway=stop (written to stop_positions.jsonl)
     Stop,
     Station,
+    /// `aerialway=station` that is no railway station by its other tags
+    AerialStation,
 }
 
 /// a named station or stop that is being built: railway=construction + construction=station|halt, or the lifecycle prefix
@@ -233,7 +255,8 @@ pub fn node_kind<T: Tags + ?Sized>(t: &T) -> Option<NodeKind> {
         is(t, b"railway", b"station") || is(t, b"railway", b"halt") || (is(t, b"public_transport", b"station") && (has(t, b"railway") || passenger_mode(t)));
     // a public_transport=station that is abandoned, disused or only proposed is not a station (the data spec drops them)
     if !station || matches!(t.get(b"railway"), Some(b"abandoned" | b"disused" | b"proposed")) {
-        return None;
+        // a gondola or cable car station: the cache keeps them all, the cut keeps those on an allowlisted lift (aerial.rs)
+        return is(t, b"aerialway", b"station").then_some(NodeKind::AerialStation);
     }
     Some(NodeKind::Station)
 }
@@ -273,7 +296,7 @@ pub fn way_wanted<T: Tags + ?Sized>(t: &T) -> bool {
             return true;
         }
     }
-    classify_poly(t).is_some() || aeroway_area(t)
+    classify_poly(t).is_some() || aeroway_area(t) || aerial_lift(t) || is(t, b"aerialway", b"station")
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

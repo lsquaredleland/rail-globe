@@ -2,6 +2,20 @@
 
 Newest first. Decisions are in `docs/00-overview.md`; open items in `docs/17-action-items.md`.
 
+## 2026-11-17: gondolas and aerial cable cars
+
+Decision: [2026-11-15-gondolas](docs/00-overview.md#2026-11-15-gondolas). Built and checked locally; not published.
+
+- New rail type "Gondola / aerial cable car" (`gondola`), with stations in the station model. 39 systems, 112 lift ways (5 under construction), 202.4 route km open and 18.5 km under construction, 50 lines, 242 stations (22 under construction), in 19 countries: Cablebús and Mexicable (Mexico City), Mi Teleférico (La Paz), Metrocable (Medellín, Caracas), TransMiCable, Santo Domingo, London, Toulouse, Câble C1, Algiers and others.
+- Which lifts: a hand-kept list, `pipeline/config/_aerialway.json` (box per city, optional `name_re`, `ways`, `exclude_ways`; schema in `docs/12-config-and-exemptions.md`). Sightseeing, mountain and ski lifts are left out. A system that matches nothing is reported like a stale exemption. Code: `pipeline/rail-extract/src/aerial.rs`.
+- Cache: format `RGRAIL04`. It now also keeps every `aerialway=gondola|cable_car|mixed_lift` way, `aerialway=station` and `route=aerialway` relation (1.246 GB, was 1.242), so a change to the list needs a new cut only. The previous cache is in `data/cache/old/`; it can be deleted.
+- Rules: a lift is always Gondola (no override, route, name or evidence rule retypes it), and so is a route on a lift (Maokong is mapped `route=tram`). Being built is construction track. Proposed, abandoned, disused and `access=no` lifts and unnamed ways under 300 m are dropped. A station way with its station node inside is the station's building, not a second station. A gondola station takes the lines of the lifts within 150 m of it (many route relations list no stops) and is never flagged high-speed. A gondola station is no evidence that a railway beside it carries passengers, and is left out of the station projection centre.
+- Tiles: `track` gains `cap`, `occ`, `dur` (`aerialway:capacity`, `:occupancy`, `:duration`; `shared/tile-schema.json` regenerated). 76 of the 112 ways have a capacity. `world.pmtiles` is 1164.3 MB (was 1164.1).
+- App: palette entry (`#C4489B`), legend and type filter through `TYPE_ORDER`; the track tooltip of a lift shows Capacity (people/hour), Cabin and Ride time when the tag holds a number, in place of Electrified, Max speed and Gauge.
+- Checked against a baseline built by the previous extractor from the previous cache: 197 of 216 country cuts are byte-identical, and in the other 19 every line that is not a lift, its station or its stop is identical; the open route km of every other rail type is unchanged worldwide; 123 of 142 `stats.json` are identical. 14 stations that existed before changed, each because a lift joins them (a metro station gains a gondola line; a complex gains a member and with it a new id: Oriente in Medellín, Indios Verdes and Cuatro Caminos in Mexico City, Kef Naâdja, Estación Central in Santiago de los Caballeros; four Ajaccio stations and Eyüp go from a guessed rail mode to gondola).
+- Checks: 124 extractor tests, 31 app tests, `check.py` for the pilots and 18 world regions (new answer lists `pipeline/answers/mx.json` and `bo.json`), `check.py --exemptions`, `check-docs.py`, the data contract; Mexico City and La Paz looked at in the app (light and dark, type and operator colours, tooltip).
+- Left open (`docs/17-action-items.md`): the borderline systems on and off the list (1.7), lifts with no route relation in OSM (76 open stations have no line), the unstable station `grouping` flag, the data-dependent station projection centre.
+
 ## 2026-11-05: data on network-data.lsquared.cc, security hardening
 
 - Data: the R2 bucket is served from the custom domain `network-data.lsquared.cc` (min TLS 1.2, HTTP/2, Brotli on `.json`); `VITE_DATA_BASE` in Vercel points there, `ALLOW_R2_DEV` is removed, and `app/vercel.json` connect-src names it instead of r2.dev.

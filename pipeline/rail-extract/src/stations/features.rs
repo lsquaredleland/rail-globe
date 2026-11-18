@@ -19,7 +19,10 @@ pub(super) struct Proj {
 
 impl Proj {
     pub fn new(inp: &Input) -> Proj {
-        let lats: Vec<f64> = inp.feats.iter().filter(|f| f.gtype == "Point").filter_map(|f| f.g["coordinates"][1].as_f64()).collect();
+        // gondola stations are left out, so adding or removing a lift (an allowlist change) does not move the projection, and with it the
+        // measured size of every railway station of the region
+        let lats: Vec<f64> =
+            inp.feats.iter().filter(|f| f.gtype == "Point" && s(&f.p, "aerialway").is_none()).filter_map(|f| f.g["coordinates"][1].as_f64()).collect();
         let lat0 = if lats.is_empty() { 40.0 } else { lats.iter().sum::<f64>() / lats.len() as f64 };
         Proj { kx: 111320.0 * lat0.to_radians().cos(), ky: 110540.0 }
     }
@@ -80,6 +83,7 @@ pub(super) fn track_mode(t: &str) -> &'static str {
         "tram" => "tram",
         "monorail" => "monorail",
         "funicular" => "funicular",
+        "gondola" => "gondola",
         "other" => "other",
         _ => "train",
     }
@@ -158,6 +162,10 @@ impl<'a> Feats<'a> {
         }
         if it.p("railway") == Some("tram_stop") {
             ms.insert("tram".to_string());
+        }
+        // a station of a kept gondola or cable car: only those carry the aerialway tag (cut.rs)
+        if it.p("aerialway") == Some("station") {
+            ms.insert("gondola".to_string());
         }
         for k in ["subway", "light_rail", "train"] {
             if it.p(k) == Some("yes") {

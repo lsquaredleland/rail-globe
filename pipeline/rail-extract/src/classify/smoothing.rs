@@ -5,7 +5,7 @@ use super::*;
 pub(super) const MAX_CHAIN_KM: f64 = 40.0; // a chain of such pieces (a loop, a bypass, an old alignment) longer than this is a line of its own
 pub(super) const SNIPPET_KM: f64 = 2.0; // a piece of track shorter than this that differs from all its neighbours takes their type
 
-pub(super) fn ll_km(ll: &[(i32, i32)]) -> f64 {
+pub fn ll_km(ll: &[(i32, i32)]) -> f64 {
     let pts: Vec<(f64, f64)> = ll.iter().filter(|p| p.0 != i32::MIN).map(|p| (p.1 as f64 / 1e7, p.0 as f64 / 1e7)).collect();
     crate::tiles::haversine_len(&pts)
 }

@@ -134,3 +134,21 @@ Reads `<DIR>/<slug>/classify_report.json`. Without `--data` (2026-10-17) a world
 ## Group templates (`_groups.json`)
 
 A region with no `pipeline/config/<slug>.json` normally uses `_default.json`. `pipeline/config/_groups.json` maps a template name to a list of slugs (`{"_evidence-routes": ["ar", "za", ...]}`); a listed region uses `<name>.json` (a template that `"extends": "_default"`) instead, with its names filled from the outline like the default. One file for 41 countries instead of 41 files (`docs/15-argentina-africa-freight.md`). A region's own file still wins.
+
+## Gondola allowlist (`_aerialway.json`)
+
+`pipeline/config/_aerialway.json` lists the gondola and cable car systems that run as public transit ([2026-11-15-gondolas](00-overview.md#2026-11-15-gondolas)). It is one global file, not a region config, and is read by every `cut` (code: `aerial.rs`). Without it no lift is kept.
+
+| Key | Meaning |
+| --- | --- |
+| `min_unnamed_km` | A matched way with no name (its own or a route relation's) shorter than this is dropped (0.3) |
+| `systems[].name`, `city` | For people; `name` is printed in the cut summary and in warnings |
+| `systems[].country` | The slug of the country cut the system lies in; that cut warns when the system matches nothing |
+| `systems[].bbox` | `[west, south, east, north]` in degrees. A lift matches when its first or last node is inside |
+| `systems[].name_re` | Optional regex. When set, it must also match the way's `name`, or the `name` or `ref` of one of its `route=aerialway` relations (a city box that also holds a sightseeing lift) |
+| `systems[].ways` | Optional way ids that always match (a lift with no name yet) |
+| `systems[].exclude_ways` | Optional way ids that never match |
+
+- A way is tested against the systems in file order and counts for the first that matches.
+- Stale detection: a system whose `country` is the region being cut and that matches no lift is reported like a stale exemption (`WARNING: mx: aerialway system "..." matched no lift`), and fails the cut with `--strict-exemptions`. Pilot cuts (`sf-bay-area`, `paris`, `chengdu`) are not country slugs, so they never warn.
+- To add a system: find its ways in OSM, add a box around the city, add `name_re` if the box holds other lifts, run `cut <country>` and read the summary line (`14 aerial lift ways (Cablebús 6, Mexicable 7, ...)`). No planet read is needed: the cache holds every `aerialway=gondola|cable_car|mixed_lift` way.

@@ -34,6 +34,7 @@ use self::report::*;
 use self::routes::*;
 use self::smoothing::*;
 use self::tags::*;
+pub use self::smoothing::ll_km;
 pub use self::tags::{speed_kmh, FeatProps, Get, Owned};
 
 /// a kept relation, as the side table has it
@@ -87,7 +88,22 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         }
     }
     let mut ex_stats: Vec<ExStats> = cfg.exemptions.iter().map(|_| ExStats::default()).collect();
-    let rtype: Vec<(String, &'static str)> = routes.iter().map(|r| route_type(&r.tags, cfg, hs_routes.get(&r.id).copied().unwrap_or(HsTrack::No))).collect();
+    // a route that runs on a kept aerial lift is a Gondola line, whatever its tags say (the Maokong Gondola is mapped route=tram)
+    let on_lift: FxHashSet<&str> = tracks
+        .iter()
+        .filter(|tr| tr.props.g("railway") == Some("gondola") || (tr.props.g("railway") == Some("construction") && tr.props.g("construction") == Some("gondola")))
+        .flat_map(|tr| tr.routes.iter().map(String::as_str))
+        .collect();
+    let rtype: Vec<(String, &'static str)> = routes
+        .iter()
+        .map(|r| {
+            if on_lift.contains(r.id.as_str()) {
+                ("gondola".to_string(), "track")
+            } else {
+                route_type(&r.tags, cfg, hs_routes.get(&r.id).copied().unwrap_or(HsTrack::No))
+            }
+        })
+        .collect();
     let lines = build_lines(cfg, rows, &routes, &route_master, &rtype, &mut ex_stats);
     let route_lines = RouteLines { route_pos: &route_pos, route_master: &route_master, line_type: &lines.line_type };
 

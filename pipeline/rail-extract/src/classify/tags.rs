@@ -3,8 +3,9 @@
 use super::*;
 
 /// most prominent first; track takes the highest type that runs on it (regional includes commuter, merged 2026-10-12)
-pub(super) const ORDER: [&str; 8] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "other"];
-pub(super) const TRACK_RW: [&str; 9] = ["rail", "subway", "light_rail", "tram", "monorail", "funicular", "narrow_gauge", "construction", "proposed"];
+pub(super) const ORDER: [&str; 9] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "gondola", "other"];
+/// `gondola` is the pipeline's own mode for a kept aerial lift (aerial.rs), not an OSM railway value
+pub(super) const TRACK_RW: [&str; 10] = ["rail", "subway", "light_rail", "tram", "monorail", "funicular", "narrow_gauge", "construction", "proposed", "gondola"];
 pub(super) const SERVICE_TRACK: [&str; 4] = ["yard", "siding", "spur", "crossover"];
 pub(super) const FREIGHT_USAGE: [&str; 4] = ["industrial", "freight", "military", "farm"];
 
@@ -18,6 +19,7 @@ pub(super) fn route_mode_type(m: &str) -> Option<&'static str> {
         "light_rail" | "tram" => "light_rail",
         "monorail" => "monorail",
         "funicular" => "funicular",
+        "aerialway" | "gondola" => "gondola", // route=aerialway; track of a kept lift is railway=gondola (aerial.rs)
         _ => return None,
     })
 }

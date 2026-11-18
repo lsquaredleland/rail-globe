@@ -514,3 +514,25 @@ fn high_speed_floor_from_config() {
     assert_eq!(type_at(json!({"high_speed_min_kmh": 200}), "200"), "high_speed");
     assert_eq!(type_at(json!({}), "200"), "high_speed");
 }
+
+/// A kept aerial lift (aerial.rs hands it over as railway=gondola, or railway=construction + construction=gondola) is always Gondola,
+/// and so is every route that runs on it, whatever the route's tags say.
+#[test]
+fn gondola_track_and_its_lines_are_always_gondola() {
+    let ways: [(Vec<(&[u8], &[u8])>, Vec<&str>); 5] = [
+        (vec![(b"railway", b"gondola"), (b"aerialway", b"gondola")], vec![]),
+        (vec![(b"railway", b"gondola"), (b"usage", b"tourism")], vec![]), // tourist track is Other, a lift is not
+        (vec![(b"railway", b"gondola"), (b"aerialway", b"cable_car")], vec!["relation/1"]), // on a route mapped route=tram
+        (vec![(b"railway", b"construction"), (b"construction", b"gondola")], vec![]),
+        (vec![(b"railway", b"tram")], vec!["relation/2"]),
+    ];
+    let mut tram_on_lift = route("relation/1", &[("name", "Maokong")]);
+    tram_on_lift.tags.0[0].1 = "tram".into();
+    let mut tram = route("relation/2", &[("name", "Tram 1")]);
+    tram.tags.0[0].1 = "tram".into();
+    let (types, lines) = classify_ways(&ways, &[tram_on_lift, tram]);
+    assert_eq!(types, ["gondola", "gondola", "gondola", "gondola", "light_rail"]);
+    let ty = |id: &str| lines.iter().find(|l| l["id"] == id).map(|l| (l["type"].as_str().unwrap().to_string(), l["type_source"].as_str().unwrap().to_string()));
+    assert_eq!(ty("relation/1"), Some(("gondola".into(), "track".into())));
+    assert_eq!(ty("relation/2"), Some(("light_rail".into(), "mode".into())));
+}

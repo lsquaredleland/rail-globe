@@ -1,0 +1,20 @@
+{
+  "_comment": "Mexico: the gondola systems on the allowlist (pipeline/config/_aerialway.json) and two metro lines beside them. Written 2026-11-17 from the OSM names of planet 260928.",
+  "stations": [
+    { "match": "^Indios Verdes$", "mode": "gondola" },
+    { "match": "^Cuautepec$", "mode": "gondola" },
+    { "match": "^Santa Marta$", "mode": "gondola" },
+    { "match": "^Constitución de 1917$", "mode": "gondola" },
+    { "match": "^Santa Clara$", "mode": "gondola" },
+    { "match": "^Indios Verdes$", "mode": "subway" }
+  ],
+  "lines": [
+    { "match": "^Cablebús Línea 1$", "type": "gondola" },
+    { "match": "^Cablebús Línea 2$", "type": "gondola" },
+    { "match": "^Cablebús Línea 3$", "type": "gondola" },
+    { "match": "^Mexicable Línea 1$", "type": "gondola" },
+    { "match": "^Mexicable Línea 2$", "type": "gondola" },
+    { "match": "^Línea 2$", "type": "metro" },
+    { "match": "^Línea B$", "type": "metro" }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "_comment": "Bolivia: Mi Teleférico (La Paz and El Alto), on the gondola allowlist (pipeline/config/_aerialway.json). Written 2026-11-17 from the OSM names of planet 260928.",
+  "stations": [
+    { "match": "^Estación 16 de Julio", "mode": "gondola" },
+    { "match": "^Estación Libertador", "mode": "gondola" },
+    { "match": "^Estación Irpavi", "mode": "gondola" },
+    { "match": "^Estación Villarroel", "mode": "gondola" }
+  ],
+  "lines": [
+    { "match": "^Línea Roja: 16 de Julio", "type": "gondola" },
+    { "match": "^Línea Amarilla: Ciudad Satélite", "type": "gondola" },
+    { "match": "^Línea Verde: ", "type": "gondola" },
+    { "match": "^Línea Azul", "type": "gondola" },
+    { "match": "^Línea Naranja", "type": "gondola" },
+    { "match": "^Línea Blanca", "type": "gondola" },
+    { "match": "^Línea Celeste", "type": "gondola" },
+    { "match": "^Línea Morada", "type": "gondola" },
+    { "match": "^Línea Café", "type": "gondola" },
+    { "match": "^Línea Plateada", "type": "gondola" },
+    { "match": "^Línea Roja$", "type": "light_rail" }
+  ]
+}

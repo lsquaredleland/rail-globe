@@ -33,6 +33,16 @@ export function maxSpeed(ms?: string): string {
   return /^\d+\s*mph$/.test(ms) ? ms.replace(/\s*mph/, ' mph') : ms
 }
 
+/** OSM aerialway:capacity (people per hour): "3000" reads "3,000 people/hour"; anything else is shown as mapped */
+export function liftCapacity(cap: string): string {
+  return /^\d+$/.test(cap) ? `${Number(cap).toLocaleString('en-US')} people/hour` : cap
+}
+
+/** OSM aerialway:duration: minutes ("7", "7.5"), else as mapped ("0:07") */
+export function liftDuration(d: string): string {
+  return /^\d+(\.\d+)?$/.test(d) ? `${d} min` : d
+}
+
 const GAUGES: Record<string, string> = {
   '1435': 'standard',
   '1000': 'metre',

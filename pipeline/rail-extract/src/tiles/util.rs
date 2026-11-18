@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 use std::fs;
 use std::path::Path;
 
-const TYPE_ORDER: [&str; 8] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "other"];
+const TYPE_ORDER: [&str; 9] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "gondola", "other"];
 const SHARD_TARGET_BYTES: usize = 256 * 1024; // side-file shards hold about this much JSON each (the app fetches one per click)
 const CSS_NAMES: [&str; 32] = [
     "red",

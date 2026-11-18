@@ -23,7 +23,7 @@ use memmap2::Mmap;
 use std::fs::File;
 use std::path::Path;
 
-pub const MAGIC: &[u8; 8] = b"RGRAIL03";
+pub const MAGIC: &[u8; 8] = b"RGRAIL04";
 pub const NSEC: usize = 12;
 pub const HEADER: usize = 8 + NSEC * 16;
 pub const MISSING: i32 = i32::MIN;

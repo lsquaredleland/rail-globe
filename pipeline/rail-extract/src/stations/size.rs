@@ -264,7 +264,9 @@ pub(super) fn score_stations(m: &Model) -> Vec<Size> {
                 3
             };
             let pg = Geometry::Point(x.pt);
-            let hsr = ti.hs_tree.near(&pg, HS_NEAR).into_iter().any(|t| geomx::dist(&f.tracks[ti.hs[t]].g, &pg) <= HS_NEAR);
+            // (a station that is only a gondola stop is never a high-speed station, however near the line passes: Valenton on Câble C1)
+            let only_gondola = x.modes.len() == 1 && x.modes.contains("gondola");
+            let hsr = !only_gondola && ti.hs_tree.near(&pg, HS_NEAR).into_iter().any(|t| geomx::dist(&f.tracks[ti.hs[t]].g, &pg) <= HS_NEAR);
             let names: Vec<&str> = x.feats.iter().map(|&k| f.station_feats[k].p("name").unwrap_or("")).collect();
             let mut norms: BTreeSet<String> = names.iter().map(|n| norm_name(n)).collect();
             norms.insert(x.norm.clone());

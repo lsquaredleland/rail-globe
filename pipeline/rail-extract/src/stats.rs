@@ -23,7 +23,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// rail types counted, in the order the card lists them
-const TYPES: [&str; 9] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "other", "freight"];
+const TYPES: [&str; 10] = ["high_speed", "intercity", "regional", "metro", "light_rail", "monorail", "funicular", "gondola", "other", "freight"];
 /// lower bounds of the speed colour bands of app/src/mapStyle.ts (same list as tiles.rs)
 const CELL_M: f64 = 60.0;
 const M_PER_DEG: f64 = 111_320.0;

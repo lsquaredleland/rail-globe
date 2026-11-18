@@ -276,7 +276,7 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
       const tr = q(hitLayers(TILES))
       if (tr.length) {
         // most prominent type wins when tracks overlap
-        const order = ['high_speed', 'intercity', 'regional', 'metro', 'light_rail', 'monorail', 'funicular', 'other', 'freight']
+        const order = ['high_speed', 'intercity', 'regional', 'metro', 'light_rail', 'monorail', 'funicular', 'gondola', 'other', 'freight']
         const best = [...tr].sort((a, b) => order.indexOf(String(a.properties.type)) - order.indexOf(String(b.properties.type)))[0]
         return { kind: 'track', slug: slugOf(best), props: toProps(best), lngLat }
       }

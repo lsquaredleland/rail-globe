@@ -2,7 +2,7 @@
 
 A static web map of passenger rail built from OpenStreetMap. Its goal is comparing regions at the same real scale (for example the SF Bay Area against Paris, or all of China); the side-by-side compare view is planned, and today the app is a single map.
 
-- Rail types (high-speed, intercity, regional, metro, light rail / tram, monorail, funicular, other, freight), plus colour by operator or by speed
+- Rail types (high-speed, intercity, regional, metro, light rail / tram, monorail, funicular, gondola / aerial cable car, other, freight), plus colour by operator or by speed
 - Stations ranked by physical size, never by line counts; station and yard outlines show the footprint of the railway
 - Track under construction (dashed), optional proposed track, and an "HSR only" switch
 - Region cards with route-km totals per province and city

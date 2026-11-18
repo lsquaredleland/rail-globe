@@ -1,7 +1,21 @@
 import type { Hit } from '../MapView'
 import { railwayOf, type LineIndex, type Railways } from '../data'
 import { speedBand } from '../mapStyle'
-import { AREA_LABEL, areaSize, electrification, gauge, km, lineBreakdown, maxSpeed, railTypeLabel, SERVICE_LABEL, tierLabel, UNKNOWN } from '../format'
+import {
+  AREA_LABEL,
+  areaSize,
+  electrification,
+  gauge,
+  km,
+  liftCapacity,
+  liftDuration,
+  lineBreakdown,
+  maxSpeed,
+  railTypeLabel,
+  SERVICE_LABEL,
+  tierLabel,
+  UNKNOWN,
+} from '../format'
 import { TYPE_LABEL } from '../palette'
 import { LineBadge, namePair, shortName, shortNameEn, useLang } from './ui'
 
@@ -10,6 +24,9 @@ const bandSpeed = (kmh: number) => {
   const b = speedBand(kmh)
   return b.min === 0 ? 'under 80 km/h' : `${b.label}${b.label.includes('km/h') ? '' : ' km/h'}`
 }
+
+/** a mapped value worth a row: it holds a number (OSM has placeholders such as "TBD" in the aerialway tags) */
+const hasNumber = (v: unknown) => v != null && /\d/.test(String(v))
 
 const Row = ({ k, v }: { k: string; v: string }) => (
   <div className="tt-row">
@@ -137,6 +154,8 @@ export function TooltipBody({
   const trackName = p.n ? String(p.n) : (railway?.[0] ?? '')
   const trackNameEn = p.ne ? String(p.ne) : (railway?.[1] ?? null)
   const isYard = p.type === 'yard'
+  // a gondola or cable car has no traction current, speed limit or gauge: its rows are the OSM capacity tags, shown when mapped
+  const isGondola = p.type === 'gondola'
   // the railway's own name leads (京沪线, Stettiner Bahn); the services that run on it are listed below; with no railway name the rail type leads
   const title = isYard ? trackName || 'Yard track' : trackName || railTypeLabel(String(p.type))
   const [tMain, tOther] = namePair(lang, title, trackNameEn)
@@ -164,11 +183,14 @@ export function TooltipBody({
         </div>
       )}
       {/* zoomed out, track comes from the merged overview, which has no per-piece tags */}
-      {p.id != null && <Row k="Electrified" v={electrification(p.el as string, p.v as string, p.fq as string)} />}
+      {isGondola && hasNumber(p.cap) && <Row k="Capacity" v={liftCapacity(String(p.cap))} />}
+      {isGondola && hasNumber(p.occ) && <Row k="Cabin" v={`${p.occ} people`} />}
+      {isGondola && hasNumber(p.dur) && <Row k="Ride time" v={liftDuration(String(p.dur))} />}
+      {p.id != null && !isGondola && <Row k="Electrified" v={electrification(p.el as string, p.v as string, p.fq as string)} />}
       {/* the exact tag from z9; zoomed out only the speed band is in the tiles */}
-      {p.id != null && !isYard && <Row k="Max speed" v={maxSpeed(p.ms as string)} />}
-      {p.id == null && !isYard && p.kmh != null && <Row k="Max speed" v={bandSpeed(Number(p.kmh))} />}
-      {p.id != null && <Row k="Gauge" v={gauge(p.g as string)} />}
+      {p.id != null && !isYard && !isGondola && <Row k="Max speed" v={maxSpeed(p.ms as string)} />}
+      {p.id == null && !isYard && !isGondola && p.kmh != null && <Row k="Max speed" v={bandSpeed(Number(p.kmh))} />}
+      {p.id != null && !isGondola && <Row k="Gauge" v={gauge(p.g as string)} />}
     </>
   )
 }

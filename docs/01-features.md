@@ -26,6 +26,7 @@ Every track and every line gets one type from a fixed list, so the legend means 
 | Light rail / tram | `railway=light_rail`, `railway=tram`, `route=light_rail` or `route=tram` (merged 2026-10-11) | Muni Metro, VTA, Paris tram lines, Muni streetcar |
 | Monorail | `railway=monorail` or `route=monorail` (own type since 2026-10-12) | SFO AirTrain |
 | Funicular and cable car | `railway=funicular` or `route=funicular` (own type since 2026-10-12) | Peak Tram |
+| Gondola / aerial cable car | `aerialway=gondola`, `cable_car` or `mixed_lift`, only for the systems on the list of lifts that run as public transit (`pipeline/config/_aerialway.json`; own type since 2026-11-15). The tooltip shows capacity (people per hour), cabin size and ride time when OSM has them | Cablebús, Mi Teleférico, Metrocable |
 | Other | Tourist and heritage rail (`service=tourism` on a route, `usage=tourism` on track; added 2026-10-12) | |
 | Freight / industrial | `usage=industrial` or `freight`, and no passenger route | Drawn muted grey; toggle to hide |
 | Yard and service | `service=yard`, `siding`, `spur`, `crossover` | Drawn muted, z13 and up |

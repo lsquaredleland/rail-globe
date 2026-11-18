@@ -29,6 +29,7 @@ fn mode_types(m: &str) -> &'static [&'static str] {
         "light_rail" | "tram" => &["light_rail"],
         "monorail" => &["monorail"],
         "funicular" => &["funicular"],
+        "gondola" => &["gondola"],
         "other" => &["other"],
         _ => &[],
     }

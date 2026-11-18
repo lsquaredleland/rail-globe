@@ -1,7 +1,7 @@
 // Rail type palette from the design (Palette board). Heavy rail is warm and dark, urban rail cool and lighter.
-export type RailType = 'high_speed' | 'intercity' | 'regional' | 'metro' | 'light_rail' | 'monorail' | 'funicular' | 'other' | 'freight' | 'yard'
+export type RailType = 'high_speed' | 'intercity' | 'regional' | 'metro' | 'light_rail' | 'monorail' | 'funicular' | 'gondola' | 'other' | 'freight' | 'yard'
 
-export const TYPE_ORDER: RailType[] = ['high_speed', 'intercity', 'regional', 'metro', 'light_rail', 'monorail', 'funicular', 'other']
+export const TYPE_ORDER: RailType[] = ['high_speed', 'intercity', 'regional', 'metro', 'light_rail', 'monorail', 'funicular', 'gondola', 'other']
 
 export const TYPE_LABEL: Record<string, string> = {
   high_speed: 'High-speed',
@@ -11,6 +11,7 @@ export const TYPE_LABEL: Record<string, string> = {
   light_rail: 'Light rail / tram',
   monorail: 'Monorail',
   funicular: 'Funicular and cable car',
+  gondola: 'Gondola / aerial cable car',
   other: 'Other',
   freight: 'Freight',
   yard: 'Yard and service',
@@ -23,6 +24,7 @@ export const TYPE_LABEL_SHORT: Record<string, string> = {
   light_rail: 'light rail / tram',
   monorail: 'monorail',
   funicular: 'funicular / cable car',
+  gondola: 'gondola / aerial cable car',
   other: 'other',
 }
 
@@ -34,6 +36,7 @@ export const TYPE_COLOR: Record<RailType, string> = {
   light_rail: '#13909C',
   monorail: '#6B3FA0',
   funicular: '#6E8B3D',
+  gondola: '#C4489B',
   other: '#9A6B47',
   freight: '#9E9B94',
   yard: '#BDB9B1',
@@ -48,6 +51,7 @@ export const TYPE_WIDTH: Record<RailType, [number, number, number]> = {
   light_rail: [1.2, 1.8, 2.8],
   monorail: [1.2, 1.8, 2.8],
   funicular: [1, 1.6, 2.5],
+  gondola: [1, 1.6, 2.5],
   other: [1, 1.6, 2.5],
   freight: [0.8, 1.3, 2],
   yard: [0.5, 0.9, 1.2],

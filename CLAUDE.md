@@ -16,7 +16,7 @@ A static web map of passenger rail built from OpenStreetMap. Its goal is compari
 | `docs/08-americas-passenger-qa.md` | Americas passenger-rail QA: what was checked, what was fixed, what is left |
 | `docs/09-performance-playbook.md` | What made the map fast (MLT writer, feature state, hover), what did not, how to benchmark, and the open problems (duplicate range requests) |
 | `docs/10-world-build.md` | The world build: commands, measured times and sizes, `search.json` rules, memory-bounded writer |
-| `docs/12-config-and-exemptions.md` | Per-region configs: `extends` layering, the `exemptions` list (schema, stale detection) |
+| `docs/12-config-and-exemptions.md` | Per-region configs: `extends` layering, the `exemptions` list (schema, stale detection), the gondola allowlist `_aerialway.json` |
 | `docs/13-freight-north-america.md` | Study: freight or passenger in the US, Canada and Mexico against NARN, the rule that came out of it (proposal) |
 | `docs/14-city-outlines-and-highlights.md` | City outlines scope, why some lines have no highlight, small countries as country level only |
 | `docs/15-argentina-africa-freight.md` | Study and rule: passenger needs evidence in Argentina and Africa (routes mode, stations mode, `_groups.json`) |
@@ -52,4 +52,5 @@ A static web map of passenger rail built from OpenStreetMap. Its goal is compari
 - Station rank and zoom come from physical size only. Never from line counts.
 - Infrastructure is built first and never depends on the service layer.
 - Abandoned and disused track is not in the data; proposed track is kept for Hong Kong only (a test, off by default). Construction is kept (drawn dashed at every zoom from z4, from merged ways).
+- Gondolas and cable cars are kept only for the systems in `pipeline/config/_aerialway.json` (lifts that run as public transit). Never add a sightseeing or ski lift; a new system is a list entry and a new cut, not a planet read.
 - OSM data is ODbL: attribution on the map; side files are offered under ODbL.

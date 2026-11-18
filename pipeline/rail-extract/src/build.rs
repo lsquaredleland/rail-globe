@@ -226,7 +226,7 @@ fn ways_pass(f: &File, blobs: &[BlobRef], mem_ways: &[i64], bnd_ways: &[i64]) ->
         .map(|r| {
             with_block(f, r, |raw| {
                 let blk = Block::parse(raw);
-                let quick = key_ids(&blk, &[b"railway", b"landuse", b"building", b"public_transport", b"aeroway"]);
+                let quick = key_ids(&blk, &[b"railway", b"landuse", b"building", b"public_transport", b"aeroway", b"aerialway"]);
                 let mut o = WayBlk::default();
                 let (mut keys, mut vals) = (Vec::new(), Vec::new());
                 let (mut j, mut jb) = (usize::MAX, usize::MAX);
@@ -334,7 +334,7 @@ fn nodes_pass(f: &File, blobs: &[BlobRef], need: &[i64]) -> Vec<NodeBlk> {
         .map(|r| {
             with_block(f, r, |raw| {
                 let blk = Block::parse(raw);
-                let quick = key_ids(&blk, &[b"railway", b"public_transport", b"construction:railway", b"construction:public_transport"]);
+                let quick = key_ids(&blk, &[b"railway", b"public_transport", b"construction:railway", b"construction:public_transport", b"aerialway"]);
                 let mut o = NodeBlk::default();
                 let place_k = key_ids(&blk, &[b"place"]);
                 let mut kvb = Vec::new();

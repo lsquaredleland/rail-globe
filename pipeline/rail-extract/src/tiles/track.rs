@@ -233,6 +233,9 @@ impl<'a> Scan<'a> {
             ln: None,
             nl: None,
             oc: None,
+            cap: nonempty(p, "aerialway:capacity"),
+            occ: nonempty(p, "aerialway:occupancy"),
+            dur: nonempty(p, "aerialway:duration"),
         };
         // track with no name of its own is named after its railway (the route=railway relation it belongs to: LGV Sud-Est), not after its services
         let own_name = s(p, "name").filter(|v| !v.is_empty());

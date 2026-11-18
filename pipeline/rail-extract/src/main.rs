@@ -20,6 +20,7 @@
 // single-use shapes would add names without adding clarity.
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
 
+mod aerial;
 mod assemble;
 mod build;
 mod cache;
@@ -414,6 +415,7 @@ fn main() {
                 c.node_idx().len(),
                 c.rel_idx().len()
             );
+            let acfg = aerial::Cfg::load(&root.join("pipeline/config/_aerialway.json"));
             // regions are independent: cut them in parallel
             let sums: Vec<cut::Summary> = slugs
                 .par_iter()
@@ -423,7 +425,7 @@ fn main() {
                     // rail types need the region's rules: its own config, else the template
                     let (cfg_path, _) = site::config_path(&root.join("pipeline/config"), slug);
                     let cfg = Some(classify::Cfg::load(&cfg_path, &root.join("pipeline/regions")));
-                    cut::cut(&c, &reg, &data_dir.join(slug), cfg.as_ref())
+                    cut::cut(&c, &reg, &data_dir.join(slug), cfg.as_ref(), &acfg)
                 })
                 .collect();
             for s in &sums {

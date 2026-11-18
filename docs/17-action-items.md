@@ -35,6 +35,15 @@ Kept open because they carry both an open tag and a construction tag, unverifiab
 In HSR-only mode the station label layers (`lbl1`-`lbl3`, `lblcon1`-`lblcon3`) filter on `hsr == 1` or `ty` containing `high_speed`, but the `complexes` tile layer has no `hsr` property, so for complexes only the `ty` test applies. Nothing visibly breaks. Found by `app/src/tileSchema.test.ts` (listed there as `KNOWN_MISSING`). Options: add `hsr` to complexes in the pipeline (tiles change), or drop the `hsr` read for complex labels.
 - Your call:
 
+### 1.7 Gondola allowlist: borderline systems
+Gondolas and aerial cable cars are built ([2026-11-15-gondolas](00-overview.md#2026-11-15-gondolas), `CHANGELOG.md` 2026-11-17). The list (`pipeline/config/_aerialway.json`, 39 systems) was drawn up by Claude from general knowledge and the OSM data, so these calls are worth a look. Changing one is an edit to the list and a new cut.
+- On the list though many riders are tourists (they use the city's transit fare): Maokong (Taipei), Yangtze River Cableway (Chongqing), London Cable Car, Renon and Colle (Bolzano), Rike to Narikala and Turtle Lake (Tbilisi).
+- Left out as sightseeing: Monserrate (Bogotá), Teleférico de Caracas, Sugarloaf (Rio), Teleférico de Santiago (the tourist one), Montjuïc and the Port cable car (Barcelona), Koblenz, Keçiören (Ankara), Ngong Ping 360, Singapore, Yokohama Air Cabin, Guwahati.
+- Left out as rural or resort: Swiss and other Alpine village cable cars (also those in public timetables), Blida to Chréa (Algeria).
+- Left out, status not confirmed: Teleférico da Providência (Rio); OSM tags it open.
+- Not found in OSM: Ankara's Yenimahalle to Şentepe line (no aerialway way matched), so it is missing.
+- Your call:
+
 ## 2. To investigate
 
 - **China services from 12306** ([2026-10-20-china-12306-services](00-overview.md#2026-10-20-china-12306-services)): before publishing, a decision on bandwidth (a zoomed-out Chengdu East click is ~689 KB uncompressed, of which `stretches.json` 586 KB / 149 KB gzip; since 2026-11-05 the data domain sends Brotli for `.json` and edge-caches it, so recheck the compressed size; the other option is stretch geometry in tiles); 15 chord pairs incl. the Hainan ferry (no `railway=ferry` in the `cn` cut); 郑州东–新乡东 G legs switch 京广高速 -> 济郑高速 (likely one corridor under two names); 汨罗 unmatched; 189 stations without English; 井店–涉县 doubtful 5.2 km bridge; publishing needs the user's go.
@@ -44,6 +53,9 @@ In HSR-only mode the station label layers (`lbl1`-`lbl3`, `lblcon1`-`lblcon3`) f
 
 ## 3. Small data items
 
+- **Gondola lines without a route relation** (2026-11-17): a lift is a "line" only where OSM has a `route=aerialway` relation. With none, the track shows under its own name, with no line card and no line on its stations: Georgia (Tbilisi, Chiatura), Haifa, Nizhny Novgorod, Chongqing, TransMiCable, MIO Cable, Megacable, most of Algeria, Santiago de los Caballeros, Trolcable. An OSM edit fixes it; nothing to do in the pipeline. (Maokong has a relation, mapped `route=tram`; its line is typed Gondola from its track.)
+- **Station `grouping` flag is not stable** (2026-11-17): seven rail stations in Venezuela and one in Madagascar went from `inferred` to `mapped` when gondola stations were added to their country, with no other change. The app does not read the field. Cause not found (suspected: the merge passes depend on the set of stations).
+- **The station projection is centred on the mean latitude of the region's station points** (`stations/features.rs`), so any added or removed station shifts every measured area a little (seen as ±0.01 ha and a few tier flips before gondola stations were left out of the mean). A fixed centre per region (the outline's) would make monthly rebuilds steadier.
 - PNR South Main Line (Philippines): the 207 km Intercity is the Lucena–Sipocot gap with no route relation; one source says it was not operational. Retype it?
 - Uzbekistan Miskin–Bukhara high-speed section: nothing specific found, left as is.
 - Delhi Pink Line way/364876210 (0.42 km, `construction=subway`, no route) is closed by the construction rule; probably a leftover tag. Ruhrbahn tram tunnels tagged `construction=subway` (5 ways) are closed; skip `tunnel=yes` tram ways?

@@ -214,8 +214,8 @@ mod tests {
         for e in std::fs::read_dir(&dir).unwrap() {
             let p = e.unwrap().path();
             let f = p.file_name().unwrap().to_string_lossy().into_owned();
-            // _groups.json and _station-names.json have their own formats and are not region configs
-            if f.ends_with(".json") && f != "_groups.json" && f != "_station-names.json" {
+            // _groups.json, _station-names.json and _aerialway.json have their own formats and are not region configs
+            if f.ends_with(".json") && f != "_groups.json" && f != "_station-names.json" && f != "_aerialway.json" {
                 load_file(&p); // panics naming file and key
                 n += 1;
             }
@@ -230,7 +230,7 @@ mod tests {
         for e in std::fs::read_dir(&dir).unwrap() {
             let p = e.unwrap().path();
             let f = p.file_name().unwrap().to_string_lossy().into_owned();
-            if f.ends_with(".json") && f != "_groups.json" && f != "_station-names.json" {
+            if f.ends_with(".json") && f != "_groups.json" && f != "_station-names.json" && f != "_aerialway.json" {
                 let c = load_file(&p);
                 if c.get("china").is_some_and(truthy) {
                     assert_eq!(c["high_speed_min_kmh"], 250, "{f}");

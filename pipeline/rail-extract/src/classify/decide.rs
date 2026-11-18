@@ -30,7 +30,9 @@ pub(super) fn decide_tracks(tracks: &[TrackIn], cfg: &Cfg, pax: &[(i32, i32)], r
             continue; // proposed track is only kept inside the region's `proposed_region` (Hong Kong for now)
         }
         let mut own: Option<String> = None;
-        let (t, s): (String, &str) = if let Some((_, ty)) = cfg.track_type_overrides.iter().find(|(r, _)| r.matches(p)) {
+        let (t, s): (String, &str) = if rw == "gondola" || (rw == "construction" && p.g("construction") == Some("gondola")) {
+            ("gondola".into(), "tags") // a kept aerial lift is always Gondola: no override, route, name or evidence rule retypes it
+        } else if let Some((_, ty)) = cfg.track_type_overrides.iter().find(|(r, _)| r.matches(p)) {
             (ty.clone(), "override")
         } else if p.g("usage") == Some("tourism") {
             ("other".into(), "tags") // tourist and heritage track is always Other, whatever routes or service tags say
