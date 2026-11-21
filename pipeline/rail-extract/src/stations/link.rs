@@ -42,7 +42,8 @@ pub(super) fn stop_positions(m: &Model, proj: &super::features::Proj) -> (NodeSt
         }
         let (x, y) = proj.fwd(sp["lon"].as_f64().unwrap_or(0.0), sp["lat"].as_f64().unwrap_or(0.0));
         let pg = Geometry::Point(Point::new(x, y));
-        let pm: BTreeSet<&str> = ["subway", "light_rail", "train", "gondola"].into_iter().filter(|k| sp["modes"].get(*k).and_then(Value::as_str) == Some("yes")).collect();
+        let pm: BTreeSet<&str> =
+            ["subway", "light_rail", "train", "gondola"].into_iter().filter(|k| sp["modes"].get(*k).and_then(Value::as_str) == Some("yes")).collect();
         let nn = norm_name(sp["name"].as_str().unwrap_or(""));
         let mut best: Option<(usize, f64)> = None;
         for i in m.st_tree.near(&pg, 300.0) {

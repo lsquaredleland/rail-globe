@@ -32,9 +32,9 @@ use self::exemptions::*;
 use self::own_tag::*;
 use self::report::*;
 use self::routes::*;
+pub use self::smoothing::ll_km;
 use self::smoothing::*;
 use self::tags::*;
-pub use self::smoothing::ll_km;
 pub use self::tags::{speed_kmh, FeatProps, Get, Owned};
 
 /// a kept relation, as the side table has it
@@ -93,7 +93,8 @@ pub fn classify(slug: &str, cfg: &Cfg, rows: &[RelRow], feats: &[u8], tracks: &[
         .iter()
         .filter(|tr| {
             let p = &tr.props;
-            p.g("railway") == Some("gondola") || (p.g("railway") == Some("construction") && p.g("construction") == Some("gondola") && p.g("aerialway").is_some())
+            p.g("railway") == Some("gondola")
+                || (p.g("railway") == Some("construction") && p.g("construction") == Some("gondola") && p.g("aerialway").is_some())
         })
         .flat_map(|tr| tr.routes.iter().map(String::as_str))
         .collect();

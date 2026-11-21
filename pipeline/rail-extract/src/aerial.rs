@@ -109,7 +109,8 @@ impl System {
         }
         let [west, south, east, north] = self.bbox;
         let inside = w.ends.iter().any(|&(lat, lon)| west <= lon && lon <= east && south <= lat && lat <= north);
-        inside && self.name_re.as_ref().is_none_or(|re| w.name.into_iter().chain(w.rel_names.iter().chain(w.rel_refs).map(String::as_str)).any(|n| re.is_match(n)))
+        inside
+            && self.name_re.as_ref().is_none_or(|re| w.name.into_iter().chain(w.rel_names.iter().chain(w.rel_refs).map(String::as_str)).any(|n| re.is_match(n)))
     }
 }
 
@@ -261,12 +262,12 @@ mod tests {
         let rel = ["Cablebús Línea 1".to_string()];
         let refs = ["Mexicable 2".to_string()];
         let lifts = [
-            lift(1, Some("Cablebús Linea 2"), MX, 5.0, &none, &none), // by its own name
-            lift(2, None, MX, 5.0, &rel, &none),                       // by its relation's name
-            lift(3, None, MX, 5.0, &none, &refs),                      // by its relation's ref (the second system)
+            lift(1, Some("Cablebús Linea 2"), MX, 5.0, &none, &none),     // by its own name
+            lift(2, None, MX, 5.0, &rel, &none),                          // by its relation's name
+            lift(3, None, MX, 5.0, &none, &refs),                         // by its relation's ref (the second system)
             lift(4, Some("Teleférico turístico"), MX, 5.0, &none, &none), // in the box, no name match
-            lift(5, Some("Cablebús"), (48.0, 2.0), 5.0, &none, &none), // name match, outside every box
-            lift(6, Some("Línea Roja"), LP, 2.0, &none, &none),        // a box with no name_re keeps every lift
+            lift(5, Some("Cablebús"), (48.0, 2.0), 5.0, &none, &none),    // name match, outside every box
+            lift(6, Some("Línea Roja"), LP, 2.0, &none, &none),           // a box with no name_re keeps every lift
         ];
         let p = Picked::pick(&c, "mx", &lifts);
         let mut kept: Vec<i64> = p.keep.keys().copied().collect();
@@ -282,8 +283,8 @@ mod tests {
         let none: [String; 0] = [];
         let lifts = [
             lift(7, Some("Línea Azul"), LP, 2.0, &none, &none),   // excluded
-            lift(9, None, (10.0, 10.0), 2.9, &none, &none),        // listed: no name, outside the box
-            lift(10, Some("Monserrate"), BOG, 0.6, &none, &none),  // in the box, name_re says no
+            lift(9, None, (10.0, 10.0), 2.9, &none, &none),       // listed: no name, outside the box
+            lift(10, Some("Monserrate"), BOG, 0.6, &none, &none), // in the box, name_re says no
         ];
         let p = Picked::pick(&c, "bo", &lifts);
         assert_eq!(p.keep.keys().copied().collect::<Vec<_>>(), [9]);
@@ -299,10 +300,10 @@ mod tests {
         let mut closed = lift(14, Some("Línea Vieja"), LP, 2.0, &none, &none);
         closed.status = None;
         let lifts = [
-            lift(11, None, LP, 0.1, &none, &none),      // unnamed and short
-            lift(12, None, LP, 0.31, &none, &none),     // unnamed, long enough
-            lift(13, None, LP, 0.1, &rel, &none),       // short, named by its relation
-            lift(15, Some(""), LP, 0.1, &none, &none),  // an empty name is no name
+            lift(11, None, LP, 0.1, &none, &none),     // unnamed and short
+            lift(12, None, LP, 0.31, &none, &none),    // unnamed, long enough
+            lift(13, None, LP, 0.1, &rel, &none),      // short, named by its relation
+            lift(15, Some(""), LP, 0.1, &none, &none), // an empty name is no name
             closed,
         ];
         let p = Picked::pick(&c, "xx", &lifts);
