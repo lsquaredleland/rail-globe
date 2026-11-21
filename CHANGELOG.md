@@ -2,6 +2,10 @@
 
 Newest first. Decisions are in `docs/00-overview.md`; open items in `docs/17-action-items.md`.
 
+## 2026-11-21: English names on, region outline off by default
+
+- App: a link with no setting now opens with English names and without the region outline (was local names, outline on). The link carries `lg=local` and `ol=1` for the other choice; an old link without `lg` or `ol` now opens with the new defaults. `app/src/urlState.ts`.
+
 ## 2026-11-17: gondolas and aerial cable cars
 
 Decision: [2026-11-15-gondolas](docs/00-overview.md#2026-11-15-gondolas). Published 2026-11-17 (R2 and the app; `pipeline/publish.sh` live checks passed).

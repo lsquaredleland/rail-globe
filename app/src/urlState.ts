@@ -34,11 +34,11 @@ export function readHash(): UrlState {
     proposed: h.get('prop') === '1',
     freight: h.get('fr') === '1',
     units: h.get('u') === 'mi' ? 'mi' : 'km',
-    lang: h.get('lg') === 'en' ? 'en' : 'local',
+    lang: h.get('lg') === 'local' ? 'local' : 'en',
     hidden: (h.get('h') ?? '').split(',').filter(Boolean),
     hiddenSpeed: (h.get('hs') ?? '').split(',').filter(Boolean).map(Number).filter(Number.isFinite),
     inspect: h.get('ins') === '1',
-    outline: h.get('ol') !== '0',
+    outline: h.get('ol') === '1',
     theme: h.get('th') === 'dark' ? 'dark' : 'light',
     view,
   }
@@ -53,11 +53,11 @@ export function writeHash(s: Omit<UrlState, 'view'> & { view: View | null }) {
   if (s.proposed) h.set('prop', '1')
   if (s.freight) h.set('fr', '1')
   if (s.units === 'mi') h.set('u', 'mi')
-  if (s.lang === 'en') h.set('lg', 'en')
+  if (s.lang === 'local') h.set('lg', 'local')
   if (s.hidden.length) h.set('h', s.hidden.join(','))
   if (s.hiddenSpeed.length) h.set('hs', s.hiddenSpeed.join(','))
   if (s.inspect) h.set('ins', '1')
-  if (!s.outline) h.set('ol', '0')
+  if (s.outline) h.set('ol', '1')
   if (s.theme === 'dark') h.set('th', 'dark')
   if (s.view) h.set('v', `${s.view.zoom.toFixed(2)}/${s.view.center[1].toFixed(4)}/${s.view.center[0].toFixed(4)}`)
   history.replaceState(null, '', '#' + h.toString())
