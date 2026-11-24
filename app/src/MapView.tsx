@@ -3,6 +3,7 @@ import * as maplibregl from 'maplibre-gl' // MapLibre 6 is ESM-only: no default 
 import type { GeoJSONSource, Map as MLMap, MapGeoJSONFeature } from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { attachKeyPan } from './keyPan'
 import {
   addAirportIcon,
   addBadgeImages,
@@ -349,7 +350,8 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
           })
       }, 150)
     })
-    map.on('moveend', () => {
+    map.on('moveend', (e) => {
+      if ((e as { keyPan?: boolean }).keyPan) return // a frame of a held arrow or WASD key: the move is reported once, on release
       const c = map.getCenter()
       const v: View = { center: [c.lng, c.lat], zoom: map.getZoom() }
       // neighbouring countries: their outlines decide which country the view is over, so the view is reported once they are in
@@ -357,7 +359,9 @@ export const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref)
         if (mapRef.current === map) p.current.onMoveEnd(v)
       })
     })
+    const detachKeys = attachKeyPan(map)
     return () => {
+      detachKeys()
       map.remove()
       mapRef.current = null
       loaded.current = false

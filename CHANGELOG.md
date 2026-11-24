@@ -2,6 +2,11 @@
 
 Newest first. Decisions are in `docs/00-overview.md`; open items in `docs/17-action-items.md`.
 
+## 2026-11-22: arrow keys and W A S D pan the map
+
+- App: holding an arrow key or W, A, S, D pans the map at a steady 700 px a second (Shift doubles it), wherever the focus is except in a text field. One frame at a time, with the view reported once on release. `app/src/keyPan.ts`.
+- `CLAUDE.md`: before every push, run what CI runs.
+
 ## 2026-11-21: English names on, region outline off by default
 
 - App: a link with no setting now opens with English names and without the region outline (was local names, outline on). The link carries `lg=local` and `ol=1` for the other choice; an old link without `lg` or `ol` now opens with the new defaults. `app/src/urlState.ts`.
